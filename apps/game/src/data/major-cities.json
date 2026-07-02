@@ -1,0 +1,32 @@
+[
+    {
+      "city": "Copenhagen",
+      "latitude": 55.676,
+      "longitude": 12.566,
+      "population": 1408575
+    },
+    {
+      "city": "Aarhus",
+      "latitude": 56.157,
+      "longitude": 10.211,
+      "population": 305227
+    },
+    {
+      "city": "Odense",
+      "latitude": 55.396,
+      "longitude": 10.388,
+      "population": 187558
+    },
+    {
+      "city": "Aalborg",
+      "latitude": 57.048,
+      "longitude": 9.919,
+      "population": 122550
+    },
+    {
+      "city": "Esbjerg",
+      "latitude": 55.470,
+      "longitude": 8.452,
+      "population": 71371
+    }
+  ]

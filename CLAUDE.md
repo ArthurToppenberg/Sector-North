@@ -30,3 +30,15 @@ all costs.
 
 This is a **pnpm workspace**. Use `pnpm` only — never `npm` or `yarn`. Do not create
 `package-lock.json` or `yarn.lock`; the lockfile is `pnpm-lock.yaml`.
+
+## HUD colours — white or black only
+
+All HUD elements must be rendered in **white or black only** — no other colours.
+
+This covers any on-screen overlay drawn on top of the map/world: text readouts, debug
+panels, city/place labels, marker dots, icons, and any other UI chrome.
+
+- Fills and strokes for HUD graphics: `0xffffff` or `0x000000`.
+- HUD text `color`: `#ffffff` or `#000000`.
+- Do not introduce accent/status colours (reds, greens, etc.) for HUD, even for emphasis
+  or state. Convey state through position, size, weight, or shape instead.

@@ -1,0 +1,147 @@
+import Phaser from 'phaser'
+import { loadDenmarkMultiPolygon } from '../map/geojson'
+import { loadMajorCities } from '../map/cities'
+import { projectToPixels } from '../map/project'
+import { DPR, MAP } from './config'
+import { GridLayer } from './GridLayer'
+import { CoastlineLayer } from './CoastlineLayer'
+import { CityLayer, type CityMarker } from './CityLayer'
+import { CameraController } from './CameraController'
+import { DebugHud } from './DebugHud'
+
+/**
+ * Composition root for the game. The scene owns no rendering or input logic of
+ * its own — it loads and projects the world once, then wires up the independent
+ * layers (grid, coastline, cities), the camera controller, and the debug HUD,
+ * and forwards the per-frame/per-event signals they need (update tick, resize,
+ * zoom change).
+ *
+ * Zoom-reactive layers (coastline, cities) are refreshed via the camera's
+ * `onZoomChanged` callback. Viewport-reactive work (the grid, which draws only
+ * the visible slice, and the HUD readout) runs in `update`, but only on frames
+ * where the camera actually moved — see the dirty check there.
+ *
+ * Everything it holds is created in `create()` and is therefore always present
+ * by the time `update`/`onResize` run — hence definite-assignment fields and no
+ * optional-chaining guards. A missing dependency is a bug we want to crash on.
+ */
+export class MainScene extends Phaser.Scene {
+  /** Viewport-reactive reference grid; redrawn when the camera moves. */
+  private gridLayer!: GridLayer
+  /** Drives all camera movement; polled every frame for keyboard panning. */
+  private cameraController!: CameraController
+  /** Top-right telemetry readout; refreshed when the camera moves, re-pinned on resize. */
+  private debugHud!: DebugHud
+  /** Fixed UI camera that never zooms/pans, so the HUD stays a constant size. */
+  private uiCamera!: Phaser.Cameras.Scene2D.Camera
+
+  // Camera state from the previous frame, so `update` can skip viewport-reactive
+  // work while the camera is idle (the common case). NaN forces a first-frame draw.
+  private lastScrollX = Number.NaN
+  private lastScrollY = Number.NaN
+  private lastZoom = Number.NaN
+
+  constructor() {
+    super('MainScene')
+  }
+
+  create() {
+    // Load + validate the world data (both throw loudly on anything unexpected).
+    const geometry = loadDenmarkMultiPolygon()
+    const cities = loadMajorCities()
+
+    // Project the country once to fit the initial viewport. This establishes the
+    // world scale; from here the Phaser camera owns all pan/zoom — the model is
+    // never re-projected.
+    const { width, height } = this.scale
+    const projected = projectToPixels(geometry, {
+      width,
+      height,
+      padding: MAP.padding * DPR,
+    })
+
+    // Place the cities in the same world space as the coastline.
+    const markers: CityMarker[] = cities.map((c) => {
+      const [x, y] = projected.project(c.lon, c.lat)
+      return { name: c.name, x, y }
+    })
+
+    // World layers (drawn by the main camera) and the HUD (drawn by the UI camera).
+    // The grid sits beneath everything; cells are a fixed real-world size derived
+    // from the projection's pixels-per-km, anchored to the map's corner.
+    this.gridLayer = new GridLayer(this, {
+      pixelsPerKm: projected.pixelsPerKm,
+      origin: { x: projected.bounds.x, y: projected.bounds.y },
+    })
+    const coastline = new CoastlineLayer(this, projected.polygons)
+    const cityLayer = new CityLayer(this, markers)
+    this.debugHud = new DebugHud(this)
+
+    // One place that fans a zoom change out to every zoom-reactive layer, so a new
+    // layer only has to be added here rather than at each call site. (The grid is
+    // viewport-reactive and redraws every frame in `update` instead.)
+    const onZoomChanged = (zoom: number) => {
+      coastline.onZoomChanged(zoom)
+      cityLayer.onZoomChanged(zoom)
+    }
+    this.cameraController = new CameraController(this, {
+      bounds: projected.bounds,
+      onZoomChanged,
+    })
+
+    this.setupCameras(
+      [...this.gridLayer.objects, ...coastline.objects, ...cityLayer.objects],
+      this.debugHud.objects,
+    )
+
+    // Draw the grid once now that the camera is framed on the country; thereafter
+    // `update` keeps it in sync with every camera move.
+    this.gridLayer.redraw(this.cameras.main)
+
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.onResize, this)
+  }
+
+  /**
+   * Split rendering across two cameras so the HUD is immune to the map's
+   * zoom/pan: the main camera draws only the world layers, and a separate UI
+   * camera (fixed at zoom 1, no scroll) draws only the HUD. Each camera ignores
+   * the other's objects so nothing double-renders.
+   */
+  private setupCameras(
+    worldObjects: Phaser.GameObjects.GameObject[],
+    hudObjects: Phaser.GameObjects.GameObject[],
+  ) {
+    const { width, height } = this.scale
+    this.uiCamera = this.cameras.add(0, 0, width, height)
+    this.cameras.main.ignore(hudObjects)
+    this.uiCamera.ignore(worldObjects)
+  }
+
+  private onResize() {
+    this.uiCamera.setSize(this.scale.width, this.scale.height)
+    this.debugHud.reposition()
+    // A resize changes the main camera's size (and thus the grid's visible slice)
+    // without moving scroll/zoom, so the per-frame dirty check won't catch it —
+    // redraw the grid here to refill the newly exposed area.
+    this.gridLayer.redraw(this.cameras.main)
+  }
+
+  update(_time: number, deltaMs: number) {
+    // Apply any held-key panning first, then react to the resulting camera state.
+    this.cameraController.update(deltaMs / 1000)
+
+    const cam = this.cameras.main
+    if (cam.scrollX === this.lastScrollX && cam.scrollY === this.lastScrollY && cam.zoom === this.lastZoom) {
+      // Camera hasn't moved this frame — the grid slice and HUD readout are still
+      // valid, so skip the grid re-tessellation and the HUD text re-raster.
+      return
+    }
+    this.lastScrollX = cam.scrollX
+    this.lastScrollY = cam.scrollY
+    this.lastZoom = cam.zoom
+
+    // The grid only draws the visible slice, so it must follow every camera move.
+    this.gridLayer.redraw(cam)
+    this.debugHud.render(cam)
+  }
+}
