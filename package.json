@@ -1,0 +1,11 @@
+{
+  "name": "sector-north",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "dev": "pnpm --filter sector-north-game dev",
+    "build": "pnpm --filter sector-north-game build",
+    "build:all": "pnpm -r build"
+  }
+}

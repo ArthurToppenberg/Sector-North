@@ -1,0 +1,7 @@
+node_modules
+dist
+*.local
+.vite
+
+# map data archives (keep the extracted data, not the zips)
+*.zip
