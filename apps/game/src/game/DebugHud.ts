@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { DPR, FONT_FAMILY, HUD, DEPTH } from './config'
-import { cameraWorldView } from './units'
+import { cameraWorldView } from './camera'
 
 /** Hoisted out of `render` so it isn't re-allocated on every refresh. */
 const round = (n: number) => Math.round(n)

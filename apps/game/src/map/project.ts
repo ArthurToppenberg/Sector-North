@@ -92,6 +92,15 @@ export function projectToPixels(geometry: MultiPolygon, viewport: Viewport): Pro
   const originX = (width - contentWidth) / 2
   const originY = (height - contentHeight) / 2
 
+  // The one lon/lat → device-pixel transform this whole module exists to define.
+  // Everything else (the polygon buffers below, overlay markers) routes through
+  // it so the projection formula lives in exactly one place.
+  const project = (lon: number, lat: number): [number, number] => [
+    originX + (lon - minLon) * lonScale * scale,
+    // Screen Y grows downward, latitude grows upward — flip.
+    originY + (maxLat - lat) * scale,
+  ]
+
   const polygons: Float32Array[] = []
   for (const polygon of geometry) {
     if (polygon.length > 1) {
@@ -100,19 +109,12 @@ export function projectToPixels(geometry: MultiPolygon, viewport: Viewport): Pro
     const ring = polygon[0]
     const out = new Float32Array(ring.length * 2)
     for (let i = 0; i < ring.length; i++) {
-      const [lon, lat] = ring[i]
-      out[i * 2] = originX + (lon - minLon) * lonScale * scale
-      // Screen Y grows downward, latitude grows upward — flip.
-      out[i * 2 + 1] = originY + (maxLat - lat) * scale
+      const [px, py] = project(ring[i][0], ring[i][1])
+      out[i * 2] = px
+      out[i * 2 + 1] = py
     }
     polygons.push(out)
   }
-
-  const project = (lon: number, lat: number): [number, number] => [
-    originX + (lon - minLon) * lonScale * scale,
-    // Screen Y grows downward, latitude grows upward — flip.
-    originY + (maxLat - lat) * scale,
-  ]
 
   return {
     polygons,

@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { CAMERA_MARGIN_SCREEN, DPR, KEY_PAN_SPEED, ZOOM } from './config'
-import { cameraWorldView, screenPxToWorld } from './units'
+import { screenPxToWorld } from './units'
+import { cameraWorldView } from './camera'
 
 /** Device-pixel bounding box of the projected map. */
 export interface MapBounds {

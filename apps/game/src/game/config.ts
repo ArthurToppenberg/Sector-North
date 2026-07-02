@@ -6,6 +6,12 @@
  * Device pixel ratio, floored at 1. The canvas backing store is sized at
  * `cssPixels * DPR` and scaled back down via Phaser's `zoom` config, so all
  * in-game coordinates are in device pixels.
+ *
+ * The `|| 1` is NOT a fallback masking a missing value (which the project rules
+ * forbid): `window.devicePixelRatio` is `0`/`undefined` only in environments
+ * with no display density concept, where a ratio of exactly 1 is the correct
+ * answer, not a guess. The outer `Math.max(..., 1)` additionally rejects a
+ * pathological sub-1 ratio.
  */
 export const DPR = Math.max(window.devicePixelRatio || 1, 1)
 

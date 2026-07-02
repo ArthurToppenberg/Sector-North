@@ -44,4 +44,12 @@ async function boot() {
   })
 }
 
-void boot()
+// Fail loudly AND visibly: a boot failure (e.g. the HUD font never loading)
+// would otherwise be a silent black screen with only an unhandled rejection in
+// the console. Surface it in the page so the failure can't hide.
+boot().catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err)
+  const parent = document.getElementById('game') ?? document.body
+  parent.textContent = `Boot failed: ${message}`
+  throw err
+})

@@ -2,11 +2,24 @@ import Phaser from 'phaser'
 import { DPR, FONT_FAMILY, CITY, DEPTH } from './config'
 import { screenPxToWorld } from './units'
 
-/** A city placed in world space (device px), ready to render. */
+/**
+ * A city placed in world space (device px), ready to render.
+ *
+ * The projected `x/y` are what this layer draws, but the real lon/lat and
+ * population are carried alongside — never discarded — because GPS is the
+ * source of truth (see README). Later milestones (aircraft targeting cities,
+ * re-projection, sizing dots by population) need the ground truth, not the
+ * pixels derived from it.
+ */
 export interface CityMarker {
   name: string
+  /** Projected device-pixel position (derived from lon/lat for the current fit). */
   x: number
   y: number
+  /** Real-world coordinates in lon/lat degrees — the source of truth. */
+  lon: number
+  lat: number
+  population: number
 }
 
 /**

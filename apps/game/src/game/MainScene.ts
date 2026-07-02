@@ -63,7 +63,9 @@ export class MainScene extends Phaser.Scene {
     // Place the cities in the same world space as the coastline.
     const markers: CityMarker[] = cities.map((c) => {
       const [x, y] = projected.project(c.lon, c.lat)
-      return { name: c.name, x, y }
+      // Keep the real lon/lat + population on the marker — pixels are derived,
+      // GPS is the source of truth (README).
+      return { name: c.name, x, y, lon: c.lon, lat: c.lat, population: c.population }
     })
 
     // World layers (drawn by the main camera) and the HUD (drawn by the UI camera).

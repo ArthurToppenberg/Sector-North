@@ -1,6 +1,8 @@
 import Phaser from 'phaser'
 import { DEPTH, GRID } from './config'
-import { cameraWorldView, screenPxToWorld, smoothstep } from './units'
+import { screenPxToWorld } from './units'
+import { cameraWorldView } from './camera'
+import { smoothstep } from './math'
 
 /** What the grid needs from the projection to place itself in world space. */
 export interface GridConfig {
