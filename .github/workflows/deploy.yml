@@ -32,9 +32,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Served at the custom domain root (sectornorth.arthurtoppenberg.dk),
+      # so the default Vite base of "/" is correct — no BASE_PATH needed.
       - run: pnpm build
-        env:
-          BASE_PATH: /${{ github.event.repository.name }}/
 
       - uses: actions/upload-pages-artifact@v3
         with:
