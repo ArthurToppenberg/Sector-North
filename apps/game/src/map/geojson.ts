@@ -1,6 +1,8 @@
 import denmarkRaw from '../data/denmark-boundary.geojson?raw'
 import germanyRaw from '../data/germany-boundary.geojson?raw'
+import netherlandsRaw from '../data/netherlands-boundary.geojson?raw'
 import norwayRaw from '../data/norway-boundary.geojson?raw'
+import polandRaw from '../data/poland-boundary.geojson?raw'
 import swedenRaw from '../data/sweden-boundary.geojson?raw'
 
 /** A [longitude, latitude] pair in degrees (WGS84 / CRS84). */
@@ -25,7 +27,9 @@ export type MultiPolygon = Polygon[]
 const BOUNDARIES: ReadonlyArray<{ name: string; raw: string }> = [
   { name: 'denmark', raw: denmarkRaw },
   { name: 'germany', raw: germanyRaw },
+  { name: 'netherlands', raw: netherlandsRaw },
   { name: 'norway', raw: norwayRaw },
+  { name: 'poland', raw: polandRaw },
   { name: 'sweden', raw: swedenRaw },
 ]
 
