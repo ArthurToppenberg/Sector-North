@@ -74,6 +74,17 @@ export class CityLayer {
   }
 
   /**
+   * Show or hide the whole city layer — both the dots and their name labels.
+   * Driven by the HUD toolbar toggle. Visibility is independent of the
+   * zoom-reactive re-positioning in `onZoomChanged`, which only touches
+   * scale/position — so a hidden marker stays hidden across zooms.
+   */
+  setVisible(visible: boolean): void {
+    this.gfx.setVisible(visible)
+    for (const label of this.labels) label.setVisible(visible)
+  }
+
+  /**
    * Re-draw the dots and re-place/scale the labels so each renders at a fixed
    * on-screen size regardless of camera zoom. Cheap — a handful of cities — so
    * it runs on every zoom change.

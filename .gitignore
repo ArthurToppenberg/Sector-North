@@ -5,3 +5,6 @@ dist
 
 # map data archives (keep the extracted data, not the zips)
 *.zip
+
+# mac
+.DS_Store

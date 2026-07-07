@@ -18,6 +18,14 @@ export const DPR = Math.max(window.devicePixelRatio || 1, 1)
 /** Shared HUD typeface — Chakra Petch, a squared techno face for the tactical look. */
 export const FONT_FAMILY = 'Chakra Petch'
 
+/**
+ * Game-level event the scene emits once `create` has finished — i.e. the world
+ * is projected and every asset (currently the toolbar's SVG glyph) has loaded.
+ * `main.ts` listens for it to tear down the boot loader. Shared here so the
+ * emit and the listen can't drift apart.
+ */
+export const APP_READY_EVENT = 'app-ready'
+
 export const MAP = {
   /** Clear margin (CSS pixels) kept around the country when first fitting it. */
   padding: 48,
@@ -60,10 +68,11 @@ export const GRID = {
    * The grid fades in with zoom instead of being always-on: it clutters the
    * far-out country view but earns its place as a scale reference once you zoom
    * in. Invisible at/below `fadeStartZoom`, ramped smoothly to `maxAlpha` by
-   * `fadeEndZoom` — the band straddles zoom ~2.5 so the fade reads as gradual.
+   * `fadeEndZoom` — a short band just above 1.5 so the grid appears promptly
+   * once you start zooming in rather than only at high zoom.
    */
   fadeStartZoom: 1.5,
-  fadeEndZoom: 3.5,
+  fadeEndZoom: 2.25,
 } as const
 
 /**
@@ -79,16 +88,54 @@ export const DEPTH = {
   cityDots: 20,
   cityLabels: 30,
   hud: 100,
+  // Interactive chrome sits above the read-only telemetry HUD; the icon draws
+  // one step above its own button surface.
+  toolbarButton: 110,
+  toolbarIcon: 111,
 } as const
 
-/** Camera zoom limits and per-notch wheel factor. */
-export const ZOOM = { min: 0.4, max: 12, step: 1.12 } as const
+/**
+ * Camera zoom limits and wheel response.
+ * `step` is the zoom factor applied by one full wheel notch; `deltaPerStep` is the
+ * `deltaY` magnitude that counts as one notch. Scaling the factor by the actual delta
+ * (rather than a fixed step per event) keeps a trackpad — which fires a rapid stream of
+ * small-delta events — from compounding into runaway zoom.
+ */
+export const ZOOM = { min: 0.4, max: 12, step: 1.12, deltaPerStep: 100 } as const
 
 export const HUD = {
   /** Debug readout font size on screen (CSS pixels). */
   fontScreenSize: 13,
   /** Debug readout inset from the top-right corner (CSS pixels). */
   marginScreen: 10,
+} as const
+
+/**
+ * Top-left toolbar of icon buttons (currently just the city-name toggle).
+ * All sizes are CSS pixels, converted to device pixels via DPR when drawn.
+ * HUD rule: white or black only — so on/off state is shown through *alpha*
+ * (a dimmed vs full-strength glyph), never a colour change.
+ */
+export const TOOLBAR = {
+  /** Square button edge length on screen (CSS pixels). */
+  buttonScreenSize: 34,
+  /** Icon glyph edge length within the button on screen (CSS pixels). */
+  iconScreenSize: 18,
+  /** Inset of the toolbar from the top-left corner (CSS pixels). */
+  marginScreen: 10,
+  /** Gap between adjacent buttons, for when the toolbar grows (CSS pixels). */
+  gapScreen: 6,
+  /** Button surface fill (black) and its resting / hover opacity. */
+  buttonColor: 0x000000,
+  buttonAlpha: 0.35,
+  buttonHoverAlpha: 0.6,
+  /** Button border (white), its width (CSS pixels) and opacity. */
+  borderColor: 0xffffff,
+  borderScreenWidth: 1,
+  borderAlpha: 0.7,
+  /** Icon glyph opacity when the toggle is on (active) vs off (inactive). */
+  iconActiveAlpha: 1,
+  iconInactiveAlpha: 0.3,
 } as const
 
 /**

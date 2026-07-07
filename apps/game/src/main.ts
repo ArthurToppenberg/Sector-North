@@ -2,7 +2,7 @@ import Phaser from 'phaser'
 // Self-hosted HUD typeface (no CDN). Only the weights we actually use.
 import '@fontsource/chakra-petch/400.css'
 import '@fontsource/chakra-petch/600.css'
-import { DPR, FONT_FAMILY } from './game/config'
+import { DPR, FONT_FAMILY, APP_READY_EVENT } from './game/config'
 import { MainScene } from './game/MainScene'
 
 const config: Phaser.Types.Core.GameConfig = {
@@ -37,6 +37,13 @@ async function boot() {
   }
 
   const game = new Phaser.Game(config)
+
+  // Tear down the boot loader once the scene has finished creating (world
+  // projected, toolbar SVG loaded). Registered before `create` can run — the
+  // loader queues asynchronously, so the event fires after this handler is set.
+  game.events.once(APP_READY_EVENT, () => {
+    document.getElementById('loader')?.remove()
+  })
 
   // Keep the canvas matched to the window at full device resolution.
   window.addEventListener('resize', () => {

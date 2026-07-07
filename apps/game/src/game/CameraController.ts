@@ -82,7 +82,10 @@ export class CameraController {
       Phaser.Input.Events.POINTER_WHEEL,
       (pointer: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
         const oldZoom = cam.zoom
-        const factor = dy > 0 ? 1 / ZOOM.step : ZOOM.step
+        // Scale the zoom factor by the actual scroll delta so a full wheel notch
+        // (`deltaPerStep`) applies one `ZOOM.step`, while a trackpad's many small-delta
+        // events each nudge the zoom only slightly instead of compounding a fixed step.
+        const factor = Math.pow(ZOOM.step, -dy / ZOOM.deltaPerStep)
         const newZoom = Phaser.Math.Clamp(oldZoom * factor, ZOOM.min, ZOOM.max)
         if (newZoom === oldZoom) return
         const anchorScale = 1 / oldZoom - 1 / newZoom

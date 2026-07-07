@@ -2,12 +2,13 @@ import Phaser from 'phaser'
 import { loadDenmarkMultiPolygon } from '../map/geojson'
 import { loadMajorCities } from '../map/cities'
 import { projectToPixels } from '../map/project'
-import { DPR, MAP } from './config'
+import { DPR, MAP, APP_READY_EVENT } from './config'
 import { GridLayer } from './GridLayer'
 import { CoastlineLayer } from './CoastlineLayer'
 import { CityLayer, type CityMarker } from './CityLayer'
 import { CameraController } from './CameraController'
 import { DebugHud } from './DebugHud'
+import { Toolbar } from './Toolbar'
 
 /**
  * Composition root for the game. The scene owns no rendering or input logic of
@@ -32,6 +33,8 @@ export class MainScene extends Phaser.Scene {
   private cameraController!: CameraController
   /** Top-right telemetry readout; refreshed when the camera moves, re-pinned on resize. */
   private debugHud!: DebugHud
+  /** Top-left toolbar (city-name toggle); re-pinned on resize. */
+  private toolbar!: Toolbar
   /** Fixed UI camera that never zooms/pans, so the HUD stays a constant size. */
   private uiCamera!: Phaser.Cameras.Scene2D.Camera
 
@@ -43,6 +46,12 @@ export class MainScene extends Phaser.Scene {
 
   constructor() {
     super('MainScene')
+  }
+
+  preload() {
+    // Rasterise the toolbar's SVG glyph into a texture before `create` builds
+    // the button from it. (Only the toolbar needs an asset preloaded.)
+    Toolbar.preload(this)
   }
 
   create() {
@@ -79,6 +88,14 @@ export class MainScene extends Phaser.Scene {
     const cityLayer = new CityLayer(this, markers)
     this.debugHud = new DebugHud(this)
 
+    // Toolbar toggles the city markers (dots + names). It owns its on/off state
+    // and only hands us the new value — the scene is the one wiring that to the
+    // city layer.
+    this.toolbar = new Toolbar(this, {
+      initialActive: true,
+      onToggle: (active) => cityLayer.setVisible(active),
+    })
+
     // One place that fans a zoom change out to every zoom-reactive layer, so a new
     // layer only has to be added here rather than at each call site. (The grid is
     // viewport-reactive and redraws every frame in `update` instead.)
@@ -93,7 +110,7 @@ export class MainScene extends Phaser.Scene {
 
     this.setupCameras(
       [...this.gridLayer.objects, ...coastline.objects, ...cityLayer.objects],
-      this.debugHud.objects,
+      [...this.debugHud.objects, ...this.toolbar.objects],
     )
 
     // Draw the grid once now that the camera is framed on the country; thereafter
@@ -101,6 +118,10 @@ export class MainScene extends Phaser.Scene {
     this.gridLayer.redraw(this.cameras.main)
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.onResize, this)
+
+    // World is projected and every asset has loaded — signal boot completion so
+    // `main.ts` can tear down the loading indicator.
+    this.game.events.emit(APP_READY_EVENT)
   }
 
   /**
@@ -122,6 +143,7 @@ export class MainScene extends Phaser.Scene {
   private onResize() {
     this.uiCamera.setSize(this.scale.width, this.scale.height)
     this.debugHud.reposition()
+    this.toolbar.reposition()
     // A resize changes the main camera's size (and thus the grid's visible slice)
     // without moving scroll/zoom, so the per-frame dirty check won't catch it —
     // redraw the grid here to refill the newly exposed area.
