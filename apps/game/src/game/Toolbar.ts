@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import tagIconRaw from 'lucide-static/icons/tag.svg?raw'
+import cityIconRaw from 'lucide-static/icons/building-2.svg?raw'
 import { DPR, TOOLBAR, DEPTH } from './config'
 
 /** Texture key for the rasterised toggle glyph, shared by preload and render. */
@@ -13,7 +13,7 @@ const ICON_TEXTURE_KEY = 'toolbar-city-labels'
  * and hand Phaser a self-contained data URI.
  */
 function iconDataUri(): string {
-  const white = tagIconRaw.replaceAll('currentColor', '#ffffff')
+  const white = cityIconRaw.replaceAll('currentColor', '#ffffff')
   // Phaser's SVG loader `atob`s the data-URI payload, so it must be base64 (a
   // percent-encoded URI makes `atob` throw and the loader stalls, never firing
   // `create`). Lucide markup is pure ASCII, so `btoa` handles it directly.
