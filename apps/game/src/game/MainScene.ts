@@ -86,10 +86,10 @@ export class MainScene extends Phaser.Scene {
     })
     const coastline = new CoastlineLayer(this, projected.polygons)
     const cityLayer = new CityLayer(this, markers)
-    // Cities are hidden by default; the toolbar toggle reveals them. One literal
+    // Cities are shown by default; the toolbar toggle hides them. One literal
     // feeds both the layer's start visibility and the toolbar's initial state so
     // the glyph and the actual visibility can't drift apart.
-    const citiesVisible = false
+    const citiesVisible = true
     cityLayer.setVisible(citiesVisible)
     this.debugHud = new DebugHud(this)
 
