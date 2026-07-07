@@ -1,18 +1,22 @@
 import Phaser from 'phaser'
-import { CAMERA_MARGIN_SCREEN, DPR, KEY_PAN_SPEED, ZOOM } from './config'
+import { KEY_PAN_SPEED, ZOOM } from './config'
 import { screenPxToWorld } from './units'
 import { cameraWorldView } from './camera'
 
-/** Device-pixel bounding box of the projected map. */
-export interface MapBounds {
-  x: number
-  y: number
-  width: number
-  height: number
+/**
+ * The world-pixel box the camera CENTRE may occupy — the play area. Derived by
+ * `MainScene` from the lon/lat `CAMERA_CENTER_BOUNDS` via the projection, so the
+ * controller stays in pixel space and never reasons about geography itself.
+ */
+export interface CenterBounds {
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
 }
 
 interface CameraControllerOptions {
-  bounds: MapBounds
+  centerBounds: CenterBounds
   /** Called after every zoom change with the new zoom, so zoom-reactive layers can redraw. */
   onZoomChanged: (zoom: number) => void
 }
@@ -22,8 +26,8 @@ interface CameraControllerOptions {
  * the cursor), click-drag pan, and WASD/arrow keyboard pan. Extracted from the
  * former god-scene so camera behaviour lives in exactly one place.
  *
- * Scroll is confined with a manual clamp (`clampCamera`) whose range is DERIVED
- * from the projected map plus a fixed on-screen margin — not a hard-coded scroll
+ * Scroll is confined with a manual clamp (`clampCamera`) to the play-area box
+ * (`CenterBounds`, world px) handed in by the scene — not a hard-coded scroll
  * box. We deliberately do NOT use Phaser's `camera.setBounds`: it locks and
  * re-centres the camera whenever the visible area is larger than the bounds
  * (true here — a small country in a large viewport), which would forbid panning
@@ -43,10 +47,8 @@ export class CameraController {
    */
   private readonly onZoomChanged: (zoom: number) => void
 
-  /** Map bounding box (world/device px) the pannable range is derived from. */
-  private readonly bounds: MapBounds
-  /** How far (world px) the camera may travel past the map edges. */
-  private readonly margin: number
+  /** World-pixel box the camera centre is confined to (the play area). */
+  private readonly centerBounds: CenterBounds
 
   /**
    * The keys bound to each pan direction. Both WASD and the arrow keys drive the
@@ -64,12 +66,13 @@ export class CameraController {
     const cam = scene.cameras.main
     this.cam = cam
     this.onZoomChanged = options.onZoomChanged
-    this.bounds = options.bounds
-    // The margin is an on-screen CSS distance; convert to world (device) px.
-    this.margin = CAMERA_MARGIN_SCREEN * DPR
-
-    // Start looking at the middle of the map so the country is framed on load.
-    cam.centerOn(options.bounds.x + options.bounds.width / 2, options.bounds.y + options.bounds.height / 2)
+    this.centerBounds = options.centerBounds
+    // Start at the most zoomed-out level the player is allowed, framed on the
+    // centre of the play area. The zoom-reactive layers are notified below so
+    // they render at this initial zoom rather than Phaser's default 1.
+    const b = options.centerBounds
+    cam.setZoom(ZOOM.min)
+    cam.centerOn((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2)
 
     // Mouse-wheel zoom, anchored so the world point under the cursor stays put.
     // Because zoom is centred on the camera midpoint, the world point under a
@@ -120,8 +123,10 @@ export class CameraController {
       right: [kb.addKey(K.D), kb.addKey(K.RIGHT)],
     }
 
-    // Frame is already centred; make sure it starts inside the clamp range.
+    // Frame is already centred; make sure it starts inside the clamp range, then
+    // let the zoom-reactive layers render at the initial zoom set above.
     this.clampCamera()
+    this.onZoomChanged(cam.zoom)
   }
 
   /**
@@ -143,10 +148,10 @@ export class CameraController {
   }
 
   /**
-   * Confine the camera by clamping its CENTRE to the map's bounding box plus a
-   * margin. Clamping the centre (rather than the top-left scroll minus the
-   * viewport) makes the pannable region independent of zoom: the point the
-   * camera looks at can roam anywhere within `map + margin` at every zoom level,
+   * Confine the camera by clamping its CENTRE to the fixed play area defined in
+   * `CAMERA_CENTER_BOUNDS`. Clamping the centre (rather than the top-left scroll
+   * minus the viewport) makes the pannable region independent of zoom: the point
+   * the camera looks at can roam anywhere within that box at every zoom level,
    * instead of the range shrinking as you zoom in. The scroll is then derived
    * back from the clamped centre.
    */
@@ -154,14 +159,11 @@ export class CameraController {
     const cam = this.cam
     const view = cameraWorldView(cam)
 
-    // Fixed world region the camera centre may occupy (zoom-independent).
-    const minCenterX = this.bounds.x - this.margin
-    const maxCenterX = this.bounds.x + this.bounds.width + this.margin
-    const minCenterY = this.bounds.y - this.margin
-    const maxCenterY = this.bounds.y + this.bounds.height + this.margin
-
-    const centerX = Phaser.Math.Clamp(view.centerX, minCenterX, maxCenterX)
-    const centerY = Phaser.Math.Clamp(view.centerY, minCenterY, maxCenterY)
+    // Fixed world region the camera centre may occupy (zoom-independent),
+    // pre-projected from the lon/lat play area by the scene.
+    const b = this.centerBounds
+    const centerX = Phaser.Math.Clamp(view.centerX, b.minX, b.maxX)
+    const centerY = Phaser.Math.Clamp(view.centerY, b.minY, b.maxY)
 
     // Derive scroll back from the clamped centre. Centre = scroll + size/2, so
     // scroll = centre - size/2 (Phaser's midpoint relation, not size/zoom).

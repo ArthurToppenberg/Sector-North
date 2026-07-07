@@ -31,8 +31,12 @@ export const MAP = {
   padding: 48,
   /** Coastline thickness on screen (CSS pixels), held constant across zoom. */
   strokeScreenWidth: 0.75,
-  /** Coastline colour. */
-  strokeColor: 0xffffff,
+  /**
+   * Coastline colour — radar phosphor green, the green of tactical C2 / radar
+   * displays. The map geography is deliberately NOT bound by the white/black HUD
+   * rule (that governs overlay chrome); see `apps/game/CLAUDE.md`.
+   */
+  strokeColor: 0x33ff66,
 } as const
 
 export const CITY = {
@@ -101,7 +105,7 @@ export const DEPTH = {
  * (rather than a fixed step per event) keeps a trackpad — which fires a rapid stream of
  * small-delta events — from compounding into runaway zoom.
  */
-export const ZOOM = { min: 0.4, max: 12, step: 1.12, deltaPerStep: 100 } as const
+export const ZOOM = { min: 6.5, max: 40, step: 1.12, deltaPerStep: 100 } as const
 
 export const HUD = {
   /** Debug readout font size on screen (CSS pixels). */
@@ -145,9 +149,27 @@ export const TOOLBAR = {
 export const KEY_PAN_SPEED = 700
 
 /**
- * How far past the map's bounding box (CSS pixels) the camera may travel, so the
- * player can nudge the coast off-centre but never lose it entirely. The real
- * scroll bounds are derived from the projected map plus this margin — no
- * hard-coded scroll box.
+ * The play area: fixed limits for where the camera CENTRE (the world point it
+ * looks at) may roam, expressed as a **geographic** lon/lat box around Denmark.
+ * The game is focused on Danish airspace, so this confines the player to that
+ * region regardless of zoom.
+ *
+ * Kept in lon/lat — not pixels — on purpose: pixel bounds would break the moment
+ * the projection changes (adding a country rescales/shifts the whole map) or the
+ * window is resized. `MainScene` runs these four corners through the projection's
+ * `project()` at load to derive the world-pixel clamp box, so the play area
+ * always tracks the same real-world patch of Earth. This is the "GPS is the
+ * source of truth" rule applied to the camera. Degrees are WGS84.
+ *
+ * DO NOT change these values (or the ZOOM min/max above) without an explicit
+ * request from the user — see the "Camera bounds are locked" rule in
+ * `apps/game/CLAUDE.md`.
  */
-export const CAMERA_MARGIN_SCREEN = 120
+export const CAMERA_CENTER_BOUNDS = {
+  /** Longitude (°E) extents — into the North Sea (west) out past Bornholm (east). */
+  west: 6,
+  east: 15.5,
+  /** Latitude (°N) extents — south of the German border to north of Skagen. */
+  south: 54,
+  north: 58,
+} as const

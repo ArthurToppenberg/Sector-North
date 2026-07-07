@@ -70,3 +70,13 @@ lon/lat becomes pixels.
 - **Device pixels:** the canvas backing store is sized at `cssPixels * DPR` and scaled
   back via Phaser's `zoom` config, so all in-game coordinates are device pixels. Convert
   CSS-pixel config values with `DPR` (usually via `screenPxToWorld`).
+
+## Camera bounds are locked — never change them on your own
+
+The zoom limits (`ZOOM.min` / `ZOOM.max`) and the camera-movement bounds
+(`CAMERA_CENTER_BOUNDS`) in `src/game/config.ts` are **deliberately tuned game
+settings**. Do **not** change these values, and do not alter the clamp logic in
+`CameraController` that enforces them, unless the user explicitly asks you to in that
+request. They are not free to "improve", refactor away, or adjust as a side effect of
+another change. If a task seems to require different zoom/pan limits, stop and ask the
+user first rather than editing them.

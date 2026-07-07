@@ -51,8 +51,10 @@ const KM_PER_DEG_LAT = 111.195
  * the correction the country renders badly stretched horizontally. This is
  * cheap (no per-point trig) and accurate enough for a country-scale map.
  *
- * Holes are not supported: any polygon with more than one ring throws, rather
- * than silently dropping the hole.
+ * Every ring of every polygon is projected to its own entry in `polygons` —
+ * outer boundaries and holes alike. The coastline layer strokes each as an
+ * independent closed loop, so an interior ring (e.g. an enclosed enclave)
+ * renders as its own outline rather than being dropped.
  */
 export function projectToPixels(geometry: MultiPolygon, viewport: Viewport): ProjectedMap {
   const { width, height, padding } = viewport
@@ -103,17 +105,15 @@ export function projectToPixels(geometry: MultiPolygon, viewport: Viewport): Pro
 
   const polygons: Float32Array[] = []
   for (const polygon of geometry) {
-    if (polygon.length > 1) {
-      throw new Error(`[map/project] polygon holes are not supported (found ${polygon.length} rings)`)
+    for (const ring of polygon) {
+      const out = new Float32Array(ring.length * 2)
+      for (let i = 0; i < ring.length; i++) {
+        const [px, py] = project(ring[i][0], ring[i][1])
+        out[i * 2] = px
+        out[i * 2 + 1] = py
+      }
+      polygons.push(out)
     }
-    const ring = polygon[0]
-    const out = new Float32Array(ring.length * 2)
-    for (let i = 0; i < ring.length; i++) {
-      const [px, py] = project(ring[i][0], ring[i][1])
-      out[i * 2] = px
-      out[i * 2 + 1] = py
-    }
-    polygons.push(out)
   }
 
   return {

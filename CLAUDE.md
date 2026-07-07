@@ -78,3 +78,9 @@ panels, city/place labels, marker dots, icons, and any other UI chrome.
 - HUD text `color`: `#ffffff` or `#000000`.
 - Do not introduce accent/status colours (reds, greens, etc.) for HUD, even for emphasis
   or state. Convey state through position, size, weight, or shape instead.
+
+**The map geography itself is NOT HUD and is exempt from this rule.** The coastline
+outlines are rendered in radar phosphor green (`MAP.strokeColor`, `0x33ff66`) to match a
+tactical C2 / radar display. This exemption is only for the drawn world geography (the
+country outlines) — every overlay *on top* of it (labels, markers, readouts, chrome)
+stays white or black. Do not extend the green to HUD elements.

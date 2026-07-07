@@ -1,8 +1,8 @@
 import Phaser from 'phaser'
-import { loadDenmarkMultiPolygon } from '../map/geojson'
+import { loadBoundaries } from '../map/geojson'
 import { loadMajorCities } from '../map/cities'
 import { projectToPixels } from '../map/project'
-import { DPR, MAP, APP_READY_EVENT } from './config'
+import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS } from './config'
 import { GridLayer } from './GridLayer'
 import { CoastlineLayer } from './CoastlineLayer'
 import { CityLayer, type CityMarker } from './CityLayer'
@@ -56,7 +56,7 @@ export class MainScene extends Phaser.Scene {
 
   create() {
     // Load + validate the world data (both throw loudly on anything unexpected).
-    const geometry = loadDenmarkMultiPolygon()
+    const geometry = loadBoundaries()
     const cities = loadMajorCities()
 
     // Project the country once to fit the initial viewport. This establishes the
@@ -86,13 +86,17 @@ export class MainScene extends Phaser.Scene {
     })
     const coastline = new CoastlineLayer(this, projected.polygons)
     const cityLayer = new CityLayer(this, markers)
+    // Cities are hidden by default; the toolbar toggle (below, starting inactive)
+    // reveals them. Keep this initial state in sync with the toolbar's
+    // `initialActive`.
+    cityLayer.setVisible(false)
     this.debugHud = new DebugHud(this)
 
     // Toolbar toggles the city markers (dots + names). It owns its on/off state
     // and only hands us the new value — the scene is the one wiring that to the
     // city layer.
     this.toolbar = new Toolbar(this, {
-      initialActive: true,
+      initialActive: false,
       onToggle: (active) => cityLayer.setVisible(active),
     })
 
@@ -103,8 +107,20 @@ export class MainScene extends Phaser.Scene {
       coastline.onZoomChanged(zoom)
       cityLayer.onZoomChanged(zoom)
     }
+    // Turn the lon/lat play area into a world-pixel box the camera centre is
+    // confined to. Projecting through the same `project()` as everything else
+    // keeps the play area pinned to real geography (GPS is the source of truth),
+    // so it survives projection and window-size changes. Min/max rather than
+    // assuming axis direction: x grows east, y grows south (latitude flips).
+    const [x1, y1] = projected.project(CAMERA_CENTER_BOUNDS.west, CAMERA_CENTER_BOUNDS.north)
+    const [x2, y2] = projected.project(CAMERA_CENTER_BOUNDS.east, CAMERA_CENTER_BOUNDS.south)
     this.cameraController = new CameraController(this, {
-      bounds: projected.bounds,
+      centerBounds: {
+        minX: Math.min(x1, x2),
+        maxX: Math.max(x1, x2),
+        minY: Math.min(y1, y2),
+        maxY: Math.max(y1, y2),
+      },
       onZoomChanged,
     })
 
