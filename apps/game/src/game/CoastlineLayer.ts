@@ -10,10 +10,6 @@ import { screenPxToWorld } from './units'
  * the outline always appears as a fine hairline on screen. Drawing vectors —
  * rather than baking a texture — keeps the line sharp at any zoom, and the camera
  * transform makes pan/zoom free with no per-frame re-tessellation.
- *
- * The layer is always in a valid state once constructed: the Graphics object and
- * the polygon data are assigned in the constructor and drawn immediately, so
- * there are no optional fields to guard against and no silent bail-outs.
  */
 export class CoastlineLayer {
   /**

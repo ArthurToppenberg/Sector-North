@@ -72,11 +72,17 @@ export const GRID = {
    * The grid fades in with zoom instead of being always-on: it clutters the
    * far-out country view but earns its place as a scale reference once you zoom
    * in. Invisible at/below `fadeStartZoom`, ramped smoothly to `maxAlpha` by
-   * `fadeEndZoom` — a short band just above 1.5 so the grid appears promptly
-   * once you start zooming in rather than only at high zoom.
+   * `fadeEndZoom`.
+   *
+   * The band MUST sit inside the reachable zoom range (`ZOOM.min`..`ZOOM.max` =
+   * 6.5..40) or the fade is inert: a band below `ZOOM.min` leaves `smoothstep`
+   * pinned at 1 (grid always fully on), a band above `ZOOM.max` pins it at 0
+   * (grid never shows). Here it starts a little above the initial framing zoom
+   * (6.5) so the map opens grid-free, then the grid appears as the player zooms
+   * closer in. Tunable within that range to taste.
    */
-  fadeStartZoom: 1.5,
-  fadeEndZoom: 2.25,
+  fadeStartZoom: 8,
+  fadeEndZoom: 16,
 } as const
 
 /**

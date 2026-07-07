@@ -33,7 +33,9 @@ lon/lat becomes pixels.
   - `pixelsPerKm` — valid on both axes thanks to the latitude correction. Use it to
     express real distances (grid cells, ranges, speeds) in the render; never invent a
     separate pixels-per-km factor.
-  - `bounds` — the drawn geometry's pixel bounding box (used for camera bounds).
+  - `bounds` — the drawn geometry's pixel bounding box; its top-left corner
+    (`x`/`y`) anchors the grid origin. (Camera bounds are separate: projected from
+    `CAMERA_CENTER_BOUNDS` via `project()`, not derived from this box.)
 - The projection is equirectangular with a `cos(meanLatitude)` longitude correction —
   cheap and accurate enough for a country-scale map. If/when exact real-speed simulation
   demands more accuracy, the sanctioned upgrade is projecting through **UTM zone 32N

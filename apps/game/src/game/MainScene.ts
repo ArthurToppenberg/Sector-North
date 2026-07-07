@@ -86,17 +86,18 @@ export class MainScene extends Phaser.Scene {
     })
     const coastline = new CoastlineLayer(this, projected.polygons)
     const cityLayer = new CityLayer(this, markers)
-    // Cities are hidden by default; the toolbar toggle (below, starting inactive)
-    // reveals them. Keep this initial state in sync with the toolbar's
-    // `initialActive`.
-    cityLayer.setVisible(false)
+    // Cities are hidden by default; the toolbar toggle reveals them. One literal
+    // feeds both the layer's start visibility and the toolbar's initial state so
+    // the glyph and the actual visibility can't drift apart.
+    const citiesVisible = false
+    cityLayer.setVisible(citiesVisible)
     this.debugHud = new DebugHud(this)
 
     // Toolbar toggles the city markers (dots + names). It owns its on/off state
     // and only hands us the new value — the scene is the one wiring that to the
     // city layer.
     this.toolbar = new Toolbar(this, {
-      initialActive: false,
+      initialActive: citiesVisible,
       onToggle: (active) => cityLayer.setVisible(active),
     })
 
@@ -160,10 +161,14 @@ export class MainScene extends Phaser.Scene {
     this.uiCamera.setSize(this.scale.width, this.scale.height)
     this.debugHud.reposition()
     this.toolbar.reposition()
-    // A resize changes the main camera's size (and thus the grid's visible slice)
-    // without moving scroll/zoom, so the per-frame dirty check won't catch it —
-    // redraw the grid here to refill the newly exposed area.
+    // A resize changes the main camera's size without moving scroll/zoom, so the
+    // per-frame dirty check won't catch it. The changed width/height also shifts
+    // the look-at centre (`scroll + size/2`), so re-clamp the camera back inside
+    // the play area FIRST, then redraw the viewport-reactive grid and HUD from the
+    // corrected camera to refill the newly exposed area with the right readout.
+    this.cameraController.reclampToBounds()
     this.gridLayer.redraw(this.cameras.main)
+    this.debugHud.render(this.cameras.main)
   }
 
   update(_time: number, deltaMs: number) {

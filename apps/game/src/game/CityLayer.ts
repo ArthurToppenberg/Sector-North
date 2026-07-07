@@ -32,7 +32,6 @@ export interface CityMarker {
  * or vanishing as the player zooms.
  */
 export class CityLayer {
-  // Kept because `onZoomChanged` re-reads every marker's position each redraw.
   private readonly markers: CityMarker[]
   /** World-space Graphics holding every city dot; re-drawn on zoom. */
   private readonly gfx: Phaser.GameObjects.Graphics

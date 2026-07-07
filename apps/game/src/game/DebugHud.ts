@@ -2,9 +2,6 @@ import Phaser from 'phaser'
 import { DPR, FONT_FAMILY, HUD, DEPTH } from './config'
 import { cameraWorldView } from './camera'
 
-/** Hoisted out of `render` so it isn't re-allocated on every refresh. */
-const round = (n: number) => Math.round(n)
-
 /**
  * Top-right debug readout: a screen-fixed text object showing live camera state
  * (zoom, scroll, and derived world-space centre). This is deliberately a tiny,
@@ -80,8 +77,8 @@ export class DebugHud {
     const { centerX, centerY } = cameraWorldView(cam)
     const next =
       `zoom   ${cam.zoom.toFixed(3)}\n` +
-      `scroll ${round(cam.scrollX)}, ${round(cam.scrollY)}\n` +
-      `center ${round(centerX)}, ${round(centerY)}`
+      `scroll ${Math.round(cam.scrollX)}, ${Math.round(cam.scrollY)}\n` +
+      `center ${Math.round(centerX)}, ${Math.round(centerY)}`
     // Skip the (expensive) re-raster when nothing the readout shows has changed.
     if (next === this.lastText) return
     this.lastText = next

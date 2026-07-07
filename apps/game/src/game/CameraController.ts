@@ -35,10 +35,7 @@ interface CameraControllerOptions {
  * within its range at any zoom level.
  */
 export class CameraController {
-  /**
-   * The scene's main camera. Stored because `update` and the input handlers step
-   * it long after the constructor has returned.
-   */
+  /** The scene's main camera. */
   private readonly cam: Phaser.Cameras.Scene2D.Camera
 
   /**
@@ -52,8 +49,7 @@ export class CameraController {
 
   /**
    * The keys bound to each pan direction. Both WASD and the arrow keys drive the
-   * same direction so either hand works. Stored because `update` polls their
-   * `isDown` state every frame.
+   * same direction so either hand works.
    */
   private readonly moveKeys: {
     up: Phaser.Input.Keyboard.Key[]
@@ -144,6 +140,17 @@ export class CameraController {
     const step = screenPxToWorld(KEY_PAN_SPEED * deltaSeconds, this.cam.zoom)
     this.cam.scrollX += dx * step
     this.cam.scrollY += dy * step
+    this.clampCamera()
+  }
+
+  /**
+   * Re-confine the camera to the play area from outside the input handlers. A
+   * window resize changes `cam.width/height` without moving scroll/zoom, which
+   * shifts the look-at centre (`scroll + size/2`) and can push it past the bounds
+   * — the scene calls this from `onResize` to snap it back. Delegates to the same
+   * locked clamp the input handlers use, so there is one clamp implementation.
+   */
+  reclampToBounds(): void {
     this.clampCamera()
   }
 

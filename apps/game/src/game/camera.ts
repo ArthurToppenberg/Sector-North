@@ -9,9 +9,6 @@ export interface WorldView {
   /** Centre of the view — the point the camera looks at. */
   centerX: number
   centerY: number
-  /** Visible extent in world px (`cam.width / zoom`, `cam.height / zoom`). */
-  width: number
-  height: number
 }
 
 /**
@@ -40,7 +37,5 @@ export function cameraWorldView(cam: Phaser.Cameras.Scene2D.Camera): WorldView {
     bottom: centerY + height / 2,
     centerX,
     centerY,
-    width,
-    height,
   }
 }
