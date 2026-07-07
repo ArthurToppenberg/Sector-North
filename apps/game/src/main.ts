@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
 // Self-hosted HUD typeface (no CDN). Only the weights we actually use.
-import '@fontsource/chakra-petch/400.css'
-import '@fontsource/chakra-petch/600.css'
+import '@fontsource/chakra-petch/latin-400.css'
+import '@fontsource/chakra-petch/latin-600.css'
 import { DPR, FONT_FAMILY, APP_READY_EVENT } from './game/config'
 import { MainScene } from './game/MainScene'
 
