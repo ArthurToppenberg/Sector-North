@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { DPR, FONT_FAMILY, RADAR, DEPTH } from './config'
+import { DPR, FONT_FAMILY, RADAR, CLICK_MAX_TRAVEL_SCREEN, DEPTH } from './config'
 import { screenPxToWorld } from './units'
 import type { ColocationLabel } from '../map/colocate'
 
@@ -13,6 +13,20 @@ export interface RadarMarker {
   lon: number
   lat: number
 }
+
+/**
+ * Notified when a radar site is clicked (not dragged). Carries the marker's index
+ * so the scene can look up the full radar record for its detail window. The layer
+ * stays decoupled from the window itself — same split as the toolbar's `onToggle`.
+ */
+export type RadarSelectHandler = (index: number) => void
+
+/**
+ * On-screen edge length (CSS px) of each site's invisible click target. Larger
+ * than the drawn marker so the small circle is comfortable to hit; held constant
+ * on screen (re-derived per zoom) like the marker itself.
+ */
+const HIT_TARGET_SCREEN_SIZE = 24
 
 function fail(message: string): never {
   throw new Error(`[game/RadarLayer] ${message}`)
@@ -54,11 +68,13 @@ export class RadarLayer {
   private readonly markers: readonly RadarMarker[]
   private readonly gfx: Phaser.GameObjects.Graphics
   private readonly labels: Phaser.GameObjects.Text[]
+  /** One invisible interactive hit target per site, for click-to-open. */
+  private readonly hitZones: Phaser.GameObjects.Zone[]
   private readonly suppressed: boolean[]
   /** Master on/off from the toolbar, independent of the label reveal. */
   private layerVisible = true
 
-  constructor(scene: Phaser.Scene, markers: readonly RadarMarker[]) {
+  constructor(scene: Phaser.Scene, markers: readonly RadarMarker[], onSelect: RadarSelectHandler) {
     assertMarkers(markers)
     this.scene = scene
     this.markers = markers
@@ -66,9 +82,29 @@ export class RadarLayer {
 
     this.gfx = scene.add.graphics().setDepth(DEPTH.radarMarkers)
     this.labels = markers.map((m) => this.createLabel(m))
+    this.hitZones = markers.map((m, i) => this.createHitZone(m, i, onSelect))
 
     // Draw once at the current zoom so the layer is correct before any input.
     this.onZoomChanged(this.currentZoom())
+  }
+
+  /**
+   * An invisible, interactive click target centred on the site. Distinguishes a
+   * click from a drag by pointer travel (press → release): only a near-stationary
+   * release counts as a click, so a camera pan that happens to end over a site
+   * never opens its window.
+   */
+  private createHitZone(marker: RadarMarker, index: number, onSelect: RadarSelectHandler): Phaser.GameObjects.Zone {
+    const zone = this.scene.add
+      .zone(marker.x, marker.y, 1, 1)
+      .setDepth(DEPTH.radarMarkers)
+      .setInteractive({ useHandCursor: true })
+    zone.on(Phaser.Input.Events.POINTER_UP, (pointer: Phaser.Input.Pointer) => {
+      const travel = Phaser.Math.Distance.Between(pointer.downX, pointer.downY, pointer.upX, pointer.upY)
+      if (travel > CLICK_MAX_TRAVEL_SCREEN * DPR) return
+      onSelect(index)
+    })
+    return zone
   }
 
   private createLabel(marker: RadarMarker): Phaser.GameObjects.Text {
@@ -92,12 +128,18 @@ export class RadarLayer {
   }
 
   get objects(): Phaser.GameObjects.GameObject[] {
-    return [this.gfx, ...this.labels]
+    return [this.gfx, ...this.labels, ...this.hitZones]
   }
 
   setVisible(visible: boolean): void {
     this.layerVisible = visible
     this.gfx.setVisible(visible)
+    // A hidden radar layer must not be clickable — toggle each hit target's input
+    // alongside the visuals so you can't open a window for an unseen site.
+    for (const zone of this.hitZones) {
+      if (visible) zone.setInteractive({ useHandCursor: true })
+      else zone.disableInteractive()
+    }
     // Recompute labels for the new master state at the current zoom.
     this.onZoomChanged(this.currentZoom())
   }
@@ -122,6 +164,17 @@ export class RadarLayer {
     assertZoom(zoom)
     this.drawCircles(zoom)
     this.placeLabels(zoom)
+    this.sizeHitZones(zoom)
+  }
+
+  /**
+   * Hold each click target at a constant on-screen size. `Zone.setSize` resizes
+   * the rectangular input hit area too, so the clickable patch tracks the marker
+   * rather than growing/shrinking with the world as you zoom.
+   */
+  private sizeHitZones(zoom: number): void {
+    const size = screenPxToWorld(HIT_TARGET_SCREEN_SIZE, zoom)
+    for (const zone of this.hitZones) zone.setSize(size, size)
   }
 
   /**

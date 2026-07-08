@@ -192,6 +192,11 @@ export const DEPTH = {
   // one step above its own button surface.
   toolbarButton: 110,
   toolbarIcon: 111,
+  // The site detail window (opened by clicking a marker) overlays everything,
+  // including the toolbar: its panel surface first, then its text and controls
+  // one step above so they read on top of the panel.
+  window: 120,
+  windowContent: 121,
 } as const
 
 export const HUD = {
@@ -228,6 +233,69 @@ export const TOOLBAR = {
   iconInactiveAlpha: 0.3,
 } as const
 
+/**
+ * The site detail window: a HUD panel that opens when the player clicks a marker
+ * (currently radar sites; designed to serve towns and airfields too). All sizes
+ * are CSS pixels, converted with `DPR` at render time. Chrome stays white/black
+ * per the HUD rule. The window is type-agnostic — it renders a title, a
+ * placeholder image, and a list of label/value rows supplied by the caller — so
+ * a new entity type only needs its own row list, not a new window.
+ */
+export const INFO_WINDOW = {
+  /** Panel width on screen (CSS pixels); height grows to fit its content. */
+  widthScreen: 300,
+  /** Inset of the panel from the top-left corner (CSS pixels). */
+  marginScreen: 10,
+  /** Inner padding between the panel edge and its content (CSS pixels). */
+  paddingScreen: 14,
+  /** Panel surface fill — solid black (fully opaque), with white borders. */
+  panelColor: 0x000000,
+  panelAlpha: 1,
+  /** Panel + inner borders (white), width (CSS pixels) and opacity. */
+  borderColor: 0xffffff,
+  borderScreenWidth: 1,
+  borderAlpha: 0.8,
+  /** Title (site name) font. */
+  titleColor: '#ffffff',
+  titleFontWeight: '600',
+  titleFontScreenSize: 17,
+  /** Field label font (small, uppercased heading above each value). */
+  labelColor: '#ffffff',
+  labelFontWeight: '600',
+  labelFontScreenSize: 10,
+  labelAlpha: 0.6,
+  /** Field value font. */
+  valueColor: '#ffffff',
+  valueFontWeight: '400',
+  valueFontScreenSize: 13,
+  /** Placeholder image box height (CSS pixels) and its caption. */
+  imageHeightScreen: 130,
+  imageFillAlpha: 1,
+  imageCaption: 'NO IMAGE',
+  imageCaptionFontScreenSize: 11,
+  imageCaptionAlpha: 0.5,
+  /** Close button square edge and its "×" glyph size (CSS pixels). */
+  closeButtonScreenSize: 22,
+  closeGlyphFontScreenSize: 18,
+  closeButtonAlpha: 0.35,
+  closeButtonHoverAlpha: 0.6,
+  /** Gap between the close button and the title (CSS pixels). */
+  closeTitleGapScreen: 8,
+  /** Vertical gap between major sections — header / image / fields (CSS pixels). */
+  sectionGapScreen: 12,
+  /** Gap between a field's label and its value (CSS pixels). */
+  labelValueGapScreen: 2,
+  /** Gap between consecutive fields (CSS pixels). */
+  rowGapScreen: 9,
+  /**
+   * Each click opens a fresh window; successive windows are offset by this much
+   * (CSS pixels) down-and-right so they cascade instead of landing exactly on top
+   * of one another, then wrap back to the start after `cascadeCount` steps.
+   */
+  cascadeStepScreen: 28,
+  cascadeCount: 8,
+} as const
+
 // ── Camera & input ─────────────────────────────────────────────────────────
 // Zoom limits, keyboard pan speed, and the geographic play-area bounds. The
 // zoom limits and centre bounds are LOCKED game settings — see the "Camera
@@ -241,6 +309,14 @@ export const TOOLBAR = {
  * small-delta events — from compounding into runaway zoom.
  */
 export const ZOOM = { min: 6.5, max: 40, step: 1.12, deltaPerStep: 100 } as const
+
+/**
+ * Max pointer travel (CSS pixels, press → release) still treated as a click
+ * rather than a drag. A click on a site marker opens its detail window; drag past
+ * this and it's a camera pan, which must not open the window. Kept small so a
+ * deliberate tap opens the window but the tail end of a pan never does.
+ */
+export const CLICK_MAX_TRAVEL_SCREEN = 6
 
 /**
  * Keyboard pan speed as CSS pixels/second on screen (held constant across zoom

@@ -73,6 +73,15 @@ export class CameraController {
 
   private readonly moveKeys: MoveKeys
 
+  /**
+   * True while a press that began on a draggable object (a detail window) is
+   * still held. Set on pointer-down — before any move fires — so the map never
+   * pans underneath a window being dragged. A press that starts on a
+   * non-draggable interactive object (e.g. a radar hit target) leaves this false,
+   * so you can still pan the map from there.
+   */
+  private draggingObject = false
+
   constructor(scene: Phaser.Scene, options: CameraControllerOptions) {
     assertValidCenterBounds(options.centerBounds)
     assertValidInitialCenter(options.initialCenter, options.centerBounds)
@@ -135,6 +144,17 @@ export class CameraController {
     scene.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) =>
       this.dragPan(pointer),
     )
+    // A press landing on a draggable object claims the drag for that object (the
+    // window), so the camera must not also pan. Down fires before any move, so the
+    // flag is set in time; clear it on release (over or outside the canvas).
+    scene.input.on(
+      Phaser.Input.Events.GAMEOBJECT_DOWN,
+      (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
+        if (gameObject.input?.draggable) this.draggingObject = true
+      },
+    )
+    scene.input.on(Phaser.Input.Events.POINTER_UP, () => (this.draggingObject = false))
+    scene.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, () => (this.draggingObject = false))
   }
 
   /**
@@ -142,9 +162,10 @@ export class CameraController {
    * cursor at the current zoom (divide the screen delta by zoom to get the world
    * delta). The pointer-move event fires constantly; the `isDown` check is
    * legitimate event filtering (only drag while a button is held), not a bail-out.
+   * Suppressed while a window is being dragged so the map stays put underneath it.
    */
   private dragPan(pointer: Phaser.Input.Pointer): void {
-    if (!pointer.isDown) return
+    if (this.draggingObject || !pointer.isDown) return
     const cam = this.cam
     cam.scrollX -= (pointer.x - pointer.prevPosition.x) / cam.zoom
     cam.scrollY -= (pointer.y - pointer.prevPosition.y) / cam.zoom

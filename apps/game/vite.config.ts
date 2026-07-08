@@ -1,10 +1,11 @@
 import { defineConfig, type Plugin, type Logger } from 'vite'
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
+import { gzipSync } from 'node:zlib'
 
-/** Human-readable byte size, e.g. `2671716` → `"2609.1 kB"`. */
+/** Human-readable byte size, e.g. `2671716` → `"2.55 MB"`. */
 function formatBytes(bytes: number): string {
-  return `${(bytes / 1024).toFixed(1)} kB`
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
 
 /**
@@ -30,6 +31,51 @@ function cell(text: string, width: number, align: Align, colour: (s: string) => 
   return colour(padded)
 }
 
+/**
+ * One table column: its header, body alignment, and an optional colour applied
+ * to body cells (headers are always dim, the total row always bold).
+ */
+interface Column {
+  header: string
+  align: Align
+  colour?: (s: string) => string
+}
+
+/**
+ * Render a titled, bordered table shared by every build-time report so they all
+ * look identical. `rows`/`total` are pre-formatted string cells, one per column.
+ * Returns the block as a single multi-line string ready for `logger.info`.
+ */
+function renderTable(title: string, columns: Column[], rows: string[][], total: string[]): string {
+  const c = makeColors()
+  const dash = (n: number) => '─'.repeat(n)
+  const aligns = columns.map((col) => col.align)
+
+  // Column widths: widest of header, every row, and the total row.
+  const widths = columns.map((col, i) =>
+    Math.max(col.header.length, ...[...rows, total].map((row) => row[i].length)),
+  )
+
+  const border = (l: string, mid: string, r: string) =>
+    c.dim(l + widths.map((w) => dash(w + 2)).join(mid) + r)
+  const line = (cells: string[], colourOf: (i: number) => (s: string) => string) =>
+    c.dim('│ ') + cells.map((t, i) => cell(t, widths[i], aligns[i], colourOf(i))).join(c.dim(' │ ')) + c.dim(' │')
+
+  const out: string[] = []
+  out.push('')
+  out.push(c.bold(c.cyan(`  ✦ ${title}`)))
+  out.push('  ' + border('┌', '┬', '┐'))
+  out.push('  ' + line(columns.map((col) => col.header), () => c.dim))
+  out.push('  ' + border('├', '┼', '┤'))
+  for (const row of rows) {
+    out.push('  ' + line(row, (i) => columns[i].colour ?? ((s) => s)))
+  }
+  out.push('  ' + border('├', '┼', '┤'))
+  out.push('  ' + line(total, () => c.bold))
+  out.push('  ' + border('└', '┴', '┘'))
+  return out.join('\n')
+}
+
 /** One boundary asset's before/after minification measurement. */
 interface MinifyResult {
   name: string
@@ -37,56 +83,89 @@ interface MinifyResult {
   after: number
 }
 
-/**
- * Render the per-file + total measurements as a bordered, right-aligned table.
- * Returns the block as a single multi-line string ready for `logger.info`.
- */
+/** Render the JSON minification measurements as a shared-style table. */
 function renderReport(results: MinifyResult[]): string {
   const c = makeColors()
-  const dash = (n: number) => '─'.repeat(n)
   const pct = (before: number, after: number) =>
     `${(before === 0 ? 0 : (1 - after / before) * 100).toFixed(1)}%`
 
-  const headers = ['file', 'before', 'after', 'saved']
-  const aligns: Align[] = ['l', 'r', 'r', 'r']
-  const rows = results.map((r) => [r.name, formatBytes(r.before), formatBytes(r.after), pct(r.before, r.after)])
+  const columns: Column[] = [
+    { header: 'file', align: 'l' },
+    { header: 'original', align: 'r', colour: c.dim },
+    { header: 'reduced', align: 'r' },
+    { header: 'saved', align: 'r', colour: c.green },
+    { header: 'new', align: 'r' },
+  ]
+  const row = (name: string, before: number, after: number) => [
+    name,
+    formatBytes(before),
+    formatBytes(before - after),
+    pct(before, after),
+    formatBytes(after),
+  ]
 
+  const rows = results.map((r) => row(r.name, r.before, r.after))
   const totalBefore = results.reduce((sum, r) => sum + r.before, 0)
   const totalAfter = results.reduce((sum, r) => sum + r.after, 0)
-  const totalRow = ['total', formatBytes(totalBefore), formatBytes(totalAfter), pct(totalBefore, totalAfter)]
+  return renderTable('JSON minification', columns, rows, row('total', totalBefore, totalAfter))
+}
 
-  // Column widths: widest of header, every row, and the total row.
-  const widths = headers.map((h, i) =>
-    Math.max(h.length, ...rows.map((row) => row[i].length), totalRow[i].length),
-  )
+/**
+ * Replace Vite's native bundle-size report with one in the same MB table style
+ * as the JSON minification report above.
+ *
+ * Vite has no config knob for the size unit — its reporter always prints `kB`,
+ * one line per emitted file. So this does two things: it wraps `logger.info` to
+ * suppress those native `… kB …` lines, then renders its own table from the
+ * bundle in `writeBundle`, measuring each file's raw size and its gzip size
+ * (GitHub Pages serves these gzipped, so the gzip column is the number that
+ * actually ships). Sizes are the as-emitted bytes, before the JSON minification
+ * pass in `closeBundle` — the same point Vite measures — so the two tables tell
+ * a consistent before/after story.
+ */
+function reportBundleSizes(): Plugin {
+  let outDirName = 'dist'
+  let logger: Logger
+  return {
+    name: 'report-bundle-sizes',
+    apply: 'build',
+    configResolved(config) {
+      outDirName = config.build.outDir
+      logger = config.logger
+      const info = logger.info.bind(logger)
+      // Drop Vite's own `… kB …` size lines wherever they appear (batched or
+      // per-line); our table below reports the same files. A message that was
+      // entirely such lines is swallowed rather than logged as blank.
+      logger.info = (msg, opts) => {
+        const kept = msg
+          .split('\n')
+          .filter((line) => !/\d[\d.,]*\s*kB\b/.test(line))
+          .join('\n')
+        if (kept.trim() === '' && msg.trim() !== '') return
+        info(kept, opts)
+      }
+    },
+    writeBundle(_options, bundle) {
+      const files = Object.entries(bundle).map(([fileName, output]) => {
+        const raw = output.type === 'chunk' ? output.code : output.source
+        const content = typeof raw === 'string' ? Buffer.from(raw) : Buffer.from(raw)
+        return { name: `${outDirName}/${fileName}`, size: content.byteLength, gzip: gzipSync(content).length }
+      })
+      if (files.length === 0) return
+      files.sort((a, b) => a.size - b.size)
 
-  const border = (l: string, mid: string, r: string) =>
-    c.dim(l + widths.map((w) => dash(w + 2)).join(mid) + r)
-  const line = (cells: string[], colour: (s: string) => string) =>
-    c.dim('│ ') + cells.map((t, i) => cell(t, widths[i], aligns[i], colour)).join(c.dim(' │ ')) + c.dim(' │')
-
-  const savedColour = (before: number, after: number) => (after < before ? c.green : c.dim)
-
-  const out: string[] = []
-  out.push('')
-  out.push(c.bold(c.cyan('  ✦ JSON minification')))
-  out.push('  ' + border('┌', '┬', '┐'))
-  out.push('  ' + line(headers, c.dim))
-  out.push('  ' + border('├', '┼', '┤'))
-  for (const r of results) {
-    const cells = [r.name, formatBytes(r.before), formatBytes(r.after), pct(r.before, r.after)]
-    const coloured = [
-      cell(cells[0], widths[0], aligns[0], (s) => s),
-      cell(cells[1], widths[1], aligns[1], c.dim),
-      cell(cells[2], widths[2], aligns[2], (s) => s),
-      cell(cells[3], widths[3], aligns[3], savedColour(r.before, r.after)),
-    ]
-    out.push('  ' + c.dim('│ ') + coloured.join(c.dim(' │ ')) + c.dim(' │'))
+      const c = makeColors()
+      const columns: Column[] = [
+        { header: 'file', align: 'l' },
+        { header: 'size', align: 'r' },
+        { header: 'gzip', align: 'r', colour: c.dim },
+      ]
+      const rows = files.map((f) => [f.name, formatBytes(f.size), formatBytes(f.gzip)])
+      const totalSize = files.reduce((sum, f) => sum + f.size, 0)
+      const totalGzip = files.reduce((sum, f) => sum + f.gzip, 0)
+      logger.info(renderTable('bundle output', columns, rows, ['total', formatBytes(totalSize), formatBytes(totalGzip)]))
+    },
   }
-  out.push('  ' + border('├', '┼', '┤'))
-  out.push('  ' + line(totalRow, c.bold))
-  out.push('  ' + border('└', '┴', '┘'))
-  return out.join('\n')
 }
 
 /**
@@ -155,8 +234,11 @@ function minifyJsonAssets(): Plugin {
 export default defineConfig({
   // Set by the GitHub Pages workflow (e.g. "/Sector-North/"); defaults to "/" locally.
   base: process.env.BASE_PATH ?? '/',
-  plugins: [minifyJsonAssets()],
+  plugins: [reportBundleSizes(), minifyJsonAssets()],
   build: {
+    // We render our own bundle-size table (see reportBundleSizes), computing gzip
+    // ourselves, so Vite's own compressed-size pass would be duplicated work.
+    reportCompressedSize: false,
     // Split Phaser into its own long-lived vendor chunk. Phaser (~1.4 MB) never
     // changes between deploys while the game code changes constantly; keeping them
     // separate means a game update only busts the small app chunk's hash, so

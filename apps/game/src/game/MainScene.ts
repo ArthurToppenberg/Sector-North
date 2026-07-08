@@ -21,6 +21,8 @@ import { RadarSweepLayer, type RadarSweepMarker } from './RadarSweepLayer'
 import { CameraController, type CenterBounds } from './CameraController'
 import { DebugHud } from './DebugHud'
 import { Toolbar } from './Toolbar'
+import { type InfoWindowContent } from './InfoWindow'
+import { InfoWindowManager } from './InfoWindowManager'
 
 const AIRPORT_LABEL_PRIORITY: Record<AirportTier, number> = { military: 0, major: 1, minor: 2 }
 const RADAR_LABEL_PRIORITY = 3
@@ -36,6 +38,7 @@ export class MainScene extends Phaser.Scene {
   private cameraController!: CameraController
   private debugHud!: DebugHud
   private toolbar!: Toolbar
+  private infoWindows!: InfoWindowManager
   private uiCamera!: Phaser.Cameras.Scene2D.Camera
 
   // Camera state from the previous frame, so `update` can skip viewport-reactive
@@ -111,7 +114,14 @@ export class MainScene extends Phaser.Scene {
     const coastline = new CoastlineLayer(this, projected.polygons)
     const cityLayer = new CityLayer(this, cityMarkers)
     const airportLayer = new AirportLayer(this, airportMarkers)
-    const radarLayer = new RadarLayer(this, radarMarkers)
+    // Clicking a radar opens a fresh detail window. The layer reports the site
+    // index; the scene owns the radar records and the window manager, so it maps
+    // one to the other. The manager (not `setupCameras`) routes each new window's
+    // objects to the UI camera, since windows are created on click, later.
+    this.infoWindows = new InfoWindowManager(this, this.cameras.main)
+    const radarLayer = new RadarLayer(this, radarMarkers, (index) =>
+      this.infoWindows.toggle(`radar:${index}`, this.radarWindowContent(radars[index])),
+    )
     this.radarSweepLayer = new RadarSweepLayer(
       this,
       this.buildRadarSweepMarkers(radars, projected.project),
@@ -241,6 +251,33 @@ export class MainScene extends Phaser.Scene {
     })
   }
 
+  /**
+   * Map a radar record to the generic detail-window content. This is the radar's
+   * adapter to the type-agnostic `InfoWindow`; towns and airfields get their own
+   * such builder when they become clickable. Null altitude is shown as an honest
+   * "N/A" (a 2D radar publishes no ceiling) — not a masked zero.
+   */
+  private radarWindowContent(radar: Radar): InfoWindowContent {
+    return {
+      title: radar.name,
+      fields: [
+        { label: 'Model', value: radar.model },
+        { label: 'Manufacturer', value: radar.manufacturer },
+        { label: 'Origin', value: radar.origin },
+        { label: 'Type', value: radar.type },
+        { label: 'Dimensionality', value: radar.dimensionality },
+        { label: 'Band', value: `${radar.band}-band` },
+        { label: 'Range', value: `${radar.rangeKm} km` },
+        { label: 'Update interval', value: `${radar.updateIntervalSec} s` },
+        {
+          label: 'Altitude ceiling',
+          value: radar.altitudeCeilingKm === null ? 'N/A' : `${radar.altitudeCeilingKm} km`,
+        },
+        { label: 'Notes', value: radar.notes },
+      ],
+    }
+  }
+
   private buildRadarSweepMarkers(radars: readonly Radar[], project: Projector): RadarSweepMarker[] {
     return radars.map((r) => {
       const [x, y] = project(r.lon, r.lat)
@@ -277,6 +314,7 @@ export class MainScene extends Phaser.Scene {
     this.uiCamera.setSize(this.scale.width, this.scale.height)
     this.debugHud.reposition()
     this.toolbar.reposition()
+    this.infoWindows.reposition()
     // A resize changes the main camera's size without moving scroll/zoom, so the
     // per-frame dirty check won't catch it. The changed width/height also shifts
     // the look-at centre (`scroll + size/2`), so re-clamp the camera back inside
