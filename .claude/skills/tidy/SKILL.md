@@ -1,133 +1,80 @@
 ---
 name: tidy
-description: Orchestrated maintenance sweep for the Sector North codebase — fans out agents to (1) refactor for SRP + fail-fast (kill fallbacks), (2) relocate top-of-file comments into CLAUDE.md and delete valueless comments, (3) update and clean up documentation. Use when the user asks to clean up, refactor, tidy, or refresh docs across the game code.
+description: Scoped, context-cheap cleanup sweep for Sector North. Scopes to the RECENT change set (auto-detected, or a git ref / file list passed as args), analyzes it into disjoint feature clusters, then runs a background Workflow that fans out agents to (1) refactor for SRP + fail-fast, (2) relocate module comments into CLAUDE.md and delete valueless ones — returning only a compact summary + a documentation outline you gate with the user. Use when the user asks to clean up, refactor, tidy, or refresh docs.
 ---
 
-# Tidy — orchestrated codebase maintenance sweep
+# Tidy — scoped, feature-clustered maintenance sweep
 
-This skill runs a three-part cleanup of the game code by **fanning out subagents** (via the
-`Agent` tool) so independent files are processed in parallel. You are the orchestrator: you
-scope the work, spawn agents with precise prompts, verify their output, and gate the final
-part behind a user decision.
+The heavy work runs inside a **Workflow** (`tidy.workflow.js`, bundled next to this file), so
+dozens of agent reports are consumed *inside the script* and never touch your context — only a
+small summary comes back. Your job in the main loop is three things: **scope the change set**,
+**run the workflow**, and **gate the documentation step** with the user.
 
-Run the parts **in order** — 1 → 2 → 3 — because each depends on the previous (refactoring
-changes what comments say; comment relocation changes what the docs must describe). Do not
-skip ahead.
+Context cost stays roughly flat as the repo grows because it scales with the size of the *recent
+change set*, not the whole codebase.
 
-## Non-negotiable guardrails (inject these into every agent prompt)
+## Step 1 — Compute the change set (you do this, before the workflow)
 
-These come from the repo `CLAUDE.md` and `apps/game/CLAUDE.md`. Every agent MUST honor them,
-and you must reject agent output that violates them:
+The scope is **only what recently changed** — never the whole tree. Resolve it in this order:
 
-- **GPS is the source of truth.** Never move lon/lat → pixel logic out of
-  `src/map/project.ts`. Entities keep real lon/lat alongside derived x/y.
-- **Fail fast — no fallbacks.** This is the *goal* of Part 1, not just a constraint.
-- **Module boundary.** `src/map/` is pure TS (no Phaser); `src/game/` does rendering/input.
-  Do not cross the boundary.
-- **HUD is white or black only** (`0xffffff` / `0x000000`). Map geography (coastline green
-  `0x33ff66`) is exempt — it is not HUD.
-- **Camera bounds are locked.** Do NOT touch `ZOOM.min`/`ZOOM.max`, `CAMERA_CENTER_BOUNDS`,
-  or the clamp logic in `CameraController` unless the user explicitly asks in this request.
-- **pnpm only.** Never `npm`/`yarn`; never create `package-lock.json`/`yarn.lock`.
-- **Preserve observable game behavior.** These are refactors and doc changes, not feature
-  changes. If a genuine behavior change seems required, stop and surface it — don't guess.
+1. **If the user passed args** (`$ARGUMENTS`):
+   - Looks like a git ref (e.g. `HEAD~3`, a branch, a SHA) → scope = `git diff --name-only <ref>...HEAD`, and `baseRef = <ref>`.
+   - Looks like file path(s) → scope = exactly those files, `baseRef = null`.
+2. **No args → auto-detect:**
+   - `git status --porcelain` shows changes → scope = those files, `baseRef = null` (working tree).
+   - Else `git diff --name-only origin/main...HEAD` is non-empty → scope = those files, `baseRef = origin/main`.
+   - Else **STOP** and tell the user there's nothing to tidy (fail fast — do NOT invent work on unchanged files).
+3. **Filter the file list** to source only: keep `apps/game/src/**/*.ts`; drop `src/data/*` (bundled
+   assets), `*.d.ts`, `dist`, `node_modules`, and anything generated. If nothing survives, STOP.
 
-## Phase 0 — Scope the work (you do this yourself, before any agent)
+Then announce the plan briefly: which files, which base, and that the sweep edits the working tree
+(nothing is committed). If `baseRef` is `null` (working-tree scope), those uncommitted edits *are*
+the scope — that's expected.
 
-1. If the user named specific files/dirs in their request, use those. Otherwise default to
-   all TypeScript under `apps/game/src/` (`src/game/*.ts` and `src/map/*.ts`). Do **not**
-   process `src/data/*` (bundled assets), `node_modules`, `dist`, or generated files.
-2. Check the working tree: `git status --short`. If there are substantial uncommitted
-   changes, tell the user this sweep will edit the working tree and recommend they commit or
-   stash first. Proceed once acknowledged (or if the tree is already clean-ish).
-3. Read both `CLAUDE.md` files fully so you can judge agent output against them.
-4. Build the file work-list and announce the plan (which files, how many agents).
+## Step 2 — Run the workflow
 
-## Part 1 — Refactor (SRP · future-proof · fail fast)
+Call the `Workflow` tool with the bundled script and the scope as `args`:
 
-Fan out **one agent per source file** (batch independent files in a single message so they
-run concurrently). Each agent's job, on its ONE file:
+```
+Workflow({
+  scriptPath: "/Users/arthurtoppenberg/Documents/github/Sector-North/.claude/skills/tidy/tidy.workflow.js",
+  args: { files: ["apps/game/src/..."], baseRef: "origin/main" }   // baseRef null for working-tree scope
+})
+```
 
-- **SRP:** each module/class/function does one thing. Split mixed responsibilities; move
-  misplaced logic toward where it belongs (respecting the map/game boundary). Prefer small,
-  focused, well-named units.
-- **Future-proof:** remove dead code, tighten types (no stray `any`), replace magic numbers
-  that describe on-screen sizes with entries in `src/game/config.ts` per the app rules, and
-  keep tunables in config / logic in layers.
-- **Kill fallbacks (the priority):** hunt down and eliminate every "stupid fallback" so the
-  game fails loudly:
-  - `try/catch` that only exists to keep going → let it throw.
-  - Default/placeholder values masking a missing input (e.g. `?? 0`, `|| {}`, projection
-    defaulting to `0,0`, a guessed config value) → validate up front and `throw`.
-  - `null`/`undefined` returned to signal failure → throw an explicit `Error` with a clear
-    message instead.
-  - Silent swallowing of errors → remove; surface them.
-  - Validate inputs/preconditions at the top of functions and throw on anything unexpected.
+The script runs, in order: **Analyze** (cluster the changed files into disjoint features) →
+**Refactor** (one agent per feature, SRP + kill every fallback) → **Shared edits** (serialize any
+edits to files shared across clusters, e.g. `config.ts`) → **Typecheck** (`tsc --noEmit`, one fix
+pass if it fails) → **Comments** (relocate module blocks into the right `CLAUDE.md`, delete
+valueless comments) → build a **documentation outline** (no edits).
 
-Agent prompt template (fill in `<FILE>` and paste the guardrails above):
+It returns a compact object: `{ scope, clusters, refactor, sharedEdits, typecheck, comments,
+part3Outline }`. If `typecheck.ok` is false in the result, dispatch a fix (or a follow-up agent)
+before continuing. If the workflow returns an empty/odd result, read the run's `journal.jsonl` in
+its transcript dir to see what each agent actually returned before re-running.
 
-> You are refactoring exactly one file: `<FILE>` in the Sector North game (a Phaser + TS
-> map game). Read it and its imports for context. Apply: SRP, future-proofing, and
-> **fail-fast (eliminate every fallback)** as described. GUARDRAILS: <paste guardrails>.
-> Do NOT change observable game behavior. Do NOT edit any other file except to move
-> genuinely misplaced logic across the map/game boundary (note it if you do). When done,
-> report: (a) a concise bullet list of changes, (b) every fallback you removed and what it
-> now does instead, (c) anything you deliberately left alone and why.
+## Step 3 — Gate the documentation changes (interactive)
 
-After all agents return:
-- Run the typecheck: `pnpm exec tsc --noEmit` from `apps/game` (or `pnpm --filter
-  sector-north-game typecheck`). Fix or dispatch fixes for any errors before moving on.
-- Summarize Part 1 for the user (files touched, fallbacks removed).
+`part3Outline` is a list of *proposed* doc edits (`{ file, action, detail, why }`) — nothing has
+been written. Present it to the user with `AskUserQuestion` and apply only what they approve:
 
-## Part 2 — Comments → documentation
+- Few proposals → one question: **Apply all · Choose a subset · Skip**.
+- Many proposals → a `multiSelect` question listing each proposed change so they tick which to apply.
 
-Goal: move **top-of-file / module-level explanatory comment blocks** (the "why this module
-exists / why it's designed this way" headers) out of the code and into the appropriate
-`CLAUDE.md`, and **delete comments that carry no value**.
-
-Judgment rules (encode these into the agents):
-
-- **Relocate, don't destroy:** a top-of-file block that explains architecture, rationale, or
-  a design decision (e.g. the `svgIcon.ts` base64/`atob` explanation, the `AirportMarker`
-  GPS-source-of-truth note) is knowledge — move its substance into the relevant `CLAUDE.md`
-  (`apps/game/CLAUDE.md` for app conventions; root `CLAUDE.md` for project-wide rules),
-  folding it into existing sections rather than dumping raw. Then remove/trim it from the
-  file.
-- **Keep in place:** short inline `// why` comments that only make sense at a specific line
-  (a non-obvious gotcha next to the code it guards). These stay — do not force local "why"
-  notes into the docs.
-- **Delete outright:** comments that restate the code (`// increment i`), stale/obsolete
-  comments, commented-out code, and redundant JSDoc that adds nothing over the signature.
-
-Because this part edits shared `CLAUDE.md` files, do NOT let multiple agents write the same
-`CLAUDE.md` concurrently. Structure it as:
-1. Fan out **read-only** analyzer agents (one per file) that return: comment blocks to
-   relocate (with proposed target CLAUDE.md + section), and comments to delete — no edits.
-2. You (the orchestrator) merge their proposals, then apply CLAUDE.md edits yourself in one
-   pass to avoid write races.
-3. Fan out editor agents (one per source file) to remove/trim the relocated blocks and
-   delete the valueless comments in their file only.
-
-Re-run the typecheck after edits (comment removal shouldn't break it, but confirm), then
-summarize what moved and what was deleted.
-
-## Part 3 — Documentation (gated by a user decision)
-
-Do NOT edit documentation blindly here. Instead:
-
-1. Review the docs: both `CLAUDE.md` files, `apps/game/src/data/borders/readme.md`, any
-   `README`, and top-level docs. Cross-check them against the now-refactored code and the
-   comments relocated in Part 2 — find stale statements, gaps, duplication, and anything the
-   refactor made inaccurate.
-2. **Outline** your proposed documentation changes as a concrete, specific list (per file:
-   what you'd add/rewrite/remove and why).
-3. Present that outline to the user with the `AskUserQuestion` tool and let them choose what
-   to apply (e.g. "Apply all", "Apply a subset", "Revise the outline", "Skip"). Do not
-   proceed until they answer.
-4. Apply only what the user approved.
+Apply the approved edits yourself in the main loop (you already hold the outline + their choice).
+Then re-run the typecheck if any doc change touched code-adjacent files (rare).
 
 ## Wrap-up
 
-Give the user a final summary across all three parts, and a `git diff --stat` overview so
-they can review. Remind them these are working-tree edits (nothing committed) and suggest
-running `/verify` or `/run` if they want to confirm the game still behaves correctly.
+Give a final summary from the returned object (features cleaned, fallbacks removed, comments
+relocated/deleted, typecheck status, docs applied) and run `git diff --stat` so the user can
+review. Remind them nothing is committed, and suggest `/verify` or `/run` to confirm the game still
+behaves correctly.
+
+## Guardrails
+
+The non-negotiable repo rules (GPS-as-source-of-truth, fail-fast/no-fallbacks, map/game module
+boundary, HUD white-or-black, locked camera bounds, pnpm-only, preserve observable behavior) are
+embedded in the workflow script and injected into every agent prompt. If you ever run a step
+manually instead of via the workflow, inject the same guardrails and reject output that violates
+them.
