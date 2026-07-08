@@ -27,12 +27,14 @@ function parseCity(entry: unknown, index: number): City {
 
   if (typeof city !== 'string' || city.length === 0) fail(`city ${index} has no name`)
 
-  return {
-    name: city,
-    lat: finiteNumber(latitude, `city ${city} has invalid latitude`),
-    lon: finiteNumber(longitude, `city ${city} has invalid longitude`),
-    population: finiteNumber(population, `city ${city} has invalid population`),
-  }
+  const lat = finiteNumber(latitude, `city ${city} has invalid latitude`)
+  const lon = finiteNumber(longitude, `city ${city} has invalid longitude`)
+  const pop = finiteNumber(population, `city ${city} has invalid population`)
+  if (lat < -90 || lat > 90) fail(`city ${city} has out-of-range latitude: ${lat}`)
+  if (lon < -180 || lon > 180) fail(`city ${city} has out-of-range longitude: ${lon}`)
+  if (pop < 0) fail(`city ${city} has negative population: ${pop}`)
+
+  return { name: city, lat, lon, population: pop }
 }
 
 /**

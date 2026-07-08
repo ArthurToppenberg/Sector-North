@@ -1,6 +1,4 @@
-// Turns raw Lucide SVG markup into a HUD-white, base64 data-URI texture for
-// Phaser. See "HUD icons are SVGs baked into textures" in apps/game/CLAUDE.md
-// for why white is baked in and why the payload must be base64, not percent-encoded.
+// Turns raw Lucide SVG markup into a HUD-white, base64 data-URI texture for Phaser.
 
 const CURRENT_COLOR = 'currentColor'
 const HUD_WHITE = '#ffffff'

@@ -60,17 +60,17 @@ function parsePosition(value: unknown, ctx: string): LonLat {
   if (!Array.isArray(value) || value.length < 2) {
     fail(`${ctx}: position is not a [lon, lat] pair: ${JSON.stringify(value)}`)
   }
-  const [lon, lat] = value as unknown[]
-  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+  const [lon, lat] = value
+  if (typeof lon !== 'number' || typeof lat !== 'number' || !Number.isFinite(lon) || !Number.isFinite(lat)) {
     fail(`${ctx}: non-finite position ${JSON.stringify(value)}`)
   }
-  if ((lon as number) < -180 || (lon as number) > 180) {
+  if (lon < -180 || lon > 180) {
     fail(`${ctx}: longitude out of range: ${JSON.stringify(lon)}`)
   }
-  if ((lat as number) < -90 || (lat as number) > 90) {
+  if (lat < -90 || lat > 90) {
     fail(`${ctx}: latitude out of range: ${JSON.stringify(lat)}`)
   }
-  return [lon as number, lat as number]
+  return [lon, lat]
 }
 
 /** Validate a single closed ring, throwing on the first bad position. */

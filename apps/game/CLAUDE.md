@@ -9,7 +9,10 @@ the repo-root `CLAUDE.md` and apply here in full.
 - `src/map/` — **world data + projection.** Pure TypeScript, no Phaser imports.
   - `geojson.ts` / `cities.ts` / `airports.ts` — load and strictly validate the
     bundled data (throw on any structural surprise; the data is a fixed build-time
-    asset, so anything unexpected is a bug we want to see immediately).
+    asset, so anything unexpected is a bug we want to see immediately). Validation is
+    not just structural: every lon/lat is range-checked against WGS84 bounds
+    (lon −180..180, lat −90..90) and rejected if non-finite, so a swapped or corrupt
+    coordinate fails fast at load rather than projecting to a wrong pixel.
   - `project.ts` — the projection layer (see below).
 - `src/game/` — **Phaser rendering + input.** Consumes projected output; never parses
   GeoJSON or re-derives the projection.
@@ -21,6 +24,15 @@ the repo-root `CLAUDE.md` and apply here in full.
     the parsed JSON.
   - `major-cities.json` and `airports.json` — imported via Vite `?raw` (inlined at build
     time and parsed by `cities.ts` / `airports.ts`).
+
+`loadAirports()` does more than parse: it merges co-located fields. A military airbase
+within `MILITARY_MERGE_RADIUS_KM` of a major civil airport is collapsed into a single
+combined field — one large *military* marker labelled `"<civil> & <military>"`, placed at
+the pair's midpoint (several Danish sites, e.g. Aalborg / Karup / Skrydstrup, share civil
+and military runways a couple of km apart). The merge radius is a **real-world km
+distance**, so it lives in `airports.ts` (the world layer, in km) — not in `config.ts`,
+which holds only on-screen pixel constants. This is the "GPS is the source of truth" rule
+applied to a data transform: proximity is judged in real geographic distance, never pixels.
 
 New code must respect this split: geographic reasoning goes in `src/map/`, drawing and
 input go in `src/game/`.
