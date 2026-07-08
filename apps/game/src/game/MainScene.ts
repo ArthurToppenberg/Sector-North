@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { loadBoundaries, BOUNDARY_ASSETS } from '../map/geojson'
+import { loadBoundaries, BOUNDARY_ASSETS, PROJECTION_FRAME_ASSETS } from '../map/geojson'
 import { loadMajorCities, type City } from '../map/cities'
 import { loadAirports, type AirportTier, type Airport } from '../map/airports'
 import { loadRadars, type Radar } from '../map/radars'
@@ -67,17 +67,25 @@ export class MainScene extends Phaser.Scene {
 
   create() {
     // Load + validate the world data (each throws loudly on anything unexpected).
-    const geometry = loadBoundaries((name) => this.cache.json.get(this.boundaryCacheKey(name)))
+    const getJson = (name: string) => this.cache.json.get(this.boundaryCacheKey(name))
+    const geometry = loadBoundaries(getJson)
+    // The projection/zoom is pinned to a fixed frame (the original Denmark-centred
+    // set), so boundaries added purely for context don't rescale the map.
+    const frame = loadBoundaries(getJson, PROJECTION_FRAME_ASSETS)
     const cities = loadMajorCities()
     const airports = loadAirports()
     const radars = loadRadars()
 
     const { width, height } = this.scale
-    const projected = projectToPixels(geometry, {
-      width,
-      height,
-      padding: MAP.padding * DPR,
-    })
+    const projected = projectToPixels(
+      geometry,
+      {
+        width,
+        height,
+        padding: MAP.padding * DPR,
+      },
+      frame,
+    )
 
     const poiInputs = this.buildColocationInputs(airports, radars)
     const poiClusters = clusterByProximity(poiInputs, COLOCATION_RADIUS_KM)

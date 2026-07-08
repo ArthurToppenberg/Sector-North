@@ -21,8 +21,9 @@ the repo-root `CLAUDE.md` and apply here in full.
   `camera.ts` (camera → world-view geometry).
 - `src/data/` — bundled data assets. Coordinates are lon/lat (WGS84); prefer simplified
   geometry (fewer points = faster to draw). Two import mechanisms:
-  - Country boundaries — `borders/*.json` (currently denmark, germany, netherlands,
-    norway, poland, sweden) imported via Vite `?url`, so each file is emitted to `dist/`
+  - Country boundaries — `borders/*.json` (currently belgium, czechia, denmark, france,
+    germany, latvia, lithuania, netherlands, norway, poland, russia, slovakia, sweden,
+    united-kingdom) imported via Vite `?url`, so each file is emitted to `dist/`
     and fetched at runtime rather than inlined into the JS bundle; `geojson.ts` validates
     the parsed JSON.
   - `major-cities.json`, `airports.json` and `radars.json` — imported via Vite `?raw`
@@ -60,8 +61,19 @@ input go in `src/game/`.
 The heart of the "GPS is the source of truth" design — the **only** place that knows how
 lon/lat becomes pixels.
 
-- `projectToPixels(geometry, viewport)` fits the mapped geometry (Denmark + its
-  neighbours, as one combined MultiPolygon) to the viewport **once** and returns:
+- **The fit is pinned to a fixed frame, not to whatever is loaded.** `projectToPixels`
+  takes an optional third `fitGeometry` argument; the scale, origin, `pixelsPerKm`, and
+  therefore the projected camera bounds are computed from *that* set only, while all of
+  `geometry` is drawn through the resulting projector. `MainScene` passes
+  `PROJECTION_FRAME_ASSETS` (the original Denmark-centred six: denmark, germany,
+  netherlands, norway, poland, sweden) as the frame. **This is load-bearing for the locked
+  zoom:** the map's scale and the projected `CAMERA_CENTER_BOUNDS` depend on the fit, so
+  adding a country to `BOUNDARY_ASSETS` for context (belgium, france, the Baltics, russia,
+  etc.) draws it *without* rescaling the map or changing the zoom. Never fold context
+  boundaries into the frame, and never fit to the full geometry — either silently changes
+  the zoom, which is a locked setting (see the camera-bounds rule below).
+- `projectToPixels(geometry, viewport, fitGeometry?)` fits `fitGeometry` (default:
+  `geometry`) to the viewport **once** and returns:
   - `project(lon, lat)` — the single lon/lat → pixel transform. Every overlay (city
     markers, future aircraft, anything placed on the map) must route through this
     function rather than re-deriving the fit.

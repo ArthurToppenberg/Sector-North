@@ -1,9 +1,17 @@
+import belgiumUrl from '../data/borders/belgium-boundary.json?url'
+import czechiaUrl from '../data/borders/czechia-boundary.json?url'
 import denmarkUrl from '../data/borders/denmark-boundary.json?url'
+import franceUrl from '../data/borders/france-boundary.json?url'
 import germanyUrl from '../data/borders/germany-boundary.json?url'
+import latviaUrl from '../data/borders/latvia-boundary.json?url'
+import lithuaniaUrl from '../data/borders/lithuania-boundary.json?url'
 import netherlandsUrl from '../data/borders/netherlands-boundary.json?url'
 import norwayUrl from '../data/borders/norway-boundary.json?url'
 import polandUrl from '../data/borders/poland-boundary.json?url'
+import russiaUrl from '../data/borders/russia-boundary.json?url'
+import slovakiaUrl from '../data/borders/slovakia-boundary.json?url'
 import swedenUrl from '../data/borders/sweden-boundary.json?url'
+import unitedKingdomUrl from '../data/borders/united-kingdom-boundary.json?url'
 
 export type LonLat = [number, number]
 
@@ -19,13 +27,46 @@ export interface BoundaryAsset {
 }
 
 export const BOUNDARY_ASSETS: ReadonlyArray<BoundaryAsset> = [
+  { name: 'belgium', url: belgiumUrl },
+  { name: 'czechia', url: czechiaUrl },
   { name: 'denmark', url: denmarkUrl },
+  { name: 'france', url: franceUrl },
   { name: 'germany', url: germanyUrl },
+  { name: 'latvia', url: latviaUrl },
+  { name: 'lithuania', url: lithuaniaUrl },
   { name: 'netherlands', url: netherlandsUrl },
   { name: 'norway', url: norwayUrl },
   { name: 'poland', url: polandUrl },
+  { name: 'russia', url: russiaUrl },
+  { name: 'slovakia', url: slovakiaUrl },
   { name: 'sweden', url: swedenUrl },
+  { name: 'united-kingdom', url: unitedKingdomUrl },
 ]
+
+/**
+ * The countries whose combined extent defines the projection/zoom frame — the
+ * original Denmark-centred set. The map fit (scale, `pixelsPerKm`, and therefore
+ * the projected camera bounds) is pinned to THIS set only, so adding further
+ * boundaries to `BOUNDARY_ASSETS` for context (e.g. Russia) draws them without
+ * rescaling the map or changing the zoom. Every name here must exist in
+ * `BOUNDARY_ASSETS`; the filter below throws if that ever drifts.
+ */
+const PROJECTION_FRAME_NAMES: ReadonlyArray<string> = [
+  'denmark',
+  'germany',
+  'netherlands',
+  'norway',
+  'poland',
+  'sweden',
+]
+
+export const PROJECTION_FRAME_ASSETS: ReadonlyArray<BoundaryAsset> = PROJECTION_FRAME_NAMES.map(
+  (name) => {
+    const asset = BOUNDARY_ASSETS.find((a) => a.name === name)
+    if (!asset) fail(`projection frame references unknown boundary: ${name}`)
+    return asset
+  },
+)
 
 function fail(message: string): never {
   throw new Error(`[map/geojson] ${message}`)
@@ -114,6 +155,9 @@ function parseBoundary(parsed: unknown, name: string): MultiPolygon {
   })
 }
 
-export function loadBoundaries(getJson: (name: string) => unknown): MultiPolygon {
-  return BOUNDARY_ASSETS.flatMap(({ name }) => parseBoundary(getJson(name), name))
+export function loadBoundaries(
+  getJson: (name: string) => unknown,
+  assets: ReadonlyArray<BoundaryAsset> = BOUNDARY_ASSETS,
+): MultiPolygon {
+  return assets.flatMap(({ name }) => parseBoundary(getJson(name), name))
 }

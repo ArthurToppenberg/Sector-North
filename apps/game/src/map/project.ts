@@ -184,10 +184,21 @@ function projectRings(geometry: MultiPolygon, project: Projector): Float32Array[
  * projection formula. Every precondition (viewport, geometry extent, per-point
  * finiteness) is validated by the step that needs it; nothing degrades to a
  * placeholder fit.
+ *
+ * `fitGeometry` is the geometry the fit (scale, origin, `pixelsPerKm`) is
+ * computed from; it defaults to `geometry`. Pass a fixed subset here to pin the
+ * map's scale/zoom to a stable frame so that adding further geometry to
+ * `geometry` (drawn for context) does not rescale the map — see
+ * `PROJECTION_FRAME_ASSETS`. Both share one projector, so all of `geometry`
+ * still lands in the same coordinate space.
  */
-export function projectToPixels(geometry: MultiPolygon, viewport: Viewport): ProjectedMap {
+export function projectToPixels(
+  geometry: MultiPolygon,
+  viewport: Viewport,
+  fitGeometry: MultiPolygon = geometry,
+): ProjectedMap {
   const area = drawableArea(viewport)
-  const fit = computeFit(boundingBox(geometry), area, viewport)
+  const fit = computeFit(boundingBox(fitGeometry), area, viewport)
   const project = makeProjector(fit)
 
   return {

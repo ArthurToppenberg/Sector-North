@@ -1,7 +1,8 @@
 # Country boundaries
 
 Boundary geometry for the mapped countries, one GeoJSON file per country. Currently
-bundled: **denmark, germany, netherlands, norway, poland, sweden**.
+bundled: **belgium, czechia, denmark, france, germany, latvia, lithuania, netherlands,
+norway, poland, russia, slovakia, sweden, united-kingdom**.
 
 - **Source:** https://www.geoboundaries.org/countryDownloads.html
 - **Coordinates:** lon/lat degrees (WGS84 / CRS84). Prefer simplified geometry — fewer

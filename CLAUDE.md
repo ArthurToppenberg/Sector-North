@@ -63,6 +63,23 @@ all costs.
 - If a dependency, file, or environment value is missing, stop and report it — never
   degrade to a partial or fake result.
 
+## Moving/deleting files — never pair `rm -rf` with an unverified move
+
+When relocating files, do the destructive step **only after** the move has provably
+succeeded. A real incident: a batch script ran `git mv <src> <dst>` followed by
+`rm -rf <src-dir>` in a loop. The files were untracked, so every `git mv` failed silently
+per-item — but the unconditional `rm -rf` still ran and deleted the sources before they
+were ever copied. The only reason nothing was permanently lost is that the data happened
+to be re-downloadable.
+
+- Use plain `mv` to move files, not `git mv`, unless the source is already tracked
+  (`git mv` fails on untracked paths). git will pick the rename up on the next `add`.
+- Never delete a source in the same unconditional step as the move. Either move-then-verify
+  (`mv src dst && test -e dst`) before any `rm`, or skip the separate delete entirely — a
+  successful `mv` already removes the source.
+- `rm -rf` bypasses the Trash; there is no undo. Treat it as irreversible and never run it
+  on a path you have not confirmed is redundant.
+
 ## Package manager
 
 This is a **pnpm workspace**. Use `pnpm` only — never `npm` or `yarn`. Do not create
