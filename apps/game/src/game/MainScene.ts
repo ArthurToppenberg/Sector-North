@@ -30,6 +30,8 @@ const RADAR_LABEL_PRIORITY = 3
  */
 export class MainScene extends Phaser.Scene {
   private gridLayer!: GridLayer
+  // Held as a field (unlike the city/airport/radar marker layers, which stay
+  // locals in `create`) because it animates on the update tick — see `update`.
   private radarSweepLayer!: RadarSweepLayer
   private cameraController!: CameraController
   private debugHud!: DebugHud

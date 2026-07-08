@@ -118,11 +118,14 @@ const DOC_OUTLINE_SCHEMA = {
 }
 
 // ── Inputs (computed by the main loop, passed verbatim) ──
-if (!args || !Array.isArray(args.files) || args.files.length === 0) {
+// The runtime may hand `args` through as a JSON string rather than an object;
+// parse that case so a stringified payload doesn't read as an empty change set.
+const input = typeof args === 'string' ? JSON.parse(args) : args
+if (!input || !Array.isArray(input.files) || input.files.length === 0) {
   throw new Error('tidy workflow requires args.files (non-empty). The change set was empty — nothing to tidy.')
 }
-const files = args.files
-const baseRef = args.baseRef ?? null
+const files = input.files
+const baseRef = input.baseRef ?? null
 const fileList = files.map((f) => '  - ' + f).join('\n')
 const diffHint = baseRef
   ? `The relevant changes are the diff against ${baseRef}; run \`git diff ${baseRef} -- <file>\` to see exactly what changed.`

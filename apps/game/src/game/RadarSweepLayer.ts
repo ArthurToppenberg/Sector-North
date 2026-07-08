@@ -22,11 +22,10 @@ function fail(message: string): never {
  * Pixels-per-km must be finite and positive: every range radius is derived from
  * it, so a zero/NaN value would collapse or poison the whole layer's geometry.
  */
-function assertPixelsPerKm(pixelsPerKm: number): number {
+function assertPixelsPerKm(pixelsPerKm: number): void {
   if (!Number.isFinite(pixelsPerKm) || pixelsPerKm <= 0) {
     fail(`pixelsPerKm must be finite and > 0, got ${pixelsPerKm}`)
   }
-  return pixelsPerKm
 }
 
 /**
@@ -50,15 +49,6 @@ function assertMarkers(markers: readonly RadarSweepMarker[]): void {
   })
 }
 
-/**
- * Animated radar coverage sweeps: one rotating hand per site, its length the real
- * detection range and its rotation period the antenna's real revolution time,
- * plus a faint static ring marking the range extent. All geometry is world-space
- * (km → pixels via `pixelsPerKm`), so a sweep covers the same patch of ground at
- * every zoom; only the stroke widths are re-derived per frame to hold a constant
- * on-screen thickness. Redrawn every frame (a handful of sites) off the scene's
- * update tick, so — unlike the static marker layers — it needs no zoom handler.
- */
 export class RadarSweepLayer {
   private readonly gfx: Phaser.GameObjects.Graphics
   private readonly markers: readonly RadarSweepMarker[]
@@ -109,7 +99,6 @@ export class RadarSweepLayer {
       this.gfx.strokeCircle(this.markers[i].x, this.markers[i].y, this.rangePx[i])
     }
 
-    // Advance and draw each rotating sweep hand.
     this.gfx.lineStyle(lineWidth, RADAR.sweep.color, RADAR.sweep.lineAlpha)
     for (let i = 0; i < this.markers.length; i++) {
       const m = this.markers[i]

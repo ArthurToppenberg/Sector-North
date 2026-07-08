@@ -7,7 +7,14 @@ export interface Radar {
   model: string
   lon: number
   lat: number
-  /** Who built it and where — flavour/attribution metadata. */
+  /** Detection/instrumented range in real kilometres — the sweep hand's length. */
+  rangeKm: number
+  /** Antenna sweep period in seconds (time between updates on a given bearing). */
+  updateIntervalSec: number
+  // Researched flavour/spec metadata. Not yet consumed by rendering — kept
+  // validated and in sync with radars.json for future info fields (site readouts,
+  // 2D-vs-3D altitude and band-based mechanics discussed for later).
+  /** Who built it and where. */
   manufacturer: string
   origin: string
   /** Human-readable classification, e.g. "3D long-range air surveillance radar". */
@@ -16,16 +23,12 @@ export interface Radar {
   dimensionality: RadarDimensionality
   /** IEEE frequency band letter, e.g. "L" or "S". */
   band: string
-  /** Detection/instrumented range in real kilometres. */
-  rangeKm: number
   /**
    * Altitude coverage ceiling in real kilometres, or null when the sensor does
    * not measure/publish one (e.g. a 2D primary surveillance radar). Null is an
    * honest "not applicable", never a masked missing value.
    */
   altitudeCeilingKm: number | null
-  /** Antenna sweep period in seconds (time between updates on a given bearing). */
-  updateIntervalSec: number
   /** Short game-facing description of role and notable capabilities. */
   notes: string
 }
@@ -94,14 +97,14 @@ function parseRadar(entry: unknown, index: number): Radar {
     model,
     lon,
     lat,
+    rangeKm,
+    updateIntervalSec,
     manufacturer,
     origin,
     type,
     dimensionality,
     band,
-    rangeKm,
     altitudeCeilingKm,
-    updateIntervalSec,
     notes,
   } = entry as Record<string, unknown>
 
@@ -111,14 +114,14 @@ function parseRadar(entry: unknown, index: number): Radar {
     model: requireNonEmptyString(model, 'model', validName),
     lon: requireCoordinate(lon, 'lon', LON_RANGE, validName),
     lat: requireCoordinate(lat, 'lat', LAT_RANGE, validName),
+    rangeKm: requirePositiveNumber(rangeKm, 'rangeKm', validName),
+    updateIntervalSec: requirePositiveNumber(updateIntervalSec, 'updateIntervalSec', validName),
     manufacturer: requireNonEmptyString(manufacturer, 'manufacturer', validName),
     origin: requireNonEmptyString(origin, 'origin', validName),
     type: requireNonEmptyString(type, 'type', validName),
     dimensionality: requireDimensionality(dimensionality, validName),
     band: requireNonEmptyString(band, 'band', validName),
-    rangeKm: requirePositiveNumber(rangeKm, 'rangeKm', validName),
     altitudeCeilingKm: requireNullablePositiveNumber(altitudeCeilingKm, 'altitudeCeilingKm', validName),
-    updateIntervalSec: requirePositiveNumber(updateIntervalSec, 'updateIntervalSec', validName),
     notes: requireNonEmptyString(notes, 'notes', validName),
   }
 }

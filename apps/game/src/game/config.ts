@@ -114,16 +114,15 @@ export const RADAR = {
    */
   labelRevealZoom: 11,
   /**
-   * The animated coverage sweep: a rotating "hand" whose length is the site's real
-   * detection range and whose rotation period is the antenna's real revolution
-   * time, plus a faint static ring at the range extent. The radius is a real-world
-   * distance (km × `pixelsPerKm`), so it lives in world space and zooms with the
-   * map — only the stroke widths below are constant on screen.
+   * The animated coverage sweep (see the "Every-frame / animated" reaction-pattern note
+   * in `apps/game/CLAUDE.md`): its geometry is a real-world distance (km × `pixelsPerKm`),
+   * so it lives in world space and zooms with the map — only the stroke widths below are
+   * constant on screen.
    *
-   * Drawn in the coastline's phosphor green (`MAP.strokeColor`), not white: this is
-   * a deliberate, user-requested exception to the HUD white/black rule so the sweep
-   * reads as part of the tactical radar picture alongside the borders. See the HUD
-   * colour rule in the root `CLAUDE.md`.
+   * Drawn in phosphor green (`MAP.strokeColor`), not white — a deliberate,
+   * user-requested exception to the HUD white/black rule so the sweep reads as part of
+   * the tactical radar picture alongside the borders. See the HUD colour rule in the
+   * root `CLAUDE.md`.
    */
   sweep: {
     /** Sweep-hand line width on screen (CSS pixels), held constant across zoom. */
@@ -251,26 +250,15 @@ export const KEY_PAN_SPEED = 700
 
 /**
  * The play area: fixed limits for where the camera CENTRE (the world point it
- * looks at) may roam, expressed as a **geographic** lon/lat box.
+ * looks at) may roam, as a geographic lon/lat box (WGS84). Sized to the full
+ * radar-coverage footprint so the player can pan out over all the watched
+ * airspace; `MainScene` projects these four corners via `project()` at load
+ * (GPS is the source of truth — never pixel bounds).
  *
- * Sized to encompass the **full radar coverage footprint** (the union of every
- * site's detection range, which reaches ~470-500 km out from Skagen and Bornholm),
- * so the player can pan out to see all the airspace the radars watch — not just
- * Denmark itself. The opening framing is held on Denmark separately via
- * `CAMERA_INITIAL_CENTER` below, so widening the roam box doesn't move where the
- * map first opens.
- *
- * Kept in lon/lat — not pixels — on purpose: pixel bounds would break the moment
- * the projection changes (adding a country rescales/shifts the whole map) or the
- * window is resized. `MainScene` runs these four corners through the projection's
- * `project()` at load to derive the world-pixel clamp box, so the play area
- * always tracks the same real-world patch of Earth. This is the "GPS is the
- * source of truth" rule applied to the camera. Degrees are WGS84.
- *
- * These were widened from the original Denmark-only box with the user's explicit
- * permission (2026-07-08) to reveal the radar coverage. Otherwise DO NOT change
- * these values (or the ZOOM min/max above) without an explicit request from the
- * user — see the "Camera bounds are locked" rule in `apps/game/CLAUDE.md`.
+ * LOCKED — widened from the original Denmark-only box at the user's explicit
+ * request (2026-07-08) to reveal the radar coverage. Do not change these values
+ * (or the ZOOM min/max above) without a fresh explicit request. See the "Camera
+ * bounds are locked" rule in `apps/game/CLAUDE.md`.
  */
 export const CAMERA_CENTER_BOUNDS = {
   /** Longitude (°E) extents — out to the west/east edges of the radar coverage. */
@@ -282,9 +270,10 @@ export const CAMERA_CENTER_BOUNDS = {
 } as const
 
 /**
- * The geographic point the map is framed on at startup (central Denmark). Kept
- * separate from `CAMERA_CENTER_BOUNDS` so the pan box can extend far out over the
- * radar coverage while the game still opens looking at Denmark. Degrees are WGS84.
+ * The lon/lat the map is framed on at startup (central Denmark), kept separate
+ * from `CAMERA_CENTER_BOUNDS` so the roam box and the opening view stay
+ * independent (widening the box doesn't move where the map opens). WGS84. See
+ * `apps/game/CLAUDE.md`.
  */
 export const CAMERA_INITIAL_CENTER = {
   lon: 10.75,

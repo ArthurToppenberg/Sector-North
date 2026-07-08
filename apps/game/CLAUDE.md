@@ -89,13 +89,22 @@ lon/lat becomes pixels.
   layers, camera controller, and HUD, and forwards signals (update tick, resize, zoom
   change). Rendering and input logic belong in the layer/controller classes, not in the
   scene.
-- **Two reaction patterns for layers — pick the right one:**
+- **Three reaction patterns for layers — pick the right one:**
   - *Zoom-reactive* (coastline stroke width, city / airport / radar marker/label sizing):
     refreshed via the camera controller's `onZoomChanged` fan-out in `MainScene`. New
     zoom-reactive layers are added to that one callback, not wired at individual call sites.
   - *Viewport-reactive* (grid slice, HUD readout): runs in `update`, guarded by the
     camera-moved dirty check so idle frames do no work. Remember that a window resize
     changes the viewport without moving the camera — handle it in `onResize`.
+  - *Every-frame / animated* (`RadarSweepLayer`): redraws every frame *while visible* off the
+    scene's `update` tick — gated only by its own visibility (the radar toolbar toggle), not by
+    the camera-moved dirty check — because its content is intrinsically time-varying. This
+    is cheap here only because there are a handful of sites; reach for it just for genuinely
+    animated content, not to dodge the dirty-check discipline above. Because all its geometry
+    is world-space (km → pixels via `pixelsPerKm`), a sweep covers the same patch of ground at
+    every zoom, so — unlike the static marker layers — it needs no zoom handler / `onZoomChanged`
+    wiring: only the stroke widths are re-derived per frame (via `screenPxToWorld`) to hold a
+    constant on-screen thickness.
 - **Two cameras:** the main camera draws only world layers; a fixed UI camera (zoom 1, no
   scroll) draws only the HUD, so HUD elements keep a constant on-screen size. Each camera
   `ignore()`s the other's objects. Register any new object with the correct camera.
@@ -112,7 +121,10 @@ lon/lat becomes pixels.
   radars draw as a hollow circle. Every glyph is drawn while its layer is on — only the
   *names* reveal progressively by zoom: airfield majors/military at `AIRPORT.labelRevealZoom`,
   minor fields at the closer `AIRPORT.minorLabelRevealZoom`, and the (sparse) radars at a
-  lower zoom than the airports.
+  lower zoom than the airports. Each radar site also draws its coverage picture (with the
+  radar layer): a faint world-space range ring plus an animated rotating sweep hand, both
+  sized by the site's real `rangeKm` — the one HUD element in phosphor green (`MAP.strokeColor`),
+  the sanctioned colour exception (see the root `CLAUDE.md` HUD rule and `RADAR.sweep`).
 - **The coastline is drawn as world-space vectors, not a baked texture** — so the outline
   stays a crisp hairline at any zoom and the camera transform makes pan/zoom free (no
   per-frame re-tessellation). Its world-space line width is recompensated on zoom to hold a
