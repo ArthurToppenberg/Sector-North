@@ -7,7 +7,7 @@ the repo-root `CLAUDE.md` and apply here in full.
 ## Module layout — keep the boundary
 
 - `src/map/` — **world data + projection.** Pure TypeScript, no Phaser imports.
-  - `geojson.ts` / `cities.ts` / `airports.ts` — load and strictly validate the
+  - `geojson.ts` / `cities.ts` / `airports.ts` / `radars.ts` — load and strictly validate the
     bundled data (throw on any structural surprise; the data is a fixed build-time
     asset, so anything unexpected is a bug we want to see immediately). Validation is
     not just structural: every lon/lat is range-checked against WGS84 bounds
@@ -22,17 +22,29 @@ the repo-root `CLAUDE.md` and apply here in full.
     norway, poland, sweden) imported via Vite `?url`, so each file is emitted to `dist/`
     and fetched at runtime rather than inlined into the JS bundle; `geojson.ts` validates
     the parsed JSON.
-  - `major-cities.json` and `airports.json` — imported via Vite `?raw` (inlined at build
-    time and parsed by `cities.ts` / `airports.ts`).
+  - `major-cities.json`, `airports.json` and `radars.json` — imported via Vite `?raw`
+    (inlined at build time and parsed by `cities.ts` / `airports.ts` / `radars.ts`).
 
-`loadAirports()` does more than parse: it merges co-located fields. A military airbase
-within `MILITARY_MERGE_RADIUS_KM` of a major civil airport is collapsed into a single
-combined field — one large *military* marker labelled `"<civil> & <military>"`, placed at
-the pair's midpoint (several Danish sites, e.g. Aalborg / Karup / Skrydstrup, share civil
-and military runways a couple of km apart). The merge radius is a **real-world km
-distance**, so it lives in `airports.ts` (the world layer, in km) — not in `config.ts`,
-which holds only on-screen pixel constants. This is the "GPS is the source of truth" rule
-applied to a data transform: proximity is judged in real geographic distance, never pixels.
+Co-located sites are **never collapsed** — no marker is merged away or moved to a
+midpoint. `loadAirports()` just parses and validates; every airfield keeps its own glyph
+(a military airbase and its co-located civil airport stay two triangles; a radar on the
+same base stays its own circle). Only their *labels* are combined, so the map still shows
+each physical thing while decluttering overlapping text.
+
+`colocate.ts` holds that shared, type-agnostic co-location logic, split into two steps:
+`clusterByProximity` groups *any* POIs within `COLOCATION_RADIUS_KM` (single-linkage,
+computed once), and `resolveColocationLabels` turns those clusters into one label per
+item **given which items are currently visible**. Within a cluster only the shown members
+count: the lowest-`priority` visible one owns the label and shows its name with a `" +N"`
+badge for the rest (its glyph and theirs still draw); everyone else is suppressed. So
+toggling a layer off drops both its glyph and its share of the `+N`, and can hand
+ownership to a lower-priority site still shown. `MainScene` supplies the ranking (military
+airfield < major < minor < radar, so a base's own name beats the radar on it), holds the
+live per-layer visibility flags, and re-runs `resolveColocationLabels` → `layer.setLabels`
+on every airport/radar toggle. The radius is a **real-world km distance**, so it lives in
+`colocate.ts` (the world layer, in km) — not in `config.ts`, which holds only on-screen
+pixel constants. This is the "GPS is the source of truth" rule applied to a data transform:
+proximity is judged in real geographic distance, never pixels.
 
 New code must respect this split: geographic reasoning goes in `src/map/`, drawing and
 input go in `src/game/`.
@@ -69,7 +81,7 @@ lon/lat becomes pixels.
   change). Rendering and input logic belong in the layer/controller classes, not in the
   scene.
 - **Two reaction patterns for layers — pick the right one:**
-  - *Zoom-reactive* (coastline stroke width, city and airport marker/label sizing):
+  - *Zoom-reactive* (coastline stroke width, city / airport / radar marker/label sizing):
     refreshed via the camera controller's `onZoomChanged` fan-out in `MainScene`. New
     zoom-reactive layers are added to that one callback, not wired at individual call sites.
   - *Viewport-reactive* (grid slice, HUD readout): runs in `update`, guarded by the

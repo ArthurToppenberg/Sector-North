@@ -114,6 +114,41 @@ export const AIRPORT = {
   minorLabelRevealZoom: 32,
 } as const
 
+/**
+ * Air-defence radar sites. Drawn as a small hollow circle — a distinct glyph from
+ * the city icons and airport triangles. Stays inside the HUD white/black rule
+ * (the circle is white; distinction from other markers is by *shape*, not
+ * colour). Like the other markers, sizes are on-screen (CSS px) and held constant
+ * across zoom; every circle is always drawn while the layer is on.
+ *
+ * The sites are few (a handful of long-range radars), so — unlike the dense
+ * airfields — their name+model labels don't swamp the view; they reveal at a
+ * lower zoom than the airports so the coverage picture reads sooner. Where a radar
+ * shares an air base with an airfield, the two markers keep their own glyphs but
+ * share a single combined label (see `resolveColocationLabels` in `colocate.ts`).
+ */
+export const RADAR = {
+  /** Circle radius on screen (CSS pixels), held constant across zoom. */
+  markerScreenRadius: 4,
+  /** Circle outline width on screen (CSS pixels). */
+  strokeScreenWidth: 1.25,
+  /** Marker colour — the circle outline (HUD: white). */
+  color: 0xffffff,
+  /** Label text colour. */
+  labelColor: '#ffffff',
+  /** Label font size on screen (CSS pixels) — site name and model, stacked. */
+  labelScreenSize: 11,
+  /** Clear gap between the circle and the bottom of the label (CSS pixels). */
+  labelScreenGap: 3,
+  /**
+   * Zoom at/above which the radar labels (site name + model) appear. Below it only
+   * the range rings show. Set a little below the airport reveal (14) — the sites
+   * are sparse, so naming them earlier doesn't clutter — while staying inside the
+   * reachable range (`ZOOM.min`..`ZOOM.max` = 6.5..40).
+   */
+  labelRevealZoom: 11,
+} as const
+
 // Faint real-world reference grid drawn beneath the map. Because the game is
 // built on true lon/lat, each cell is a fixed size on the ground — a constant
 // scale bar the player can read even out over open water where no land is in
@@ -163,6 +198,11 @@ export const DEPTH = {
   // hidden under a nearby city's name.
   airportMarkers: 40,
   airportLabels: 50,
+  // Radar sites sit above the airfields: the circles and their name/model labels
+  // are sparse infrastructure that should read on top of the denser airport
+  // markers below them.
+  radarMarkers: 60,
+  radarLabels: 70,
   hud: 100,
   // Interactive chrome sits above the read-only telemetry HUD; the icon draws
   // one step above its own button surface.

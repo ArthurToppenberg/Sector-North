@@ -51,98 +51,15 @@ function parseAirport(entry: unknown, index: number): Airport {
 }
 
 /**
- * Merge radius (km) for collapsing a military airbase and a co-located civil
- * airport into one combined field. Several Danish sites (Aalborg, Karup,
- * Skrydstrup) host a major civil airport and a military airbase sharing the same
- * runways a couple of km apart; this radius captures such pairs without pulling
- * in genuinely separate fields. A real-world distance, so it lives here (in the
- * GPS/world layer) in km, not with the on-screen pixel constants in `config.ts`.
- */
-const MILITARY_MERGE_RADIUS_KM = 6
-
-/**
- * Great-circle distance between two airfields in kilometres (haversine). Used
- * only to decide co-location, so the exact earth radius is immaterial.
- */
-function distanceKm(a: Airport, b: Airport): number {
-  const earthRadiusKm = 6371
-  const toRad = (deg: number) => (deg * Math.PI) / 180
-  const dLat = toRad(b.lat - a.lat)
-  const dLon = toRad(b.lon - a.lon)
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2
-  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h))
-}
-
-/**
- * Nearest `major` to `military` within `MILITARY_MERGE_RADIUS_KM`, or `undefined`
- * if none qualifies — a legitimate domain outcome (a lone airbase), not a failure.
- * Ties resolve to the first candidate in `candidates` order.
- */
-function findMergePartner(military: Airport, candidates: readonly Airport[]): Airport | undefined {
-  let nearest: Airport | undefined
-  let nearestKm = Infinity
-  for (const major of candidates) {
-    const km = distanceKm(military, major)
-    if (km <= MILITARY_MERGE_RADIUS_KM && km < nearestKm) {
-      nearest = major
-      nearestKm = km
-    }
-  }
-  return nearest
-}
-
-/**
- * Collapse each military airbase that sits within `MILITARY_MERGE_RADIUS_KM` of a
- * major (civil) airport into a single combined field: one large military marker
- * carrying both names joined by " & " (civil first, e.g. "Aalborg Airport &
- * Aalborg Air Base"), placed at the midpoint of the pair. Each major airport can
- * be claimed by at most one airbase (the nearest); minor strips are never merged.
- * Unmerged fields pass through unchanged. Output order: military fields (merged or
- * passed through) in input order, then the surviving non-military fields.
- */
-function mergeColocatedMilitary(airports: readonly Airport[]): Airport[] {
-  const majors = airports.filter((a) => a.tier === 'major')
-  const claimedMajors = new Set<Airport>()
-  const merged: Airport[] = []
-
-  for (const airport of airports) {
-    if (airport.tier !== 'military') continue
-
-    const partner = findMergePartner(
-      airport,
-      majors.filter((m) => !claimedMajors.has(m)),
-    )
-    if (!partner) {
-      merged.push(airport)
-      continue
-    }
-
-    claimedMajors.add(partner)
-    merged.push({
-      name: `${partner.name} & ${airport.name}`,
-      lon: (airport.lon + partner.lon) / 2,
-      lat: (airport.lat + partner.lat) / 2,
-      tier: 'military',
-    })
-  }
-
-  // Every non-military field except the majors absorbed into a merge above.
-  for (const airport of airports) {
-    if (airport.tier !== 'military' && !claimedMajors.has(airport)) merged.push(airport)
-  }
-
-  return merged
-}
-
-/**
  * Parse and strictly validate the bundled airport list — the distilled output of
  * `scripts/build-airports.mjs`, not the raw OSM dump. Like the cities and
  * boundary data this is a fixed build-time asset, so anything unexpected is a bug
- * we surface immediately (fail fast) rather than skipping. Co-located military +
- * major pairs are then merged into a single combined field (see
- * `mergeColocatedMilitary`).
+ * we surface immediately (fail fast) rather than skipping.
+ *
+ * Every airfield is returned as its own field — co-located sites (a military
+ * airbase sharing a runway with a civil airport, or a radar on the same base) are
+ * NOT collapsed here. Each keeps its own glyph; only their *labels* are combined,
+ * downstream and across types, by `resolveColocationLabels` (see `colocate.ts`).
  */
 export function loadAirports(): Airport[] {
   const parsed: unknown = JSON.parse(raw)
@@ -151,5 +68,5 @@ export function loadAirports(): Airport[] {
     fail('expected a non-empty array of airports')
   }
 
-  return mergeColocatedMilitary(parsed.map(parseAirport))
+  return parsed.map(parseAirport)
 }

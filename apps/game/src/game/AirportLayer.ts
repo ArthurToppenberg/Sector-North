@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { DPR, FONT_FAMILY, AIRPORT, DEPTH } from './config'
 import { screenPxToWorld } from './units'
 import type { AirportTier } from '../map/airports'
+import type { ColocationLabel } from '../map/colocate'
 
 /**
  * An airfield placed in world space (device px), ready to render.
@@ -10,9 +11,19 @@ import type { AirportTier } from '../map/airports'
  * carried alongside so later milestones (aircraft routing to/from airfields,
  * re-projection) can work from the ground truth rather than the derived pixels.
  * `tier` drives the zoom-reveal and glyph.
+ *
+ * `label` is the text actually drawn — usually the name, but the combined "A & B"
+ * label when co-located sites (a neighbouring airfield and/or a radar on the same
+ * base) share this one (see `resolveColocationLabels`). `labelSuppressed` is true
+ * on the members of such a cluster that don't own the shared label — their
+ * triangle still draws, but a neighbour carries the combined text.
  */
 export interface AirportMarker {
   name: string
+  /** Display label — the name, or the combined "A & B" label for a co-located site. */
+  label: string
+  /** True when another co-located site owns the shared label, so this one hides its own. */
+  labelSuppressed: boolean
   /** Projected device-pixel position (derived from lon/lat for the current fit). */
   x: number
   y: number
@@ -87,18 +98,25 @@ export class AirportLayer {
   private readonly gfx: Phaser.GameObjects.Graphics
   /** One world-space Text label per airfield; re-positioned/re-scaled on zoom. */
   private readonly labels: Phaser.GameObjects.Text[]
+  /**
+   * Per-marker label suppression: true when a co-located site owns the shared
+   * label so this field draws no name of its own. Mutable — recomputed via
+   * `setLabels` whenever a layer is toggled (co-located counts depend on it).
+   */
+  private readonly suppressed: boolean[]
   /** Master on/off from the toolbar, independent of the label reveal/de-dup. */
   private layerVisible = true
 
   constructor(scene: Phaser.Scene, markers: readonly AirportMarker[]) {
     assertMarkers(markers)
     this.markers = markers
+    this.suppressed = markers.map((m) => m.labelSuppressed)
 
     this.gfx = scene.add.graphics().setDepth(DEPTH.airportMarkers)
 
     this.labels = markers.map((m) =>
       scene.add
-        .text(m.x, m.y, m.name, {
+        .text(m.x, m.y, m.label, {
           fontFamily: FONT_FAMILY,
           fontStyle: '500',
           fontSize: `${AIRPORT.labelScreenSize * DPR}px`,
@@ -135,6 +153,23 @@ export class AirportLayer {
     this.onZoomChanged(this.gfx.scene.cameras.main.zoom)
   }
 
+  /**
+   * Replace every marker's label text + suppression from a co-location resolve
+   * (recomputed whenever a layer is toggled, since a `+N` count depends on which
+   * co-located sites are shown) and re-apply at the current zoom. One result per
+   * marker, in marker order.
+   */
+  setLabels(labels: readonly ColocationLabel[]): void {
+    if (labels.length !== this.labels.length) {
+      fail(`expected ${this.labels.length} labels, got ${labels.length}`)
+    }
+    labels.forEach((l, i) => {
+      this.labels[i].setText(l.label)
+      this.suppressed[i] = l.suppressed
+    })
+    this.onZoomChanged(this.gfx.scene.cameras.main.zoom)
+  }
+
   /** Lowest zoom at which this field is allowed to show its name (tiered reveal). */
   private labelRevealZoom(tier: AirportTier): number {
     return tier === 'minor' ? AIRPORT.minorLabelRevealZoom : AIRPORT.labelRevealZoom
@@ -150,7 +185,7 @@ export class AirportLayer {
     if (!this.layerVisible) return shown
 
     for (const i of this.markers.keys()) {
-      if (zoom >= this.labelRevealZoom(this.markers[i].tier)) shown.add(i)
+      if (!this.suppressed[i] && zoom >= this.labelRevealZoom(this.markers[i].tier)) shown.add(i)
     }
     return shown
   }

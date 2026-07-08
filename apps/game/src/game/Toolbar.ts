@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import cityIconRaw from 'lucide-static/icons/building-2.svg?raw'
 import airportIconRaw from 'lucide-static/icons/plane.svg?raw'
+import radarIconRaw from 'lucide-static/icons/radar.svg?raw'
 import { DPR, TOOLBAR, DEPTH } from './config'
 import { iconDataUri } from './svgIcon'
 
@@ -12,6 +13,7 @@ import { iconDataUri } from './svgIcon'
 const ICONS = {
   cities: { key: 'toolbar-cities', raw: cityIconRaw },
   airports: { key: 'toolbar-airports', raw: airportIconRaw },
+  radars: { key: 'toolbar-radars', raw: radarIconRaw },
 } as const
 
 export type ToolbarButtonId = keyof typeof ICONS
