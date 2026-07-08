@@ -38,6 +38,14 @@ export function cameraWorldView(cam: Phaser.Cameras.Scene2D.Camera): WorldView {
       `cameraWorldView: camera dimensions must be finite, got ${cam.width}x${cam.height}`,
     )
   }
+  // scrollX/scrollY are added directly into the view centre; a non-finite scroll
+  // would emit a NaN centre into the pan clamp and HUD without ever throwing, so
+  // reject it here rather than let the bad value propagate.
+  if (!Number.isFinite(cam.scrollX) || !Number.isFinite(cam.scrollY)) {
+    throw new Error(
+      `cameraWorldView: camera scroll must be finite, got ${cam.scrollX},${cam.scrollY}`,
+    )
+  }
 
   const width = cam.width / cam.zoom
   const height = cam.height / cam.zoom

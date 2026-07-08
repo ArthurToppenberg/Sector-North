@@ -76,32 +76,51 @@ function distanceKm(a: Airport, b: Airport): number {
 }
 
 /**
+ * Nearest `major` to `military` within `MILITARY_MERGE_RADIUS_KM`, or `undefined`
+ * if none qualifies — a legitimate domain outcome (a lone airbase), not a failure.
+ * Ties resolve to the first candidate in `candidates` order.
+ */
+function findMergePartner(military: Airport, candidates: readonly Airport[]): Airport | undefined {
+  let nearest: Airport | undefined
+  let nearestKm = Infinity
+  for (const major of candidates) {
+    const km = distanceKm(military, major)
+    if (km <= MILITARY_MERGE_RADIUS_KM && km < nearestKm) {
+      nearest = major
+      nearestKm = km
+    }
+  }
+  return nearest
+}
+
+/**
  * Collapse each military airbase that sits within `MILITARY_MERGE_RADIUS_KM` of a
  * major (civil) airport into a single combined field: one large military marker
  * carrying both names joined by " & " (civil first, e.g. "Aalborg Airport &
  * Aalborg Air Base"), placed at the midpoint of the pair. Each major airport can
  * be claimed by at most one airbase (the nearest); minor strips are never merged.
- * Unmerged fields pass through unchanged.
+ * Unmerged fields pass through unchanged. Output order: military fields (merged or
+ * passed through) in input order, then the surviving non-military fields.
  */
 function mergeColocatedMilitary(airports: readonly Airport[]): Airport[] {
   const majors = airports.filter((a) => a.tier === 'major')
   const claimedMajors = new Set<Airport>()
-  const result: Airport[] = []
+  const merged: Airport[] = []
 
   for (const airport of airports) {
     if (airport.tier !== 'military') continue
 
-    const partner = majors
-      .filter((m) => !claimedMajors.has(m) && distanceKm(airport, m) <= MILITARY_MERGE_RADIUS_KM)
-      .sort((a, b) => distanceKm(airport, a) - distanceKm(airport, b))[0]
-
+    const partner = findMergePartner(
+      airport,
+      majors.filter((m) => !claimedMajors.has(m)),
+    )
     if (!partner) {
-      result.push(airport)
+      merged.push(airport)
       continue
     }
 
     claimedMajors.add(partner)
-    result.push({
+    merged.push({
       name: `${partner.name} & ${airport.name}`,
       lon: (airport.lon + partner.lon) / 2,
       lat: (airport.lat + partner.lat) / 2,
@@ -111,10 +130,10 @@ function mergeColocatedMilitary(airports: readonly Airport[]): Airport[] {
 
   // Every non-military field except the majors absorbed into a merge above.
   for (const airport of airports) {
-    if (airport.tier !== 'military' && !claimedMajors.has(airport)) result.push(airport)
+    if (airport.tier !== 'military' && !claimedMajors.has(airport)) merged.push(airport)
   }
 
-  return result
+  return merged
 }
 
 /**
