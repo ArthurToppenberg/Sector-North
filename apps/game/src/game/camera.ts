@@ -26,6 +26,19 @@ export interface WorldView {
  * refreshes in `preRender` and so lags a frame behind the current update tick).
  */
 export function cameraWorldView(cam: Phaser.Cameras.Scene2D.Camera): WorldView {
+  // Fail fast: zoom is the divisor for the visible extent, so a non-positive or
+  // non-finite value would silently emit Infinity/NaN into the grid slice and the
+  // pan clamp. A live camera is always clamped to a positive zoom, so anything
+  // else is a bug we want to surface immediately rather than mask.
+  if (!Number.isFinite(cam.zoom) || cam.zoom <= 0) {
+    throw new Error(`cameraWorldView: camera zoom must be a positive finite number, got ${cam.zoom}`)
+  }
+  if (!Number.isFinite(cam.width) || !Number.isFinite(cam.height)) {
+    throw new Error(
+      `cameraWorldView: camera dimensions must be finite, got ${cam.width}x${cam.height}`,
+    )
+  }
+
   const width = cam.width / cam.zoom
   const height = cam.height / cam.zoom
   const centerX = cam.scrollX + cam.width / 2

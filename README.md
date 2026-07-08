@@ -38,8 +38,8 @@ pnpm dev
 ```
 
 Then open the URL Vite prints (typically `http://localhost:5173`). You should see the
-Danish coastline with city markers — scroll to zoom (anchored under the cursor), and pan
-by click-dragging or with WASD / arrow keys.
+Danish coastline (with its neighbouring countries) plus city and airport markers — scroll
+to zoom (anchored under the cursor), and pan by click-dragging or with WASD / arrow keys.
 
 ### Other useful commands
 
@@ -60,7 +60,7 @@ Sector-North/
 │  └─ game/                # The Phaser + Vite game app
 │     ├─ src/map/          # World data loading + the projection layer (no Phaser)
 │     ├─ src/game/         # Phaser scenes, layers, camera, HUD
-│     ├─ src/data/         # Bundled map data (Denmark boundary, cities)
+│     ├─ src/data/         # Bundled map data (country boundaries, cities, airports)
 │     └─ CLAUDE.md         # App-level architecture rules
 ├─ docs/                   # Repo documentation assets (screenshots, etc.)
 ├─ CLAUDE.md               # Project-wide rules (architecture, tooling, style)

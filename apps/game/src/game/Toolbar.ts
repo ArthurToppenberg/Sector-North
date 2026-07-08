@@ -63,6 +63,29 @@ export class Toolbar {
   private readonly buttons: ToolbarButton[]
 
   constructor(scene: Phaser.Scene, configs: ToolbarButtonConfig[]) {
+    // Fail fast on a misconfigured toolbar rather than silently rendering
+    // nothing, a broken glyph, or crashing later with an opaque message.
+    if (configs.length === 0) {
+      throw new Error('Toolbar requires at least one button config; received none.')
+    }
+    const seen = new Set<ToolbarButtonId>()
+    for (const cfg of configs) {
+      if (!(cfg.id in ICONS)) {
+        throw new Error(`Toolbar received an unknown button id "${cfg.id}".`)
+      }
+      if (seen.has(cfg.id)) {
+        throw new Error(`Toolbar received a duplicate button id "${cfg.id}".`)
+      }
+      seen.add(cfg.id)
+      // The glyph texture must already be loaded — a missing texture would draw
+      // Phaser's magenta placeholder (also a HUD white/black violation), so
+      // demand that Toolbar.preload ran instead of degrading to that.
+      const { key } = ICONS[cfg.id]
+      if (!scene.textures.exists(key)) {
+        throw new Error(`Toolbar icon texture "${key}" is not loaded — call Toolbar.preload(scene) in the scene's preload().`)
+      }
+    }
+
     const size = TOOLBAR.buttonScreenSize * DPR
 
     this.buttons = configs.map((cfg) => {

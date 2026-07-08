@@ -21,6 +21,35 @@ function fail(message: string): never {
   throw new Error(`[map/airports] ${message}`)
 }
 
+/** True only for real, finite numbers — rejects strings, NaN, and ±Infinity while narrowing. */
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function isAirportTier(value: unknown): value is AirportTier {
+  return typeof value === 'string' && TIERS.has(value as AirportTier)
+}
+
+/**
+ * Validate one entry from the bundled list and return a typed `Airport`, or throw.
+ * Every branch narrows the field so the returned object needs no casts.
+ */
+function parseAirport(entry: unknown, index: number): Airport {
+  if (!entry || typeof entry !== 'object') fail(`airport ${index} is not an object`)
+  const { name, lon, lat, tier } = entry as Record<string, unknown>
+
+  if (typeof name !== 'string' || name.length === 0) fail(`airport ${index} has no name`)
+  if (!isFiniteNumber(lon) || lon < -180 || lon > 180) {
+    fail(`airport ${name} has out-of-range lon: ${JSON.stringify(lon)}`)
+  }
+  if (!isFiniteNumber(lat) || lat < -90 || lat > 90) {
+    fail(`airport ${name} has out-of-range lat: ${JSON.stringify(lat)}`)
+  }
+  if (!isAirportTier(tier)) fail(`airport ${name} has invalid tier: ${JSON.stringify(tier)}`)
+
+  return { name, lon, lat, tier }
+}
+
 /**
  * Parse and strictly validate the bundled airport list — the distilled output of
  * `scripts/build-airports.mjs`, not the raw OSM dump. Like the cities and
@@ -34,17 +63,5 @@ export function loadAirports(): Airport[] {
     fail('expected a non-empty array of airports')
   }
 
-  return parsed.map((entry, i): Airport => {
-    if (!entry || typeof entry !== 'object') fail(`airport ${i} is not an object`)
-    const { name, lon, lat, tier } = entry as Record<string, unknown>
-
-    if (typeof name !== 'string' || name.length === 0) fail(`airport ${i} has no name`)
-    if (!Number.isFinite(lon)) fail(`airport ${name} has invalid lon: ${JSON.stringify(lon)}`)
-    if (!Number.isFinite(lat)) fail(`airport ${name} has invalid lat: ${JSON.stringify(lat)}`)
-    if (typeof tier !== 'string' || !TIERS.has(tier as AirportTier)) {
-      fail(`airport ${name} has invalid tier: ${JSON.stringify(tier)}`)
-    }
-
-    return { name, lon: lon as number, lat: lat as number, tier: tier as AirportTier }
-  })
+  return parsed.map(parseAirport)
 }

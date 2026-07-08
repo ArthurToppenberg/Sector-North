@@ -7,15 +7,20 @@ the repo-root `CLAUDE.md` and apply here in full.
 ## Module layout — keep the boundary
 
 - `src/map/` — **world data + projection.** Pure TypeScript, no Phaser imports.
-  - `geojson.ts` / `cities.ts` — load and strictly validate the bundled data
-    (throw on any structural surprise; the data is a fixed build-time asset, so
-    anything unexpected is a bug we want to see immediately).
+  - `geojson.ts` / `cities.ts` / `airports.ts` — load and strictly validate the
+    bundled data (throw on any structural surprise; the data is a fixed build-time
+    asset, so anything unexpected is a bug we want to see immediately).
   - `project.ts` — the projection layer (see below).
 - `src/game/` — **Phaser rendering + input.** Consumes projected output; never parses
   GeoJSON or re-derives the projection.
-- `src/data/` — bundled data assets (`denmark-boundary.geojson`, `major-cities.json`),
-  imported at build time via Vite `?raw`. Coordinates are lon/lat (WGS84). Prefer
-  simplified geometry: fewer points = faster to draw.
+- `src/data/` — bundled data assets. Coordinates are lon/lat (WGS84); prefer simplified
+  geometry (fewer points = faster to draw). Two import mechanisms:
+  - Country boundaries — `borders/*.json` (currently denmark, germany, netherlands,
+    norway, poland, sweden) imported via Vite `?url`, so each file is emitted to `dist/`
+    and fetched at runtime rather than inlined into the JS bundle; `geojson.ts` validates
+    the parsed JSON.
+  - `major-cities.json` and `airports.json` — imported via Vite `?raw` (inlined at build
+    time and parsed by `cities.ts` / `airports.ts`).
 
 New code must respect this split: geographic reasoning goes in `src/map/`, drawing and
 input go in `src/game/`.
@@ -25,8 +30,8 @@ input go in `src/game/`.
 The heart of the "GPS is the source of truth" design — the **only** place that knows how
 lon/lat becomes pixels.
 
-- `projectToPixels(geometry, viewport)` fits the country to the viewport **once** and
-  returns:
+- `projectToPixels(geometry, viewport)` fits the mapped geometry (Denmark + its
+  neighbours, as one combined MultiPolygon) to the viewport **once** and returns:
   - `project(lon, lat)` — the single lon/lat → pixel transform. Every overlay (city
     markers, future aircraft, anything placed on the map) must route through this
     function rather than re-deriving the fit.
@@ -52,9 +57,9 @@ lon/lat becomes pixels.
   change). Rendering and input logic belong in the layer/controller classes, not in the
   scene.
 - **Two reaction patterns for layers — pick the right one:**
-  - *Zoom-reactive* (coastline stroke width, city marker/label sizing): refreshed via the
-    camera controller's `onZoomChanged` fan-out in `MainScene`. New zoom-reactive layers
-    are added to that one callback, not wired at individual call sites.
+  - *Zoom-reactive* (coastline stroke width, city and airport marker/label sizing):
+    refreshed via the camera controller's `onZoomChanged` fan-out in `MainScene`. New
+    zoom-reactive layers are added to that one callback, not wired at individual call sites.
   - *Viewport-reactive* (grid slice, HUD readout): runs in `update`, guarded by the
     camera-moved dirty check so idle frames do no work. Remember that a window resize
     changes the viewport without moving the camera — handle it in `onResize`.
@@ -66,6 +71,15 @@ lon/lat becomes pixels.
   truth for the screen↔world scaling trick. Don't hand-roll `x * DPR / zoom`.
 - **Draw order lives in `DEPTH` in `src/game/config.ts`.** Add new layers there; no
   scattered magic `setDepth` numbers.
+- **HUD icons are SVGs baked into textures (`src/game/svgIcon.ts`).** HUD glyphs come from
+  Lucide SVGs, authored with `currentColor`. A standalone SVG rasterised into a Phaser
+  texture has no CSS colour context to inherit — it would fall back to black and vanish on
+  the black map — so `iconDataUri` bakes the HUD white straight into the markup (per the
+  white/black HUD rule) and hands Phaser a **base64** data URI. It must be base64, not
+  percent-encoded: Phaser's SVG loader `atob`s the payload, and a percent-encoded URI makes
+  `atob` throw so the loader stalls and never fires `create`. Icon markup must be pure ASCII
+  (`btoa` throws otherwise) and must actually contain a `currentColor` to replace — both are
+  treated as build-time bugs and throw, never degrade to an invisible/placeholder icon.
 - **Tunable numbers live in `src/game/config.ts`**, in CSS pixels where they describe
   on-screen sizes. Logic lives in the layers; the numbers you might want to nudge live in
   config. Follow this split for new features.

@@ -46,13 +46,31 @@ function fail(message: string): never {
   throw new Error(`[map/geojson] ${message}`)
 }
 
-function isFinitePair(value: unknown): value is LonLat {
-  return (
-    Array.isArray(value) &&
-    value.length >= 2 &&
-    Number.isFinite(value[0]) &&
-    Number.isFinite(value[1])
-  )
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/**
+ * A GeoJSON position with a finite lon/lat inside valid WGS84 ranges. The third
+ * (altitude) element permitted by the spec is ignored — this map is 2D — but a
+ * position with fewer than two coordinates, non-finite values, or coordinates
+ * out of range (a classic sign of swapped lon/lat) is rejected.
+ */
+function parsePosition(value: unknown, ctx: string): LonLat {
+  if (!Array.isArray(value) || value.length < 2) {
+    fail(`${ctx}: position is not a [lon, lat] pair: ${JSON.stringify(value)}`)
+  }
+  const [lon, lat] = value as unknown[]
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+    fail(`${ctx}: non-finite position ${JSON.stringify(value)}`)
+  }
+  if ((lon as number) < -180 || (lon as number) > 180) {
+    fail(`${ctx}: longitude out of range: ${JSON.stringify(lon)}`)
+  }
+  if ((lat as number) < -90 || (lat as number) > 90) {
+    fail(`${ctx}: latitude out of range: ${JSON.stringify(lat)}`)
+  }
+  return [lon as number, lat as number]
 }
 
 /** Validate a single closed ring, throwing on the first bad position. */
@@ -60,10 +78,7 @@ function parseRing(value: unknown, ctx: string): Ring {
   if (!Array.isArray(value) || value.length < 4) {
     fail(`${ctx}: ring has fewer than 4 positions (not a closed loop)`)
   }
-  for (const point of value) {
-    if (!isFinitePair(point)) fail(`${ctx}: invalid position ${JSON.stringify(point)}`)
-  }
-  return value as Ring
+  return value.map((point, i) => parsePosition(point, `${ctx} position ${i}`))
 }
 
 /** Validate one polygon: an outer ring followed by any holes. */
@@ -73,50 +88,52 @@ function parsePolygon(value: unknown, ctx: string): Polygon {
 }
 
 /**
+ * Validate one feature's geometry, returning its polygons. Accepts both
+ * `Polygon` (one polygon) and `MultiPolygon` (many) geometries — geoBoundaries
+ * splits some countries (e.g. Norway) into many island features/polygons.
+ */
+function parseGeometry(geometry: unknown, ctx: string): Polygon[] {
+  if (!isObject(geometry)) fail(`${ctx}: geometry is not an object`)
+  const { type, coordinates } = geometry
+
+  if (type === 'Polygon') {
+    return [parsePolygon(coordinates, ctx)]
+  }
+  if (type === 'MultiPolygon') {
+    if (!Array.isArray(coordinates) || coordinates.length === 0) {
+      fail(`${ctx}: MultiPolygon has no polygons`)
+    }
+    return coordinates.map((polygon, pi) => parsePolygon(polygon, `${ctx} polygon ${pi}`))
+  }
+  fail(`${ctx}: expected Polygon or MultiPolygon, got ${JSON.stringify(type)}`)
+}
+
+/**
  * Parse and strictly validate one country's GeoJSON, flattening every feature's
- * geometry into a single MultiPolygon (a flat list of polygons). Accepts both
- * `Polygon` and `MultiPolygon` feature geometries and any number of features —
- * geoBoundaries splits some countries (e.g. Norway) into many island features.
+ * geometry into a single MultiPolygon (a flat list of polygons).
  *
  * Fails loudly (throws) on any structural surprise rather than silently
  * degrading — the data is a fixed build-time asset, so anything unexpected is a
  * bug we want to see immediately.
  */
 function parseBoundary(parsed: unknown, name: string): MultiPolygon {
-  if (!parsed || typeof parsed !== 'object') fail(`${name}: root is not an object`)
-  const root = parsed as Record<string, unknown>
+  if (!isObject(parsed)) fail(`${name}: root is not an object`)
 
-  if (root.type !== 'FeatureCollection') {
-    fail(`${name}: expected FeatureCollection, got ${JSON.stringify(root.type)}`)
+  if (parsed.type !== 'FeatureCollection') {
+    fail(`${name}: expected FeatureCollection, got ${JSON.stringify(parsed.type)}`)
   }
-  if (!Array.isArray(root.features) || root.features.length === 0) {
-    fail(`${name}: expected at least one feature, got ${(root.features as unknown[])?.length}`)
+  if (!Array.isArray(parsed.features) || parsed.features.length === 0) {
+    fail(`${name}: expected a non-empty features array, got ${JSON.stringify(parsed.features)}`)
   }
 
-  const polygons: MultiPolygon = []
-  root.features.forEach((rawFeature, fi) => {
-    const feature = rawFeature as Record<string, unknown>
-    const geometry = feature.geometry as Record<string, unknown> | undefined
+  return parsed.features.flatMap((feature, fi) => {
     const ctx = `${name} feature ${fi}`
-    if (!geometry) fail(`${ctx}: missing geometry`)
-
-    const coordinates = geometry.coordinates
-    if (geometry.type === 'Polygon') {
-      polygons.push(parsePolygon(coordinates, ctx))
-    } else if (geometry.type === 'MultiPolygon') {
-      if (!Array.isArray(coordinates) || coordinates.length === 0) {
-        fail(`${ctx}: MultiPolygon has no polygons`)
-      }
-      coordinates.forEach((polygon, pi) => {
-        polygons.push(parsePolygon(polygon, `${ctx} polygon ${pi}`))
-      })
-    } else {
-      fail(`${ctx}: expected Polygon or MultiPolygon, got ${JSON.stringify(geometry.type)}`)
+    if (!isObject(feature)) fail(`${ctx}: feature is not an object`)
+    if (feature.type !== 'Feature') {
+      fail(`${ctx}: expected Feature, got ${JSON.stringify(feature.type)}`)
     }
+    return parseGeometry(feature.geometry, ctx)
   })
-
-  if (polygons.length === 0) fail(`${name}: no polygons`)
-  return polygons
 }
 
 /**

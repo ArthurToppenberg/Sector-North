@@ -12,6 +12,29 @@ function fail(message: string): never {
   throw new Error(`[map/cities] ${message}`)
 }
 
+/** Narrow an unknown value to a finite number, throwing with context otherwise. */
+function finiteNumber(value: unknown, context: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    fail(`${context}: ${JSON.stringify(value)}`)
+  }
+  return value
+}
+
+/** Validate a single raw entry into a `City`, throwing on any structural surprise. */
+function parseCity(entry: unknown, index: number): City {
+  if (!entry || typeof entry !== 'object') fail(`city ${index} is not an object`)
+  const { city, latitude, longitude, population } = entry as Record<string, unknown>
+
+  if (typeof city !== 'string' || city.length === 0) fail(`city ${index} has no name`)
+
+  return {
+    name: city,
+    lat: finiteNumber(latitude, `city ${city} has invalid latitude`),
+    lon: finiteNumber(longitude, `city ${city} has invalid longitude`),
+    population: finiteNumber(population, `city ${city} has invalid population`),
+  }
+}
+
 /**
  * Parse and strictly validate the bundled major-cities list.
  *
@@ -26,20 +49,5 @@ export function loadMajorCities(): City[] {
     fail('expected a non-empty array of cities')
   }
 
-  return parsed.map((entry, i): City => {
-    if (!entry || typeof entry !== 'object') fail(`city ${i} is not an object`)
-    const { city, latitude, longitude, population } = entry as Record<string, unknown>
-
-    if (typeof city !== 'string' || city.length === 0) fail(`city ${i} has no name`)
-    if (!Number.isFinite(latitude)) fail(`city ${city} has invalid latitude: ${JSON.stringify(latitude)}`)
-    if (!Number.isFinite(longitude)) fail(`city ${city} has invalid longitude: ${JSON.stringify(longitude)}`)
-    if (!Number.isFinite(population)) fail(`city ${city} has invalid population: ${JSON.stringify(population)}`)
-
-    return {
-      name: city,
-      lat: latitude as number,
-      lon: longitude as number,
-      population: population as number,
-    }
-  })
+  return parsed.map(parseCity)
 }

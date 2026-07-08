@@ -22,6 +22,33 @@ interface CameraControllerOptions {
 }
 
 /**
+ * Fail fast on a malformed play area. An inverted box (`min > max`) would not
+ * throw downstream — `Phaser.Math.Clamp` would silently pin every position to
+ * the lower bound, freezing the camera in a wrong spot — so reject it up front.
+ * A non-finite corner (a projection that produced `NaN`) is likewise a bug we
+ * want to see immediately rather than propagate into the scroll math.
+ */
+function assertValidCenterBounds(b: CenterBounds): void {
+  if (![b.minX, b.maxX, b.minY, b.maxY].every(Number.isFinite)) {
+    throw new Error(`[CameraController] centerBounds must be finite: ${JSON.stringify(b)}`)
+  }
+  if (b.minX > b.maxX || b.minY > b.maxY) {
+    throw new Error(`[CameraController] centerBounds is inverted (min > max): ${JSON.stringify(b)}`)
+  }
+}
+
+/**
+ * The keys bound to each pan direction. Both WASD and the arrow keys drive the
+ * same direction so either hand works.
+ */
+type MoveKeys = {
+  up: Phaser.Input.Keyboard.Key[]
+  down: Phaser.Input.Keyboard.Key[]
+  left: Phaser.Input.Keyboard.Key[]
+  right: Phaser.Input.Keyboard.Key[]
+}
+
+/**
  * Owns every way the player can move the camera: mouse-wheel zoom (anchored under
  * the cursor), click-drag pan, and WASD/arrow keyboard pan. Extracted from the
  * former god-scene so camera behaviour lives in exactly one place.
@@ -47,36 +74,49 @@ export class CameraController {
   /** World-pixel box the camera centre is confined to (the play area). */
   private readonly centerBounds: CenterBounds
 
-  /**
-   * The keys bound to each pan direction. Both WASD and the arrow keys drive the
-   * same direction so either hand works.
-   */
-  private readonly moveKeys: {
-    up: Phaser.Input.Keyboard.Key[]
-    down: Phaser.Input.Keyboard.Key[]
-    left: Phaser.Input.Keyboard.Key[]
-    right: Phaser.Input.Keyboard.Key[]
-  }
+  /** The keys bound to each pan direction (WASD + arrows). */
+  private readonly moveKeys: MoveKeys
 
   constructor(scene: Phaser.Scene, options: CameraControllerOptions) {
-    const cam = scene.cameras.main
-    this.cam = cam
+    assertValidCenterBounds(options.centerBounds)
+    this.cam = scene.cameras.main
     this.onZoomChanged = options.onZoomChanged
     this.centerBounds = options.centerBounds
-    // Start at the most zoomed-out level the player is allowed, framed on the
-    // centre of the play area. The zoom-reactive layers are notified below so
-    // they render at this initial zoom rather than Phaser's default 1.
-    const b = options.centerBounds
-    cam.setZoom(ZOOM.min)
-    cam.centerOn((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2)
 
-    // Mouse-wheel zoom, anchored so the world point under the cursor stays put.
-    // Because zoom is centred on the camera midpoint, the world point under a
-    // screen pixel `p` is `scroll + p/zoom` offset from the centre; holding it
-    // fixed across a zoom change means shifting scroll by the closed-form
-    // `(p - size/2)·(1/oldZoom - 1/newZoom)` on each axis. Computed directly (no
-    // `getWorldPoint`, which reads a matrix Phaser only rebuilds at render time
-    // and so would sample a stale transform mid-handler).
+    this.frameInitialView()
+    this.installWheelZoom(scene)
+    this.installDragPan(scene)
+    this.moveKeys = this.installKeyboardPan(scene)
+
+    // Frame is already centred; make sure it starts inside the clamp range, then
+    // let the zoom-reactive layers render at the initial zoom set above.
+    this.clampCamera()
+    this.onZoomChanged(this.cam.zoom)
+  }
+
+  /**
+   * Start at the most zoomed-out level the player is allowed, framed on the
+   * centre of the play area. The zoom-reactive layers are notified from the
+   * constructor so they render at this initial zoom rather than Phaser's
+   * default 1.
+   */
+  private frameInitialView(): void {
+    const b = this.centerBounds
+    this.cam.setZoom(ZOOM.min)
+    this.cam.centerOn((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2)
+  }
+
+  /**
+   * Mouse-wheel zoom, anchored so the world point under the cursor stays put.
+   * Because zoom is centred on the camera midpoint, the world point under a
+   * screen pixel `p` is `scroll + p/zoom` offset from the centre; holding it
+   * fixed across a zoom change means shifting scroll by the closed-form
+   * `(p - size/2)·(1/oldZoom - 1/newZoom)` on each axis. Computed directly (no
+   * `getWorldPoint`, which reads a matrix Phaser only rebuilds at render time
+   * and so would sample a stale transform mid-handler).
+   */
+  private installWheelZoom(scene: Phaser.Scene): void {
+    const cam = this.cam
     scene.input.on(
       Phaser.Input.Events.POINTER_WHEEL,
       (pointer: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
@@ -95,34 +135,39 @@ export class CameraController {
         this.onZoomChanged(newZoom)
       },
     )
+  }
 
-    // Click-drag pan: while the pointer is held, move the camera 1:1 with the
-    // cursor at the current zoom (divide the screen delta by zoom to get the world
-    // delta). The pointer-move event fires constantly; the `isDown` check is
-    // legitimate event filtering (only drag while a button is held), not a bail-out.
+  /**
+   * Click-drag pan: while the pointer is held, move the camera 1:1 with the
+   * cursor at the current zoom (divide the screen delta by zoom to get the world
+   * delta). The pointer-move event fires constantly; the `isDown` check is
+   * legitimate event filtering (only drag while a button is held), not a bail-out.
+   */
+  private installDragPan(scene: Phaser.Scene): void {
+    const cam = this.cam
     scene.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => {
       if (!pointer.isDown) return
       cam.scrollX -= (pointer.x - pointer.prevPosition.x) / cam.zoom
       cam.scrollY -= (pointer.y - pointer.prevPosition.y) / cam.zoom
       this.clampCamera()
     })
+  }
 
-    // Keyboard pan keys. If the keyboard plugin is unavailable there is no safe
-    // way to continue — fail fast rather than silently dropping keyboard control.
+  /**
+   * Bind the WASD/arrow pan keys. If the keyboard plugin is unavailable there is
+   * no safe way to continue — fail fast rather than silently dropping keyboard
+   * control.
+   */
+  private installKeyboardPan(scene: Phaser.Scene): MoveKeys {
     const kb = scene.input.keyboard
     if (!kb) throw new Error('[CameraController] keyboard input unavailable')
     const K = Phaser.Input.Keyboard.KeyCodes
-    this.moveKeys = {
+    return {
       up: [kb.addKey(K.W), kb.addKey(K.UP)],
       down: [kb.addKey(K.S), kb.addKey(K.DOWN)],
       left: [kb.addKey(K.A), kb.addKey(K.LEFT)],
       right: [kb.addKey(K.D), kb.addKey(K.RIGHT)],
     }
-
-    // Frame is already centred; make sure it starts inside the clamp range, then
-    // let the zoom-reactive layers render at the initial zoom set above.
-    this.clampCamera()
-    this.onZoomChanged(cam.zoom)
   }
 
   /**

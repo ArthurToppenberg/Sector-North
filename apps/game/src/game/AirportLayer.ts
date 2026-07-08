@@ -7,9 +7,9 @@ import type { AirportTier } from '../map/airports'
  * An airfield placed in world space (device px), ready to render.
  *
  * As with cities, the projected `x/y` are what we draw, but the real lon/lat is
- * carried alongside because GPS is the source of truth (see README) — later
- * milestones (aircraft routing to/from airfields, re-projection) need the ground
- * truth, not the pixels derived from it. `tier` drives the zoom-reveal and glyph.
+ * carried alongside so later milestones (aircraft routing to/from airfields,
+ * re-projection) can work from the ground truth rather than the derived pixels.
+ * `tier` drives the zoom-reveal and glyph.
  */
 export interface AirportMarker {
   name: string
@@ -28,6 +28,47 @@ export interface AirportMarker {
  * field — so a co-located civil+military pair shows only the military name.
  */
 const TIER_RANK: Record<AirportTier, number> = { military: 0, major: 1, minor: 2 }
+
+/**
+ * Horizontal half-width of an equilateral triangle as a fraction of its
+ * circumradius (`sin 60° ≈ 0.866`). A fixed geometric constant of the glyph
+ * shape — not a tunable size — so it lives here, not in config.
+ */
+const TRIANGLE_HALF_WIDTH_RATIO = Math.sin(Math.PI / 3)
+
+function fail(message: string): never {
+  throw new Error(`[game/AirportLayer] ${message}`)
+}
+
+/**
+ * A usable camera zoom: finite and strictly positive. Every constant on-screen
+ * size divides by it (via `screenPxToWorld`), so a zero/NaN/negative zoom would
+ * silently produce Infinite/NaN geometry — fail loudly instead.
+ */
+function assertZoom(zoom: number): number {
+  if (!Number.isFinite(zoom) || zoom <= 0) fail(`zoom must be finite and > 0, got ${zoom}`)
+  return zoom
+}
+
+/**
+ * Validate the markers at the layer boundary. GPS is the source of truth, so a
+ * marker with a non-finite projected position means the projection failed — we
+ * refuse to render it rather than drawing garbage at a bogus point. Likewise a
+ * missing name or unknown tier is a build/wiring bug we surface immediately.
+ */
+function assertMarkers(markers: readonly AirportMarker[]): void {
+  if (markers.length === 0) fail('expected at least one airport marker')
+  markers.forEach((m, i) => {
+    if (typeof m.name !== 'string' || m.name.length === 0) fail(`marker ${i} has no name`)
+    if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) {
+      fail(`marker ${m.name} has a non-finite projected position (${m.x}, ${m.y})`)
+    }
+    if (!Number.isFinite(m.lon) || !Number.isFinite(m.lat)) {
+      fail(`marker ${m.name} has a non-finite lon/lat (${m.lon}, ${m.lat})`)
+    }
+    if (!(m.tier in TIER_RANK)) fail(`marker ${m.name} has unknown tier: ${JSON.stringify(m.tier)}`)
+  })
+}
 
 /**
  * Renders the airfield markers — a triangle glyph per field, plus name labels.
@@ -50,7 +91,7 @@ const TIER_RANK: Record<AirportTier, number> = { military: 0, major: 1, minor: 2
  *    the individual names reappear.
  */
 export class AirportLayer {
-  private readonly markers: AirportMarker[]
+  private readonly markers: readonly AirportMarker[]
   /** World-space Graphics holding every marker glyph; re-drawn on zoom. */
   private readonly gfx: Phaser.GameObjects.Graphics
   /** One world-space Text label per airfield; re-positioned/re-scaled on zoom. */
@@ -58,7 +99,8 @@ export class AirportLayer {
   /** Master on/off from the toolbar, independent of the label reveal/de-dup. */
   private layerVisible = true
 
-  constructor(scene: Phaser.Scene, markers: AirportMarker[]) {
+  constructor(scene: Phaser.Scene, markers: readonly AirportMarker[]) {
+    assertMarkers(markers)
     this.markers = markers
 
     this.gfx = scene.add.graphics().setDepth(DEPTH.airportMarkers)
@@ -153,6 +195,8 @@ export class AirportLayer {
    * on every zoom change.
    */
   onZoomChanged(zoom: number): void {
+    assertZoom(zoom)
+
     // Constant on-screen stroke width converted to world units at this zoom. The
     // marker radius is per-tier (large fields bigger than minor ones), so it's
     // resolved inside the loop rather than once here.
@@ -170,13 +214,13 @@ export class AirportLayer {
       // Glyph size encodes airport size: majors/airbases large, minor fields
       // small. Equilateral triangle (circumradius r) pointing up, centred on it.
       const r = screenPxToWorld(AIRPORT.markerScreenRadius[m.tier], zoom)
-      const dx = r * Math.sin(Math.PI / 3) // ≈ 0.866 r
-      const dy = r / 2
+      const halfWidth = r * TRIANGLE_HALF_WIDTH_RATIO
+      const halfHeight = r / 2
 
       // Every field's triangle is always drawn (military filled, civil hollow).
       const [ax, ay] = [m.x, m.y - r] // top vertex
-      const [bx, by] = [m.x - dx, m.y + dy] // bottom-left
-      const [cx, cy] = [m.x + dx, m.y + dy] // bottom-right
+      const [bx, by] = [m.x - halfWidth, m.y + halfHeight] // bottom-left
+      const [cx, cy] = [m.x + halfWidth, m.y + halfHeight] // bottom-right
       if (m.tier === 'military') {
         this.gfx.fillTriangle(ax, ay, bx, by, cx, cy)
       } else {

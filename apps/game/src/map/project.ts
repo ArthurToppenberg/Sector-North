@@ -8,6 +8,13 @@ export interface Viewport {
   padding: number
 }
 
+/**
+ * The single lon/lat → device-pixel transform. Every overlay (city markers,
+ * future aircraft, anything placed on the map) routes through one of these so
+ * the projection formula lives in exactly one place.
+ */
+export type Projector = (lon: number, lat: number) => [number, number]
+
 export interface ProjectedMap {
   /**
    * One entry per polygon: interleaved `[x0, y0, x1, y1, ...]` device-pixel
@@ -22,7 +29,7 @@ export interface ProjectedMap {
    * polygons above. Lets overlays (city markers, etc.) share the map's exact
    * fit without re-deriving the projection.
    */
-  project: (lon: number, lat: number) => [number, number]
+  project: Projector
   /**
    * Device pixels per real-world kilometre in this projection. The uniform
    * `scale` is pixels-per-degree-of-latitude, and the `cos(lat)` longitude
@@ -41,6 +48,66 @@ const DEG2RAD = Math.PI / 180
 // accuracy needs.
 const KM_PER_DEG_LAT = 111.195
 
+/** lon/lat axis-aligned bounding box, in degrees. */
+interface LonLatBounds {
+  minLon: number
+  minLat: number
+  maxLon: number
+  maxLat: number
+}
+
+/**
+ * Axis-aligned lon/lat bounding box across every outer ring of the geometry.
+ * Only the outer boundary (`polygon[0]`) is scanned — holes are always inside
+ * it, so they cannot widen the box. Throws if no finite point is found, rather
+ * than returning the sentinel ±Infinity extents that would poison the fit.
+ */
+function boundingBox(geometry: MultiPolygon): LonLatBounds {
+  let minLon = Infinity
+  let minLat = Infinity
+  let maxLon = -Infinity
+  let maxLat = -Infinity
+  for (const polygon of geometry) {
+    for (const [lon, lat] of polygon[0]) {
+      if (lon < minLon) minLon = lon
+      if (lon > maxLon) maxLon = lon
+      if (lat < minLat) minLat = lat
+      if (lat > maxLat) maxLat = lat
+    }
+  }
+  if (
+    !Number.isFinite(minLon) ||
+    !Number.isFinite(minLat) ||
+    !Number.isFinite(maxLon) ||
+    !Number.isFinite(maxLat)
+  ) {
+    throw new Error('[map/project] geometry has no finite points')
+  }
+  return { minLon, minLat, maxLon, maxLat }
+}
+
+/**
+ * Project every ring of every polygon — outer boundaries and holes alike — into
+ * its own flat `[x0, y0, x1, y1, ...]` buffer. The coastline layer strokes each
+ * as an independent closed loop, so an interior ring (e.g. an enclosed enclave)
+ * renders as its own outline rather than being dropped.
+ */
+function projectRings(geometry: MultiPolygon, project: Projector): Float32Array[] {
+  const polygons: Float32Array[] = []
+  for (const polygon of geometry) {
+    for (const ring of polygon) {
+      const out = new Float32Array(ring.length * 2)
+      for (let i = 0; i < ring.length; i++) {
+        const [x, y] = project(ring[i][0], ring[i][1])
+        out[i * 2] = x
+        out[i * 2 + 1] = y
+      }
+      polygons.push(out)
+    }
+  }
+  return polygons
+}
+
 /**
  * Project a lon/lat MultiPolygon into device pixels, fit to `viewport` with the
  * aspect ratio preserved and the result centered.
@@ -50,34 +117,22 @@ const KM_PER_DEG_LAT = 111.195
  * degree of longitude is only ~0.56× as wide as a degree of latitude; without
  * the correction the country renders badly stretched horizontally. This is
  * cheap (no per-point trig) and accurate enough for a country-scale map.
- *
- * Every ring of every polygon is projected to its own entry in `polygons` —
- * outer boundaries and holes alike. The coastline layer strokes each as an
- * independent closed loop, so an interior ring (e.g. an enclosed enclave)
- * renders as its own outline rather than being dropped.
  */
 export function projectToPixels(geometry: MultiPolygon, viewport: Viewport): ProjectedMap {
   const { width, height, padding } = viewport
+  if (!Number.isFinite(width) || !Number.isFinite(height) || !Number.isFinite(padding)) {
+    throw new Error(`[map/project] non-finite viewport: ${width}x${height}, pad ${padding}`)
+  }
+  if (padding < 0) {
+    throw new Error(`[map/project] negative viewport padding: ${padding}`)
+  }
   const availWidth = width - padding * 2
   const availHeight = height - padding * 2
   if (availWidth <= 0 || availHeight <= 0) {
     throw new Error(`[map/project] viewport too small for padding: ${width}x${height}, pad ${padding}`)
   }
 
-  // Pass 1: lon/lat bounding box across every point.
-  let minLon = Infinity
-  let minLat = Infinity
-  let maxLon = -Infinity
-  let maxLat = -Infinity
-  for (const polygon of geometry) {
-    for (const point of polygon[0]) {
-      const [lon, lat] = point
-      if (lon < minLon) minLon = lon
-      if (lon > maxLon) maxLon = lon
-      if (lat < minLat) minLat = lat
-      if (lat > maxLat) maxLat = lat
-    }
-  }
+  const { minLon, minLat, maxLon, maxLat } = boundingBox(geometry)
 
   // World units: longitude compressed by cos(mean latitude), latitude as-is.
   const lonScale = Math.cos(((minLat + maxLat) / 2) * DEG2RAD)
@@ -95,29 +150,14 @@ export function projectToPixels(geometry: MultiPolygon, viewport: Viewport): Pro
   const originY = (height - contentHeight) / 2
 
   // The one lon/lat → device-pixel transform this whole module exists to define.
-  // Everything else (the polygon buffers below, overlay markers) routes through
-  // it so the projection formula lives in exactly one place.
-  const project = (lon: number, lat: number): [number, number] => [
+  const project: Projector = (lon, lat) => [
     originX + (lon - minLon) * lonScale * scale,
     // Screen Y grows downward, latitude grows upward — flip.
     originY + (maxLat - lat) * scale,
   ]
 
-  const polygons: Float32Array[] = []
-  for (const polygon of geometry) {
-    for (const ring of polygon) {
-      const out = new Float32Array(ring.length * 2)
-      for (let i = 0; i < ring.length; i++) {
-        const [px, py] = project(ring[i][0], ring[i][1])
-        out[i * 2] = px
-        out[i * 2 + 1] = py
-      }
-      polygons.push(out)
-    }
-  }
-
   return {
-    polygons,
+    polygons: projectRings(geometry, project),
     bounds: { x: originX, y: originY, width: contentWidth, height: contentHeight },
     project,
     // `scale` is pixels per degree of latitude; divide out the km in a degree.

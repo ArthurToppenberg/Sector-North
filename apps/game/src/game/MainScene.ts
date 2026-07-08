@@ -91,7 +91,7 @@ export class MainScene extends Phaser.Scene {
     const markers: CityMarker[] = cities.map((c) => {
       const [x, y] = projected.project(c.lon, c.lat)
       // Keep the real lon/lat + population on the marker — pixels are derived,
-      // GPS is the source of truth (README).
+      // GPS is the source of truth.
       return { name: c.name, x, y, lon: c.lon, lat: c.lat, population: c.population }
     })
 

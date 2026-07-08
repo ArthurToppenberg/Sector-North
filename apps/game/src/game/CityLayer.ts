@@ -11,20 +11,47 @@ const CITY_ICON_TEXTURE = 'city-icon'
  * A city placed in world space (device px), ready to render.
  *
  * The projected `x/y` are what this layer draws, but the real lon/lat and
- * population are carried alongside — never discarded — because GPS is the
- * source of truth (see README). Later milestones (aircraft targeting cities,
- * re-projection, sizing dots by population) need the ground truth, not the
- * pixels derived from it.
+ * population are carried alongside — never discarded — so later milestones
+ * (aircraft targeting cities, re-projection, sizing dots by population) can work
+ * from the ground truth rather than the derived pixels.
  */
 export interface CityMarker {
-  name: string
+  readonly name: string
   /** Projected device-pixel position (derived from lon/lat for the current fit). */
-  x: number
-  y: number
+  readonly x: number
+  readonly y: number
   /** Real-world coordinates in lon/lat degrees — the source of truth. */
-  lon: number
-  lat: number
-  population: number
+  readonly lon: number
+  readonly lat: number
+  readonly population: number
+}
+
+/**
+ * Reject anything unexpected up front (fail fast): the layer must draw a real,
+ * non-empty set of cities whose projected pixels and source-of-truth lon/lat are
+ * finite. A NaN position would silently vanish and a missing population would
+ * corrupt later population-based sizing — surface both here instead.
+ */
+function assertMarkers(markers: readonly CityMarker[]): void {
+  if (markers.length === 0) {
+    throw new Error('CityLayer requires at least one city marker; received an empty array.')
+  }
+  markers.forEach((m, i) => {
+    if (!m.name) {
+      throw new Error(`CityLayer: marker at index ${i} is missing a name.`)
+    }
+    for (const [field, value] of [
+      ['x', m.x],
+      ['y', m.y],
+      ['lon', m.lon],
+      ['lat', m.lat],
+      ['population', m.population],
+    ] as const) {
+      if (!Number.isFinite(value)) {
+        throw new Error(`CityLayer: marker "${m.name}" has a non-finite ${field} (${value}).`)
+      }
+    }
+  })
 }
 
 /**
@@ -38,7 +65,8 @@ export interface CityMarker {
  * or vanishing as the player zooms.
  */
 export class CityLayer {
-  private readonly markers: CityMarker[]
+  private readonly scene: Phaser.Scene
+  private readonly markers: readonly CityMarker[]
   /** One world-space icon Image per city; re-scaled on zoom to hold screen size. */
   private readonly icons: Phaser.GameObjects.Image[]
   /** One world-space Text label per city; re-positioned/re-scaled on zoom. */
@@ -58,7 +86,18 @@ export class CityLayer {
     })
   }
 
-  constructor(scene: Phaser.Scene, markers: CityMarker[]) {
+  constructor(scene: Phaser.Scene, markers: readonly CityMarker[]) {
+    assertMarkers(markers)
+    // The icons depend on the texture rasterised in `preload`; if it's absent the
+    // caller skipped `CityLayer.preload`. Phaser would silently draw a green
+    // placeholder — fail loudly instead of shipping a broken layer.
+    if (!scene.textures.exists(CITY_ICON_TEXTURE)) {
+      throw new Error(
+        `CityLayer: texture "${CITY_ICON_TEXTURE}" is missing — call CityLayer.preload(scene) in the scene's preload() before constructing the layer.`,
+      )
+    }
+
+    this.scene = scene
     this.markers = markers
 
     // Icons sit just above the coastline; labels just above the icons (draw order
@@ -75,7 +114,7 @@ export class CityLayer {
       scene.add
         .text(m.x, m.y, m.name, {
           fontFamily: FONT_FAMILY,
-          fontStyle: '600',
+          fontStyle: CITY.labelFontWeight,
           fontSize: `${CITY.labelScreenSize * DPR}px`,
           color: CITY.labelColor,
           // Rasterise at device resolution so labels stay crisp on HiDPI displays.
@@ -106,7 +145,7 @@ export class CityLayer {
    */
   setVisible(visible: boolean): void {
     this.layerVisible = visible
-    this.onZoomChanged(this.icons[0].scene.cameras.main.zoom)
+    this.onZoomChanged(this.scene.cameras.main.zoom)
   }
 
   /**
@@ -116,6 +155,10 @@ export class CityLayer {
    * cities — so it runs on every zoom change.
    */
   onZoomChanged(zoom: number): void {
+    if (!Number.isFinite(zoom) || zoom <= 0) {
+      throw new Error(`CityLayer.onZoomChanged: zoom must be a positive finite number, got ${zoom}.`)
+    }
+
     // The icon texture is baked at `iconScreenSize * DPR` device px; dividing by
     // the camera zoom cancels the camera's magnification so it holds a constant
     // on-screen size (same trick the labels use).

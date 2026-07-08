@@ -16,7 +16,7 @@
 export const DPR = Math.max(window.devicePixelRatio || 1, 1)
 
 /** Shared HUD typeface — Chakra Petch, a squared techno face for the tactical look. */
-export const FONT_FAMILY = 'Chakra Petch'
+export const FONT_FAMILY = 'Chakra Petch' as const
 
 /**
  * Game-level event the scene emits once `create` has finished — i.e. the world
@@ -24,7 +24,7 @@ export const FONT_FAMILY = 'Chakra Petch'
  * `main.ts` listens for it to tear down the boot loader. Shared here so the
  * emit and the listen can't drift apart.
  */
-export const APP_READY_EVENT = 'app-ready'
+export const APP_READY_EVENT = 'app-ready' as const
 
 export const MAP = {
   /** Clear margin (CSS pixels) kept around the country when first fitting it. */
@@ -48,6 +48,8 @@ export const CITY = {
   iconScreenSize: 15,
   /** Label text colour. */
   labelColor: '#ffffff',
+  /** Label font weight (CSS numeric weight). */
+  labelFontWeight: '600',
   /** Label font size on screen (CSS pixels). */
   labelScreenSize: 13,
   /** Clear gap between the top of the icon and the bottom of the label (CSS pixels). */

@@ -35,14 +35,24 @@ export class GridLayer {
   private readonly gfx: Phaser.GameObjects.Graphics
 
   constructor(scene: Phaser.Scene, config: GridConfig) {
-    this.spacing = GRID.cellKm * config.pixelsPerKm
-    // A non-positive spacing would make the redraw loops never advance (or spin
-    // forever). That can only happen if the projection scale is broken, so fail
-    // loudly rather than hang.
-    if (!(this.spacing > 0)) {
-      throw new Error(`[GridLayer] non-positive grid spacing from pixelsPerKm=${config.pixelsPerKm}`)
+    const { pixelsPerKm, origin } = config
+
+    // Validate the projection inputs up front and throw on anything unexpected —
+    // these can only be wrong if the projection itself is broken, and a broken
+    // grid must crash loudly, never draw silently-wrong or blank.
+    //   - A non-finite or non-positive scale would make the redraw loops never
+    //     advance (zero/NaN step) or spin forever (negative step).
+    //   - A non-finite origin would poison every snapped line into NaN, drawing
+    //     nothing at all while masking the fault.
+    if (!Number.isFinite(pixelsPerKm) || pixelsPerKm <= 0) {
+      throw new Error(`[GridLayer] pixelsPerKm must be a positive finite number, got ${pixelsPerKm}`)
     }
-    this.origin = config.origin
+    if (!Number.isFinite(origin.x) || !Number.isFinite(origin.y)) {
+      throw new Error(`[GridLayer] origin must be finite, got (${origin.x}, ${origin.y})`)
+    }
+
+    this.spacing = GRID.cellKm * pixelsPerKm
+    this.origin = origin
     // The bottom-most layer: every other layer draws over the grid so it reads
     // as a backdrop. Draw order is declared centrally in DEPTH.
     this.gfx = scene.add.graphics().setDepth(DEPTH.grid)
