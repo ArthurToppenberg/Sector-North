@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "pnpm --filter sector-north-game dev",
     "build": "pnpm --filter sector-north-game build",
+    "preview": "pnpm --filter sector-north-game preview",
     "build:all": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "clean": "rimraf dist node_modules"
+    "clean": "pnpm --filter sector-north-game clean"
   },
   "devDependencies": {
     "rimraf": "^6.0.1"

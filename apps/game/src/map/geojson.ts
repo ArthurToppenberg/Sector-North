@@ -1,9 +1,9 @@
-import denmarkUrl from '../data/borders/denmark-boundary.geojson?url'
-import germanyUrl from '../data/borders/germany-boundary.geojson?url'
-import netherlandsUrl from '../data/borders/netherlands-boundary.geojson?url'
-import norwayUrl from '../data/borders/norway-boundary.geojson?url'
-import polandUrl from '../data/borders/poland-boundary.geojson?url'
-import swedenUrl from '../data/borders/sweden-boundary.geojson?url'
+import denmarkUrl from '../data/borders/denmark-boundary.json?url'
+import germanyUrl from '../data/borders/germany-boundary.json?url'
+import netherlandsUrl from '../data/borders/netherlands-boundary.json?url'
+import norwayUrl from '../data/borders/norway-boundary.json?url'
+import polandUrl from '../data/borders/poland-boundary.json?url'
+import swedenUrl from '../data/borders/sweden-boundary.json?url'
 
 /** A [longitude, latitude] pair in degrees (WGS84 / CRS84). */
 export type LonLat = [number, number]
