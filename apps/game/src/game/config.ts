@@ -112,16 +112,6 @@ export const AIRPORT = {
    * the player is zoomed in close.
    */
   minorLabelRevealZoom: 32,
-  /**
-   * De-clutter radius for name labels, on screen (CSS pixels). When two
-   * airfields fall within this on-screen distance only ONE name is shown — the
-   * highest-priority field in the cluster: a military airbase wins, else the
-   * major airport, else a minor field. This collapses co-located pairs (e.g. the
-   * civil + military fields that share Aalborg/Karup/Skrydstrup) to a single
-   * name. Because it's an on-screen distance, zooming in separates the fields and
-   * their individual names reappear. Triangles are never suppressed — only names.
-   */
-  labelClusterScreenRadius: 34,
 } as const
 
 // Faint real-world reference grid drawn beneath the map. Because the game is

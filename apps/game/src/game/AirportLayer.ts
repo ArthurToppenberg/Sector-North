@@ -22,12 +22,8 @@ export interface AirportMarker {
   tier: AirportTier
 }
 
-/**
- * Priority within a close cluster when deciding which single name to show:
- * lower rank wins. A military airbase beats a major airport, which beats a minor
- * field — so a co-located civil+military pair shows only the military name.
- */
-const TIER_RANK: Record<AirportTier, number> = { military: 0, major: 1, minor: 2 }
+/** The valid airfield tiers, used to validate incoming markers. */
+const TIERS: readonly AirportTier[] = ['military', 'major', 'minor']
 
 /**
  * Horizontal half-width of an equilateral triangle as a fraction of its
@@ -66,7 +62,7 @@ function assertMarkers(markers: readonly AirportMarker[]): void {
     if (!Number.isFinite(m.lon) || !Number.isFinite(m.lat)) {
       fail(`marker ${m.name} has a non-finite lon/lat (${m.lon}, ${m.lat})`)
     }
-    if (!(m.tier in TIER_RANK)) fail(`marker ${m.name} has unknown tier: ${JSON.stringify(m.tier)}`)
+    if (!TIERS.includes(m.tier)) fail(`marker ${m.name} has unknown tier: ${JSON.stringify(m.tier)}`)
   })
 }
 
@@ -81,14 +77,9 @@ function assertMarkers(markers: readonly AirportMarker[]): void {
  * change to hold a constant on-screen size.
  *
  * Every triangle is always drawn while the layer is on. The *names* are managed
- * to avoid clutter:
- *  - Tiered reveal: major airports + military airbases label once the camera
- *    zooms past `AIRPORT.labelRevealZoom`; minor fields only past
- *    `AIRPORT.minorLabelRevealZoom` (closer in).
- *  - Cluster de-dup: when several fields fall within
- *    `AIRPORT.labelClusterScreenRadius` on screen, only the highest-priority
- *    one's name shows (military > major > minor). Zooming in separates them and
- *    the individual names reappear.
+ * by a tiered reveal: major airports + military airbases label once the camera
+ * zooms past `AIRPORT.labelRevealZoom`; minor fields only past
+ * `AIRPORT.minorLabelRevealZoom` (closer in).
  */
 export class AirportLayer {
   private readonly markers: readonly AirportMarker[]
@@ -135,7 +126,7 @@ export class AirportLayer {
   /**
    * Show or hide the whole airport layer — triangles and names alike. This is
    * the master toggle; while on, individual *names* are still governed by the
-   * zoom reveal + cluster de-dup below, but every triangle shows.
+   * zoom reveal below, but every triangle shows.
    */
   setVisible(visible: boolean): void {
     this.layerVisible = visible
@@ -150,40 +141,16 @@ export class AirportLayer {
   }
 
   /**
-   * Decide which labels to show at this zoom: start from the fields whose tier
-   * has been revealed, then greedily keep the highest-priority name in each
-   * on-screen cluster and drop the rest. Returns the set of marker indices whose
-   * label should be visible.
+   * Decide which labels to show at this zoom: every field whose tier has been
+   * revealed at this zoom. Returns the set of marker indices whose label should
+   * be visible.
    */
   private visibleLabelIndices(zoom: number): Set<number> {
     const shown = new Set<number>()
     if (!this.layerVisible) return shown
 
-    // Candidates: tier revealed at this zoom, ordered highest-priority first so
-    // the greedy pass below keeps the right name when a cluster collides. Ties
-    // break on index for a stable, deterministic choice.
-    const candidates = [...this.markers.keys()]
-      .filter((i) => zoom >= this.labelRevealZoom(this.markers[i].tier))
-      .sort((a, b) => TIER_RANK[this.markers[a].tier] - TIER_RANK[this.markers[b].tier] || a - b)
-
-    // Cluster radius is a constant on-screen distance → shrinks in world units as
-    // the player zooms in, so crowded names separate out the closer you get.
-    const radius = screenPxToWorld(AIRPORT.labelClusterScreenRadius, zoom)
-    const radiusSq = radius * radius
-
-    for (const i of candidates) {
-      const m = this.markers[i]
-      let clustered = false
-      for (const j of shown) {
-        const other = this.markers[j]
-        const dx = m.x - other.x
-        const dy = m.y - other.y
-        if (dx * dx + dy * dy <= radiusSq) {
-          clustered = true
-          break
-        }
-      }
-      if (!clustered) shown.add(i)
+    for (const i of this.markers.keys()) {
+      if (zoom >= this.labelRevealZoom(this.markers[i].tier)) shown.add(i)
     }
     return shown
   }
@@ -191,8 +158,8 @@ export class AirportLayer {
   /**
    * Re-draw the triangles (always all of them, while the layer is on) and
    * re-place/scale the labels so each renders at a fixed on-screen size, applying
-   * the tiered reveal + cluster de-dup. Cheap — a few dozen fields — so it runs
-   * on every zoom change.
+   * the tiered reveal. Cheap — a few dozen fields — so it runs on every zoom
+   * change.
    */
   onZoomChanged(zoom: number): void {
     assertZoom(zoom)
