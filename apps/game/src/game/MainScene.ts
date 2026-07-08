@@ -1,8 +1,8 @@
 import Phaser from 'phaser'
 import { loadBoundaries, BOUNDARY_ASSETS, PROJECTION_FRAME_ASSETS } from '../map/geojson'
-import { loadMajorCities, type City } from '../map/cities'
-import { loadAirports, type AirportTier, type Airport } from '../map/airports'
-import { loadRadars, type Radar } from '../map/radars'
+import { loadMajorCities, CITIES_ASSET, type City } from '../map/cities'
+import { loadAirports, AIRPORTS_ASSET, type AirportTier, type Airport } from '../map/airports'
+import { loadRadars, RADARS_ASSET, type Radar } from '../map/radars'
 import {
   clusterByProximity,
   resolveColocationLabels,
@@ -23,6 +23,7 @@ import { DebugHud } from './DebugHud'
 import { Toolbar } from './Toolbar'
 import { type InfoWindowContent } from './InfoWindow'
 import { InfoWindowManager } from './InfoWindowManager'
+import { preloadRadarImages, radarImageAsset } from './radarImages'
 
 const AIRPORT_LABEL_PRIORITY: Record<AirportTier, number> = { military: 0, major: 1, minor: 2 }
 const RADAR_LABEL_PRIORITY = 3
@@ -60,12 +61,20 @@ export class MainScene extends Phaser.Scene {
     // buttons and the city markers from them.
     Toolbar.preload(this)
     CityLayer.preload(this)
+    // Radar site photos (only the sites we have a usable photo for), shown in each
+    // radar's detail window (opened on click in `create`), so load them before then.
+    preloadRadarImages(this)
 
     // Fetch the country boundaries. Phaser's loader parses each into the JSON
     // cache before `create` runs; we read + validate them there.
     for (const { name, url } of BOUNDARY_ASSETS) {
       this.load.json(this.boundaryCacheKey(name), url)
     }
+    // The city/airport/radar datasets ship the same way — standalone `?url`
+    // files fetched into the JSON cache here, validated in `create`.
+    this.load.json(CITIES_ASSET.cacheKey, CITIES_ASSET.url)
+    this.load.json(AIRPORTS_ASSET.cacheKey, AIRPORTS_ASSET.url)
+    this.load.json(RADARS_ASSET.cacheKey, RADARS_ASSET.url)
   }
 
   create() {
@@ -75,9 +84,9 @@ export class MainScene extends Phaser.Scene {
     // The projection/zoom is pinned to a fixed frame (the original Denmark-centred
     // set), so boundaries added purely for context don't rescale the map.
     const frame = loadBoundaries(getJson, PROJECTION_FRAME_ASSETS)
-    const cities = loadMajorCities()
-    const airports = loadAirports()
-    const radars = loadRadars()
+    const cities = loadMajorCities(this.cache.json.get(CITIES_ASSET.cacheKey))
+    const airports = loadAirports(this.cache.json.get(AIRPORTS_ASSET.cacheKey))
+    const radars = loadRadars(this.cache.json.get(RADARS_ASSET.cacheKey))
 
     const { width, height } = this.scale
     const projected = projectToPixels(
@@ -258,8 +267,12 @@ export class MainScene extends Phaser.Scene {
    * "N/A" (a 2D radar publishes no ceiling) — not a masked zero.
    */
   private radarWindowContent(radar: Radar): InfoWindowContent {
+    // Only some sites have a usable photo; the rest fall back to the placeholder.
+    const image = radarImageAsset(radar.name)
     return {
       title: radar.name,
+      imageTextureKey: image?.textureKey,
+      imageCredit: image?.credit,
       fields: [
         { label: 'Model', value: radar.model },
         { label: 'Manufacturer', value: radar.manufacturer },

@@ -20,14 +20,19 @@ the repo-root `CLAUDE.md` and apply here in full.
   no Phaser/projection/game knowledge), `units.ts` (screen↔world pixel scaling), and
   `camera.ts` (camera → world-view geometry).
 - `src/data/` — bundled data assets. Coordinates are lon/lat (WGS84); prefer simplified
-  geometry (fewer points = faster to draw). Two import mechanisms:
+  geometry (fewer points = faster to draw). Every dataset is imported the same way — via
+  Vite `?url`, so each file is emitted to `dist/` and fetched at runtime (through Phaser's
+  loader into the JSON cache) rather than inlined into the JS bundle. `MainScene.preload()`
+  requests each URL; the `src/map/` loaders validate the parsed JSON handed to them in
+  `create()`. To keep the small datasets (`major-cities.json` ~0.6 KB, `radars.json`
+  ~2.6 KB) from being inlined as base64 data URIs under Vite's default 4 KB threshold,
+  `vite.config.ts` sets `assetsInlineLimit` to force all `.json` assets to emit as files.
   - Country boundaries — `borders/*.json` (currently belgium, czechia, denmark, france,
     germany, latvia, lithuania, netherlands, norway, poland, russia, slovakia, sweden,
-    united-kingdom) imported via Vite `?url`, so each file is emitted to `dist/`
-    and fetched at runtime rather than inlined into the JS bundle; `geojson.ts` validates
-    the parsed JSON.
-  - `major-cities.json`, `airports.json` and `radars.json` — imported via Vite `?raw`
-    (inlined at build time and parsed by `cities.ts` / `airports.ts` / `radars.ts`).
+    united-kingdom); `geojson.ts` exposes them as `BOUNDARY_ASSETS` and validates each.
+  - `major-cities.json`, `airports.json` and `radars.json` — each exposes a
+    `*_ASSET` ({ cacheKey, url }) from `cities.ts` / `airports.ts` / `radars.ts`, which
+    also parse and validate the fetched JSON.
 
 Co-located sites are **never collapsed** — no marker is merged away or moved to a
 midpoint. `loadAirports()` just parses and validates; every airfield keeps its own glyph

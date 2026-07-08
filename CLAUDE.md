@@ -106,20 +106,27 @@ All HUD elements must be rendered in **white or black only** — no other colour
 This covers any on-screen overlay drawn on top of the map/world: text readouts, debug
 panels, city/place labels, marker dots, icons, and any other UI chrome.
 
-- Fills and strokes for HUD graphics: `0xffffff` or `0x000000`.
+- Fills and strokes for HUD graphics: `0xffffff` or `0x000000` — or the phosphor green
+  (`MAP.strokeColor`, `0x33ff66`); see the sanctioned exceptions below.
 - HUD text `color`: `#ffffff` or `#000000`.
-- Do not introduce accent/status colours (reds, greens, etc.) for HUD, even for emphasis
-  or state. Convey state through position, size, weight, or shape instead.
+- Do not introduce *other* accent/status colours (reds, ambers, blues, etc.) for HUD,
+  even for emphasis or state. Convey state through position, size, weight, or shape
+  rather than an arbitrary hue.
 
 **The map geography itself is NOT HUD and is exempt from this rule.** The coastline
 outlines are rendered in radar phosphor green (`MAP.strokeColor`, `0x33ff66`) to match a
-tactical C2 / radar display. This exemption is only for the drawn world geography (the
-country outlines) — every overlay *on top* of it (labels, markers, readouts, chrome)
-stays white or black. Do not extend the green to HUD elements.
+tactical C2 / radar display.
 
-**Sanctioned exception — radar coverage sweeps.** The animated radar sweep hands and
-range rings (`RADAR.sweep`) are drawn in the same phosphor green as the coastline
-(`MAP.strokeColor`), by explicit user request, so the coverage picture reads as part of
-the tactical radar display rather than as chrome. This is the *only* overlay allowed to
-use the green; do not treat it as licence to colour other HUD elements. Everything else
-on top of the map stays white or black.
+**Sanctioned exception — phosphor green (`MAP.strokeColor`, `0x33ff66`).** Beyond white
+and black, HUD elements may also use the coastline's phosphor green so overlays read as
+part of the tactical radar display. This began as the coastline colour and the animated
+radar coverage sweeps and range rings (`RADAR.sweep`), and is now permitted for HUD chrome
+generally. It is the *only* colour beyond white/black allowed for HUD graphics/text — do
+not treat it as licence for any other hue.
+
+**Sanctioned exception — photographic imagery.** Photographs shown inside HUD panels (the
+radar-site photos in the info windows) may keep their natural colour — they are real
+photos, not chrome, and the box's white frame + black letterbox keeps them contained. By
+explicit user request these are *not* desaturated. This exception is only for genuine
+photographs placed in an image slot; it is not licence to colour any graphic, text, icon,
+or other chrome, which stay white/black (+ the phosphor green above).

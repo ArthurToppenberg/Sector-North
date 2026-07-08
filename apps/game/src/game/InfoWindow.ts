@@ -16,6 +16,14 @@ export interface InfoField {
 export interface InfoWindowContent {
   readonly title: string
   readonly fields: readonly InfoField[]
+  /**
+   * Texture key of a photo to show in the image box. Optional: an entity without
+   * a picture omits it and the box shows a "NO IMAGE" placeholder — not a fallback
+   * masking an error, but a genuinely image-less content type.
+   */
+  readonly imageTextureKey?: string
+  /** Attribution caption shown on the image, required by its source licence. */
+  readonly imageCredit?: string
 }
 
 /** Where a window sits on screen, as its panel's top-left corner in device pixels. */
@@ -59,6 +67,9 @@ export class InfoWindow {
   private readonly closeGlyph: Phaser.GameObjects.Text
   private readonly title: Phaser.GameObjects.Text
   private readonly image: Phaser.GameObjects.Rectangle
+  /** The site photo, laid into `image`'s frame; null when the content has none. */
+  private readonly photo: Phaser.GameObjects.Image | null
+  /** Placeholder "NO IMAGE" text, or the photo's attribution caption. */
   private readonly imageCaption: Phaser.GameObjects.Text
   /** `labels[i]`/`values[i]` form field row `i`; one pair per content field. */
   private readonly labels: Phaser.GameObjects.Text[]
@@ -151,16 +162,32 @@ export class InfoWindow {
       .setOrigin(0, 0)
       .setStrokeStyle(border, INFO_WINDOW.borderColor, INFO_WINDOW.borderAlpha)
       .setDepth(contentDepth)
+
+    // The photo, if any. It must already be loaded (see `preloadRadarImages`); a
+    // missing texture is a wiring bug, so fail loudly rather than draw an empty box.
+    if (content.imageTextureKey !== undefined) {
+      if (!scene.textures.exists(content.imageTextureKey)) {
+        fail(`image texture "${content.imageTextureKey}" is not loaded`)
+      }
+      // Sits between the frame fill and the caption; scaled/positioned in `layout`.
+      this.photo = scene.add.image(0, 0, content.imageTextureKey).setOrigin(0.5, 0.5).setDepth(contentDepth)
+    } else {
+      this.photo = null
+    }
+
+    // With a photo, the caption becomes its (small, bottom-anchored) attribution;
+    // without one it's the centred "NO IMAGE" placeholder.
+    const captionText = this.photo ? (content.imageCredit ?? '') : INFO_WINDOW.imageCaption
     this.imageCaption = scene.add
-      .text(0, 0, INFO_WINDOW.imageCaption, {
+      .text(0, 0, captionText, {
         fontFamily: FONT_FAMILY,
         fontStyle: INFO_WINDOW.labelFontWeight,
         fontSize: `${INFO_WINDOW.imageCaptionFontScreenSize * DPR}px`,
         color: INFO_WINDOW.labelColor,
         resolution: DPR,
       })
-      .setOrigin(0.5, 0.5)
-      .setAlpha(INFO_WINDOW.imageCaptionAlpha)
+      .setOrigin(this.photo ? 0 : 0.5, this.photo ? 1 : 0.5)
+      .setAlpha(this.photo ? INFO_WINDOW.imageCreditAlpha : INFO_WINDOW.imageCaptionAlpha)
       .setDepth(contentDepth)
 
     this.labels = content.fields.map((f) => this.createLabel(f.label, contentDepth))
@@ -212,6 +239,7 @@ export class InfoWindow {
     return [
       this.panel,
       this.image,
+      ...(this.photo ? [this.photo] : []),
       this.imageCaption,
       this.closeButton,
       this.closeGlyph,
@@ -225,9 +253,17 @@ export class InfoWindow {
   setDepthBase(depthBase: number): void {
     this.panel.setDepth(depthBase)
     const contentDepth = depthBase + 1
-    for (const obj of [this.image, this.imageCaption, this.closeButton, this.closeGlyph, this.title, ...this.labels, ...this.values]) {
-      obj.setDepth(contentDepth)
-    }
+    const content = [
+      this.image,
+      ...(this.photo ? [this.photo] : []),
+      this.imageCaption,
+      this.closeButton,
+      this.closeGlyph,
+      this.title,
+      ...this.labels,
+      ...this.values,
+    ]
+    for (const obj of content) obj.setDepth(contentDepth)
   }
 
   /** Keep the window on screen after a resize (its origin is absolute device px). */
@@ -263,10 +299,27 @@ export class InfoWindow {
     this.title.setPosition(titleX, y)
     y += Math.max(closeSize, this.title.height) + sectionGap
 
-    // Placeholder image box, full inner width.
+    // Image box, full inner width.
     const imageH = INFO_WINDOW.imageHeightScreen * DPR
     this.image.setPosition(ax + pad, y)
-    this.imageCaption.setPosition(ax + pad + this.innerWidth / 2, y + imageH / 2)
+    if (this.photo) {
+      // Cover-fill: scale so the photo fills the whole box, then crop the centred
+      // overflow so nothing spills past the frame (with origin 0.5, a centred crop
+      // renders centred on the object's position). Caption anchored bottom-left.
+      const texW = this.photo.width
+      const texH = this.photo.height
+      const scale = Math.max(this.innerWidth / texW, imageH / texH)
+      const cropW = this.innerWidth / scale
+      const cropH = imageH / scale
+      this.photo
+        .setCrop((texW - cropW) / 2, (texH - cropH) / 2, cropW, cropH)
+        .setScale(scale)
+        .setPosition(ax + pad + this.innerWidth / 2, y + imageH / 2)
+      const captionInset = INFO_WINDOW.imageCaptionInsetScreen * DPR
+      this.imageCaption.setPosition(ax + pad + captionInset, y + imageH - captionInset)
+    } else {
+      this.imageCaption.setPosition(ax + pad + this.innerWidth / 2, y + imageH / 2)
+    }
     y += imageH + sectionGap
 
     // Metadata rows: label then its (possibly wrapped) value, stacked.

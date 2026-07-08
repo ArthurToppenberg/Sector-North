@@ -1,4 +1,12 @@
-import raw from '../data/airports.json?raw'
+import airportsUrl from '../data/airports.json?url'
+
+/**
+ * Emitted as a standalone `dist/` file (Vite `?url`) and fetched at runtime by
+ * Phaser's loader, not inlined into the JS bundle — same mechanism as the country
+ * boundaries. `MainScene` preloads `url` into the JSON cache under `cacheKey`, then
+ * hands the parsed value to `loadAirports` for validation.
+ */
+export const AIRPORTS_ASSET = { cacheKey: 'airports', url: airportsUrl } as const
 
 /**
  * Coarse importance tier, used by the render layer to decide what shows at which
@@ -56,9 +64,7 @@ function parseAirport(entry: unknown, index: number): Airport {
   }
 }
 
-export function loadAirports(): Airport[] {
-  const parsed: unknown = JSON.parse(raw)
-
+export function loadAirports(parsed: unknown): Airport[] {
   if (!Array.isArray(parsed) || parsed.length === 0) {
     fail('expected a non-empty array of airports')
   }

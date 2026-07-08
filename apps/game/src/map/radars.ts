@@ -1,4 +1,12 @@
-import raw from '../data/radars.json?raw'
+import radarsUrl from '../data/radars.json?url'
+
+/**
+ * Emitted as a standalone `dist/` file (Vite `?url`) and fetched at runtime by
+ * Phaser's loader, not inlined into the JS bundle — same mechanism as the country
+ * boundaries. `MainScene` preloads `url` into the JSON cache under `cacheKey`, then
+ * hands the parsed value to `loadRadars` for validation.
+ */
+export const RADARS_ASSET = { cacheKey: 'radars', url: radarsUrl } as const
 
 export type RadarDimensionality = '2D' | '3D'
 
@@ -126,9 +134,7 @@ function parseRadar(entry: unknown, index: number): Radar {
   }
 }
 
-export function loadRadars(): Radar[] {
-  const parsed: unknown = JSON.parse(raw)
-
+export function loadRadars(parsed: unknown): Radar[] {
   if (!Array.isArray(parsed) || parsed.length === 0) {
     fail('expected a non-empty array of radars')
   }

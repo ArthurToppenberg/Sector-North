@@ -9,6 +9,45 @@ function formatBytes(bytes: number): string {
 }
 
 /**
+ * Group an emitted file into a human-readable category by extension, so the
+ * bundle report can be read by type (geo data vs. engine vs. imagery, …) rather
+ * than as one flat list. Anything unrecognised lands in `Other` — a visible
+ * bucket, not a silent drop, so a newly-added asset kind shows up and gets a
+ * proper category here.
+ */
+function categoryOf(fileName: string): string {
+  const ext = fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase()
+  switch (ext) {
+    case 'js':
+    case 'mjs':
+    case 'cjs':
+      return 'JavaScript'
+    case 'css':
+      return 'CSS'
+    case 'html':
+      return 'HTML'
+    case 'json':
+      return 'Geo data'
+    case 'jpg':
+    case 'jpeg':
+    case 'png':
+    case 'webp':
+    case 'avif':
+    case 'gif':
+    case 'svg':
+      return 'Images'
+    case 'woff':
+    case 'woff2':
+    case 'ttf':
+    case 'otf':
+    case 'eot':
+      return 'Fonts'
+    default:
+      return 'Other'
+  }
+}
+
+/**
  * ANSI colour helpers, disabled when stdout is not a TTY or `NO_COLOR` is set
  * (so CI logs stay plain). Each wraps a string in a colour and resets after.
  */
@@ -42,18 +81,32 @@ interface Column {
 }
 
 /**
- * Render a titled, bordered table shared by every build-time report so they all
- * look identical. `rows`/`total` are pre-formatted string cells, one per column.
- * Returns the block as a single multi-line string ready for `logger.info`.
+ * One block of rows in a table: the body rows, plus an optional emphasised
+ * `subtotal` row drawn (bold) at the group's foot. A table with a single
+ * subtotal-less group renders exactly like a plain flat table — so callers that
+ * don't group (the JSON minification report) pass `[{ rows }]` unchanged.
  */
-function renderTable(title: string, columns: Column[], rows: string[][], total: string[]): string {
+interface RowGroup {
+  rows: string[][]
+  subtotal?: string[]
+}
+
+/**
+ * Render a titled, bordered table shared by every build-time report so they all
+ * look identical. `groups`/`total` are pre-formatted string cells, one per
+ * column; consecutive groups are separated by a horizontal rule, and any group
+ * `subtotal` and the final `total` are rendered bold. Returns the block as a
+ * single multi-line string ready for `logger.info`.
+ */
+function renderTable(title: string, columns: Column[], groups: RowGroup[], total: string[]): string {
   const c = makeColors()
   const dash = (n: number) => '─'.repeat(n)
   const aligns = columns.map((col) => col.align)
 
-  // Column widths: widest of header, every row, and the total row.
+  // Column widths: widest of header, every body/subtotal row, and the total row.
+  const allRows = [...groups.flatMap((g) => (g.subtotal ? [...g.rows, g.subtotal] : g.rows)), total]
   const widths = columns.map((col, i) =>
-    Math.max(col.header.length, ...[...rows, total].map((row) => row[i].length)),
+    Math.max(col.header.length, ...allRows.map((row) => row[i].length)),
   )
 
   const border = (l: string, mid: string, r: string) =>
@@ -66,9 +119,12 @@ function renderTable(title: string, columns: Column[], rows: string[][], total: 
   out.push(c.bold(c.cyan(`  ✦ ${title}`)))
   out.push('  ' + border('┌', '┬', '┐'))
   out.push('  ' + line(columns.map((col) => col.header), () => c.dim))
-  out.push('  ' + border('├', '┼', '┤'))
-  for (const row of rows) {
-    out.push('  ' + line(row, (i) => columns[i].colour ?? ((s) => s)))
+  for (const group of groups) {
+    out.push('  ' + border('├', '┼', '┤'))
+    for (const row of group.rows) {
+      out.push('  ' + line(row, (i) => columns[i].colour ?? ((s) => s)))
+    }
+    if (group.subtotal) out.push('  ' + line(group.subtotal, () => c.bold))
   }
   out.push('  ' + border('├', '┼', '┤'))
   out.push('  ' + line(total, () => c.bold))
@@ -81,6 +137,8 @@ interface MinifyResult {
   name: string
   before: number
   after: number
+  /** Gzipped size of the minified output — what GitHub Pages actually serves. */
+  gzip: number
 }
 
 /** Render the JSON minification measurements as a shared-style table. */
@@ -95,19 +153,22 @@ function renderReport(results: MinifyResult[]): string {
     { header: 'reduced', align: 'r' },
     { header: 'saved', align: 'r', colour: c.green },
     { header: 'new', align: 'r' },
+    { header: 'gzip', align: 'r', colour: c.dim },
   ]
-  const row = (name: string, before: number, after: number) => [
+  const row = (name: string, before: number, after: number, gzip: number) => [
     name,
     formatBytes(before),
     formatBytes(before - after),
     pct(before, after),
     formatBytes(after),
+    formatBytes(gzip),
   ]
 
-  const rows = results.map((r) => row(r.name, r.before, r.after))
+  const rows = results.map((r) => row(r.name, r.before, r.after, r.gzip))
   const totalBefore = results.reduce((sum, r) => sum + r.before, 0)
   const totalAfter = results.reduce((sum, r) => sum + r.after, 0)
-  return renderTable('JSON minification', columns, rows, row('total', totalBefore, totalAfter))
+  const totalGzip = results.reduce((sum, r) => sum + r.gzip, 0)
+  return renderTable('JSON minification', columns, [{ rows }], row('total', totalBefore, totalAfter, totalGzip))
 }
 
 /**
@@ -152,18 +213,62 @@ function reportBundleSizes(): Plugin {
         return { name: `${outDirName}/${fileName}`, size: content.byteLength, gzip: gzipSync(content).length }
       })
       if (files.length === 0) return
-      files.sort((a, b) => a.size - b.size)
 
       const c = makeColors()
       const columns: Column[] = [
+        { header: 'category', align: 'l', colour: c.cyan },
         { header: 'file', align: 'l' },
         { header: 'size', align: 'r' },
         { header: 'gzip', align: 'r', colour: c.dim },
       ]
-      const rows = files.map((f) => [f.name, formatBytes(f.size), formatBytes(f.gzip)])
-      const totalSize = files.reduce((sum, f) => sum + f.size, 0)
-      const totalGzip = files.reduce((sum, f) => sum + f.gzip, 0)
-      logger.info(renderTable('bundle output', columns, rows, ['total', formatBytes(totalSize), formatBytes(totalGzip)]))
+
+      // Bucket every file by category, then order both the categories and the
+      // files within each by size (largest first) so the heaviest groups —
+      // where any size win lives — read top-down.
+      const byCategory = new Map<string, typeof files>()
+      for (const f of files) {
+        const list = byCategory.get(categoryOf(f.name)) ?? []
+        list.push(f)
+        byCategory.set(categoryOf(f.name), list)
+      }
+      const sum = (list: typeof files, key: 'size' | 'gzip') =>
+        list.reduce((acc, f) => acc + f[key], 0)
+
+      const groups: RowGroup[] = [...byCategory.entries()]
+        .map(([category, list]) => ({
+          category,
+          list: [...list].sort((a, b) => b.size - a.size),
+          size: sum(list, 'size'),
+          gzip: sum(list, 'gzip'),
+        }))
+        .sort((a, b) => b.size - a.size)
+        .map(({ category, list, size, gzip }) => ({
+          // Category label sits on the group's first row only; its foot carries
+          // the bold per-category subtotal (with the file count).
+          rows: list.map((f, i) => [
+            i === 0 ? category : '',
+            f.name,
+            formatBytes(f.size),
+            formatBytes(f.gzip),
+          ]),
+          subtotal: [
+            '',
+            `subtotal (${list.length} ${list.length === 1 ? 'file' : 'files'})`,
+            formatBytes(size),
+            formatBytes(gzip),
+          ],
+        }))
+
+      const totalSize = sum(files, 'size')
+      const totalGzip = sum(files, 'gzip')
+      logger.info(
+        renderTable('bundle output', columns, groups, [
+          'total',
+          '',
+          formatBytes(totalSize),
+          formatBytes(totalGzip),
+        ]),
+      )
     },
   }
 }
@@ -221,6 +326,7 @@ function minifyJsonAssets(): Plugin {
             name: entry.name.replace(/-[^-.]+\.json$/, '.json'),
             before: Buffer.byteLength(content),
             after: Buffer.byteLength(minified),
+            gzip: gzipSync(Buffer.from(minified)).length,
           })
         }
       }
@@ -239,6 +345,12 @@ export default defineConfig({
     // We render our own bundle-size table (see reportBundleSizes), computing gzip
     // ourselves, so Vite's own compressed-size pass would be duplicated work.
     reportCompressedSize: false,
+    // Every `?url` JSON dataset (country boundaries + cities/airports/radars) must
+    // ship as its own file in `dist/`, fetched at runtime — never inlined as a
+    // base64 data URI. The small datasets (major-cities ~0.6 KB, radars ~2.6 KB)
+    // fall under Vite's default 4 KB inline threshold, so force JSON to emit as a
+    // file regardless of size; other asset kinds keep the default behaviour.
+    assetsInlineLimit: (filePath) => (filePath.endsWith('.json') ? false : undefined),
     // Split Phaser into its own long-lived vendor chunk. Phaser (~1.4 MB) never
     // changes between deploys while the game code changes constantly; keeping them
     // separate means a game update only busts the small app chunk's hash, so

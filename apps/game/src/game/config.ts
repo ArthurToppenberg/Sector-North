@@ -274,6 +274,10 @@ export const INFO_WINDOW = {
   imageCaption: 'NO IMAGE',
   imageCaptionFontScreenSize: 11,
   imageCaptionAlpha: 0.5,
+  /** Inset (CSS px) of the photo's attribution caption from the image box corner. */
+  imageCaptionInsetScreen: 5,
+  /** Opacity of the photo attribution caption (a touch brighter than the placeholder). */
+  imageCreditAlpha: 0.7,
   /** Close button square edge and its "×" glyph size (CSS pixels). */
   closeButtonScreenSize: 22,
   closeGlyphFontScreenSize: 18,

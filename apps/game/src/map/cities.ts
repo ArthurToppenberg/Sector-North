@@ -1,4 +1,12 @@
-import raw from '../data/major-cities.json?raw'
+import citiesUrl from '../data/major-cities.json?url'
+
+/**
+ * Emitted as a standalone `dist/` file (Vite `?url`) and fetched at runtime by
+ * Phaser's loader, not inlined into the JS bundle — same mechanism as the country
+ * boundaries. `MainScene` preloads `url` into the JSON cache under `cacheKey`, then
+ * hands the parsed value to `loadMajorCities` for validation.
+ */
+export const CITIES_ASSET = { cacheKey: 'major-cities', url: citiesUrl } as const
 
 export interface City {
   name: string
@@ -33,9 +41,7 @@ function parseCity(entry: unknown, index: number): City {
   return { name: city, lon: longitude, lat: latitude, population }
 }
 
-export function loadMajorCities(): City[] {
-  const parsed: unknown = JSON.parse(raw)
-
+export function loadMajorCities(parsed: unknown): City[] {
   if (!Array.isArray(parsed) || parsed.length === 0) {
     fail('expected a non-empty array of cities')
   }
