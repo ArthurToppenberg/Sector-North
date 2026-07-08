@@ -156,6 +156,23 @@ export default defineConfig({
   // Set by the GitHub Pages workflow (e.g. "/Sector-North/"); defaults to "/" locally.
   base: process.env.BASE_PATH ?? '/',
   plugins: [minifyJsonAssets()],
+  build: {
+    // Split Phaser into its own long-lived vendor chunk. Phaser (~1.4 MB) never
+    // changes between deploys while the game code changes constantly; keeping them
+    // separate means a game update only busts the small app chunk's hash, so
+    // returning players keep Phaser cached instead of re-downloading it every ship.
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [{ name: 'phaser', test: /[\\/]node_modules[\\/]phaser[\\/]/ }],
+        },
+      },
+    },
+    // The Phaser vendor chunk is legitimately >500 kB by design (see above), so the
+    // default warning would fire on every build. Raise it above Phaser's size to
+    // keep the build output clean; it is not masking an accidentally-bloated bundle.
+    chunkSizeWarningLimit: 1600,
+  },
   server: {
     open: true,
   },
