@@ -3,30 +3,75 @@
     "name": "Skagen",
     "model": "Leonardo Selex RAT-31DL",
     "lon": 10.6023,
-    "lat": 57.742444
+    "lat": 57.742444,
+    "manufacturer": "Leonardo",
+    "origin": "Italy",
+    "type": "3D long-range air surveillance radar",
+    "dimensionality": "3D",
+    "band": "L",
+    "rangeKm": 470,
+    "altitudeCeilingKm": 30,
+    "updateIntervalSec": 10,
+    "notes": "Solid-state AESA; NATO primary air-defence sensor covering northern Denmark. Acquired 1995; being replaced by Lockheed Martin TPY-4."
   },
   {
     "name": "Bornholm",
     "model": "Marconi S-723",
     "lon": 14.88925,
-    "lat": 55.111694
+    "lat": 55.111694,
+    "manufacturer": "GEC-Marconi",
+    "origin": "United Kingdom",
+    "type": "3D long-range air surveillance radar",
+    "dimensionality": "3D",
+    "band": "L",
+    "rangeKm": 500,
+    "altitudeCeilingKm": 46,
+    "updateIntervalSec": 10,
+    "notes": "Martello stacked-beam 3D radar, tower-mounted, NATO-funded. Guards the Baltic approach from Bornholm. Slated for replacement 2025-2029."
   },
   {
     "name": "Skrydstrup Air Base",
     "model": "Lockheed Martin TPS-77",
     "lon": 9.266111,
-    "lat": 55.228889
+    "lat": 55.228889,
+    "manufacturer": "Lockheed Martin",
+    "origin": "United States",
+    "type": "3D transportable long-range air surveillance radar",
+    "dimensionality": "3D",
+    "band": "L",
+    "rangeKm": 463,
+    "altitudeCeilingKm": 30.5,
+    "updateIntervalSec": 10,
+    "notes": "Transportable AESA derivative of the FPS-117 family; frequency-agile (100 channels). Detects fighters, high-altitude ballistic trajectories and low-flying cruise missiles."
   },
   {
     "name": "Aalborg Air Base",
     "model": "Indra Sistemas PSR 2D",
     "lon": 9.849167,
-    "lat": 57.092778
+    "lat": 57.092778,
+    "manufacturer": "Indra Sistemas",
+    "origin": "Spain",
+    "type": "2D primary surveillance radar",
+    "dimensionality": "2D",
+    "band": "S",
+    "rangeKm": 150,
+    "altitudeCeilingKm": null,
+    "updateIntervalSec": 5,
+    "notes": "Airfield/terminal primary surveillance radar (2016 contract). Range/azimuth only - altitude comes from the co-located Mode-S secondary radar, not this sensor."
   },
   {
     "name": "Karup Air Base",
     "model": "Indra Sistemas PSR 2D",
     "lon": 9.104444,
-    "lat": 56.297222
+    "lat": 56.297222,
+    "manufacturer": "Indra Sistemas",
+    "origin": "Spain",
+    "type": "2D primary surveillance radar",
+    "dimensionality": "2D",
+    "band": "S",
+    "rangeKm": 150,
+    "altitudeCeilingKm": null,
+    "updateIntervalSec": 5,
+    "notes": "Airfield/terminal primary surveillance radar (2016 contract). Range/azimuth only - altitude comes from the co-located Mode-S secondary radar, not this sensor."
   }
 ]
