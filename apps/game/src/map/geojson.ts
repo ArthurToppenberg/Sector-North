@@ -1,9 +1,9 @@
-import denmarkRaw from '../data/denmark-boundary.geojson?raw'
-import germanyRaw from '../data/germany-boundary.geojson?raw'
-import netherlandsRaw from '../data/netherlands-boundary.geojson?raw'
-import norwayRaw from '../data/norway-boundary.geojson?raw'
-import polandRaw from '../data/poland-boundary.geojson?raw'
-import swedenRaw from '../data/sweden-boundary.geojson?raw'
+import denmarkUrl from '../data/borders/denmark-boundary.geojson?url'
+import germanyUrl from '../data/borders/germany-boundary.geojson?url'
+import netherlandsUrl from '../data/borders/netherlands-boundary.geojson?url'
+import norwayUrl from '../data/borders/norway-boundary.geojson?url'
+import polandUrl from '../data/borders/poland-boundary.geojson?url'
+import swedenUrl from '../data/borders/sweden-boundary.geojson?url'
 
 /** A [longitude, latitude] pair in degrees (WGS84 / CRS84). */
 export type LonLat = [number, number]
@@ -20,17 +20,26 @@ export type Polygon = Ring[]
 /** MultiPolygon coordinates: `[polygon, ...]`. */
 export type MultiPolygon = Polygon[]
 
+/** A country boundary asset: its name (also its cache key) and emitted URL. */
+export interface BoundaryAsset {
+  name: string
+  url: string
+}
+
 /**
- * The bundled country boundaries, in draw order. Each is a fixed build-time
- * asset imported via Vite `?raw`; adding a neighbour is a one-line change here.
+ * The country boundaries, in draw order. Each is a fixed build-time asset
+ * imported via Vite `?url`, so the file is emitted to `dist/` and fetched at
+ * runtime (rather than inlined into the JS bundle). Adding a neighbour is a
+ * one-line change here. The consumer loads each `url` and hands the parsed JSON
+ * back to `loadBoundaries` keyed by `name`.
  */
-const BOUNDARIES: ReadonlyArray<{ name: string; raw: string }> = [
-  { name: 'denmark', raw: denmarkRaw },
-  { name: 'germany', raw: germanyRaw },
-  { name: 'netherlands', raw: netherlandsRaw },
-  { name: 'norway', raw: norwayRaw },
-  { name: 'poland', raw: polandRaw },
-  { name: 'sweden', raw: swedenRaw },
+export const BOUNDARY_ASSETS: ReadonlyArray<BoundaryAsset> = [
+  { name: 'denmark', url: denmarkUrl },
+  { name: 'germany', url: germanyUrl },
+  { name: 'netherlands', url: netherlandsUrl },
+  { name: 'norway', url: norwayUrl },
+  { name: 'poland', url: polandUrl },
+  { name: 'sweden', url: swedenUrl },
 ]
 
 function fail(message: string): never {
@@ -73,9 +82,7 @@ function parsePolygon(value: unknown, ctx: string): Polygon {
  * degrading — the data is a fixed build-time asset, so anything unexpected is a
  * bug we want to see immediately.
  */
-function parseBoundary(raw: string, name: string): MultiPolygon {
-  const parsed: unknown = JSON.parse(raw)
-
+function parseBoundary(parsed: unknown, name: string): MultiPolygon {
   if (!parsed || typeof parsed !== 'object') fail(`${name}: root is not an object`)
   const root = parsed as Record<string, unknown>
 
@@ -113,9 +120,15 @@ function parseBoundary(raw: string, name: string): MultiPolygon {
 }
 
 /**
- * Load + validate every bundled country boundary and return them concatenated
- * into a single MultiPolygon in lon/lat degrees, ready to project as one map.
+ * Validate every country boundary and return them concatenated into a single
+ * MultiPolygon in lon/lat degrees, ready to project as one map.
+ *
+ * `getJson(name)` returns the already-parsed JSON for the asset previously
+ * fetched under that `name` (see `BOUNDARY_ASSETS`). This keeps the module
+ * Phaser-free: the caller owns the loader; we own the validation. A missing or
+ * failed asset surfaces here as `getJson` returning something non-object, which
+ * `parseBoundary` rejects loudly.
  */
-export function loadBoundaries(): MultiPolygon {
-  return BOUNDARIES.flatMap(({ name, raw }) => parseBoundary(raw, name))
+export function loadBoundaries(getJson: (name: string) => unknown): MultiPolygon {
+  return BOUNDARY_ASSETS.flatMap(({ name }) => parseBoundary(getJson(name), name))
 }

@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { loadBoundaries } from '../map/geojson'
+import { loadBoundaries, BOUNDARY_ASSETS } from '../map/geojson'
 import { loadMajorCities } from '../map/cities'
 import { projectToPixels } from '../map/project'
 import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS } from './config'
@@ -48,15 +48,29 @@ export class MainScene extends Phaser.Scene {
     super('MainScene')
   }
 
+  /** Namespaced key under which a boundary asset lives in Phaser's JSON cache. */
+  private boundaryCacheKey(name: string): string {
+    return `boundary:${name}`
+  }
+
   preload() {
     // Rasterise the toolbar's SVG glyph into a texture before `create` builds
-    // the button from it. (Only the toolbar needs an asset preloaded.)
+    // the button from it.
     Toolbar.preload(this)
+
+    // Fetch the country boundaries (emitted to `dist/` via Vite `?url`, not
+    // inlined). Phaser's loader parses each into the JSON cache before `create`
+    // runs; we read + validate them there.
+    for (const { name, url } of BOUNDARY_ASSETS) {
+      this.load.json(this.boundaryCacheKey(name), url)
+    }
   }
 
   create() {
     // Load + validate the world data (both throw loudly on anything unexpected).
-    const geometry = loadBoundaries()
+    const geometry = loadBoundaries((name) =>
+      this.cache.json.get(this.boundaryCacheKey(name)),
+    )
     const cities = loadMajorCities()
 
     // Project the country once to fit the initial viewport. This establishes the
