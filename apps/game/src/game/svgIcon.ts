@@ -1,14 +1,26 @@
-// Turns raw Lucide SVG markup into a HUD-white, base64 data-URI texture for Phaser.
-
 const CURRENT_COLOR = 'currentColor'
 const HUD_WHITE = '#ffffff'
+const NON_ASCII = /[^\x00-\x7f]/
 
-/**
- * Bake the HUD white into the markup, replacing every `currentColor`. Markup
- * without a `currentColor` to replace would rasterise black and vanish on the
- * map, so that is a bug in the source asset — throw rather than emit an
- * invisible icon.
- */
+function assertSvgMarkup(raw: string): void {
+  if (raw.trim() === '') {
+    throw new Error('iconDataUri received empty SVG markup')
+  }
+  if (!raw.includes('<svg')) {
+    throw new Error('iconDataUri received markup that is not an SVG')
+  }
+}
+
+// btoa silently mis-encodes bytes 128–255 (only >255 throws), so reject non-ASCII up front.
+function assertAscii(svg: string): void {
+  if (NON_ASCII.test(svg)) {
+    throw new Error(
+      'SVG icon markup contains non-ASCII characters; base64 encoding would ' +
+        'corrupt or throw. Author HUD icons in pure ASCII.',
+    )
+  }
+}
+
 function bakeHudWhite(svg: string): string {
   if (!svg.includes(CURRENT_COLOR)) {
     throw new Error(
@@ -19,27 +31,14 @@ function bakeHudWhite(svg: string): string {
   return svg.replaceAll(CURRENT_COLOR, HUD_WHITE)
 }
 
-/**
- * Encode self-contained SVG markup as a base64 data URI. Phaser's SVG loader
- * `atob`s the data-URI payload, so it must be base64 (a percent-encoded URI
- * makes `atob` throw and the loader stalls, never firing `create`). Lucide
- * markup is pure ASCII, so `btoa` handles it directly — any non-Latin1 markup
- * makes `btoa` throw, which is the correct fail-fast signal.
- */
 function toBase64DataUri(svg: string): string {
   return `data:image/svg+xml;base64,${btoa(svg)}`
 }
 
-/**
- * Turn raw Lucide SVG markup into a Phaser-loadable, HUD-white data URI.
- * Throws on anything that is not usable SVG markup.
- */
+// Raw Lucide SVG markup -> Phaser-loadable, HUD-white base64 data URI.
 export function iconDataUri(raw: string): string {
-  if (raw.trim() === '') {
-    throw new Error('iconDataUri received empty SVG markup')
-  }
-  if (!raw.includes('<svg')) {
-    throw new Error('iconDataUri received markup that is not an SVG')
-  }
-  return toBase64DataUri(bakeHudWhite(raw))
+  assertSvgMarkup(raw)
+  const white = bakeHudWhite(raw)
+  assertAscii(white)
+  return toBase64DataUri(white)
 }

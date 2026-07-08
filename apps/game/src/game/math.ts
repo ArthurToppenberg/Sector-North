@@ -1,9 +1,4 @@
-/**
- * Generic, domain-agnostic math helpers. Nothing here knows about Phaser, the
- * projection, or the game — pure functions with no dependencies, kept separate
- * from the projection scaling (units.ts) and camera geometry (camera.ts) so each
- * has a single reason to change.
- */
+// Generic, domain-agnostic math helpers.
 
 /**
  * Smooth Hermite interpolation: 0 for `x <= edge0`, 1 for `x >= edge1`, with an

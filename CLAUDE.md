@@ -5,8 +5,9 @@
 The entire game is built around **real-world geographic coordinates**, not screen pixels.
 This is a hard architectural rule, not a nice-to-have:
 
-- Every position in the world model — the map, points of interest, and (later) aircraft —
-  is stored as a real GPS coordinate (longitude/latitude, WGS84). Pixels are always
+- Every position in the world model — the map, points of interest (currently cities,
+  tiered airfields, and radar sites), and (later) aircraft — is stored as a real GPS
+  coordinate (longitude/latitude, WGS84). Pixels are always
   *derived*, never stored as the primary representation. When an entity is placed on
   screen, keep its real lon/lat on the object (see how `CityMarker` carries `lon`/`lat`
   alongside its projected `x`/`y`).

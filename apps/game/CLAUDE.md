@@ -15,7 +15,10 @@ the repo-root `CLAUDE.md` and apply here in full.
     coordinate fails fast at load rather than projecting to a wrong pixel.
   - `project.ts` — the projection layer (see below).
 - `src/game/` — **Phaser rendering + input.** Consumes projected output; never parses
-  GeoJSON or re-derives the projection.
+  GeoJSON or re-derives the projection. Within it, keep the small pure-helper modules
+  separate so each has one reason to change: `math.ts` (generic, domain-agnostic math —
+  no Phaser/projection/game knowledge), `units.ts` (screen↔world pixel scaling), and
+  `camera.ts` (camera → world-view geometry).
 - `src/data/` — bundled data assets. Coordinates are lon/lat (WGS84); prefer simplified
   geometry (fewer points = faster to draw). Two import mechanisms:
   - Country boundaries — `borders/*.json` (currently denmark, germany, netherlands,
@@ -44,7 +47,10 @@ live per-layer visibility flags, and re-runs `resolveColocationLabels` → `laye
 on every airport/radar toggle. The radius is a **real-world km distance**, so it lives in
 `colocate.ts` (the world layer, in km) — not in `config.ts`, which holds only on-screen
 pixel constants. This is the "GPS is the source of truth" rule applied to a data transform:
-proximity is judged in real geographic distance, never pixels.
+proximity is judged in real geographic distance, never pixels. The `COLOCATION_RADIUS_KM`
+value (6 km) is calibrated empirically: it merges the airfield + radar + civil airport that
+share a single Danish air base, yet keeps genuinely separate sites apart (e.g. the Bornholm
+radar ~10 km from Bornholm airport stays its own site).
 
 New code must respect this split: geographic reasoning goes in `src/map/`, drawing and
 input go in `src/game/`.
@@ -65,6 +71,9 @@ lon/lat becomes pixels.
   - `bounds` — the drawn geometry's pixel bounding box; its top-left corner
     (`x`/`y`) anchors the grid origin. (Camera bounds are separate: projected from
     `CAMERA_CENTER_BOUNDS` via `project()`, not derived from this box.)
+  - `polygons` — the projected geometry as one flat `Float32Array` per ring (interleaved
+    `[x0, y0, x1, y1, …]` device pixels), chosen to be compact and cache-friendly for the
+    drawing layer to iterate.
 - The projection is equirectangular with a `cos(meanLatitude)` longitude correction —
   cheap and accurate enough for a country-scale map. If/when exact real-speed simulation
   demands more accuracy, the sanctioned upgrade is projecting through **UTM zone 32N
@@ -95,6 +104,25 @@ lon/lat becomes pixels.
   truth for the screen↔world scaling trick. Don't hand-roll `x * DPR / zoom`.
 - **Draw order lives in `DEPTH` in `src/game/config.ts`.** Add new layers there; no
   scattered magic `setDepth` numbers.
+- **Marker glyph language — distinguish by shape / size / fill, never colour** (the HUD
+  white/black rule): cities draw as the Lucide `building-2` icon (the same glyph the
+  toolbar's cities toggle shows, so a control and the thing it toggles read as one); airfields
+  draw as triangles, with importance encoded by glyph *size* (major airports + military
+  airbases large, minor fields small) and branch by *fill* (military solid, civil hollow);
+  radars draw as a hollow circle. Every glyph is drawn while its layer is on — only the
+  *names* reveal progressively by zoom: airfield majors/military at `AIRPORT.labelRevealZoom`,
+  minor fields at the closer `AIRPORT.minorLabelRevealZoom`, and the (sparse) radars at a
+  lower zoom than the airports.
+- **The coastline is drawn as world-space vectors, not a baked texture** — so the outline
+  stays a crisp hairline at any zoom and the camera transform makes pan/zoom free (no
+  per-frame re-tessellation). Its world-space line width is recompensated on zoom to hold a
+  constant on-screen thickness.
+- **The reference grid is a GPS-derived scale bar.** Because each cell is a fixed real-world
+  size (`GRID.cellKm` × `pixelsPerKm`), cells stay square and constant on the ground, giving
+  the player a readable scale even out over open water where no land is in view.
+- **HUD controls are decoupled from what they control.** Each toolbar button owns its own
+  on/off state and reports changes through the `onToggle` callback the scene supplies — it
+  never reaches into the layers directly; `MainScene` owns that wiring.
 - **HUD icons are SVGs baked into textures (`src/game/svgIcon.ts`).** HUD glyphs come from
   Lucide SVGs, authored with `currentColor`. A standalone SVG rasterised into a Phaser
   texture has no CSS colour context to inherit — it would fall back to black and vanish on
@@ -120,3 +148,10 @@ settings**. Do **not** change these values, and do not alter the clamp logic in
 request. They are not free to "improve", refactor away, or adjust as a side effect of
 another change. If a task seems to require different zoom/pan limits, stop and ask the
 user first rather than editing them.
+
+The bounds are enforced by a **manual centre-clamp** (`CameraController.clampCamera`), not
+Phaser's `camera.setBounds`. `setBounds` locks and re-centres the camera whenever the visible
+area is larger than the bounds — which is the normal case here (a small country in a large
+viewport) — and would forbid panning and fight the zoom-to-cursor anchor. The clamp instead
+confines the camera *centre* (deriving `scroll = centre − size/2`), so the pannable region
+stays the same at every zoom level rather than shrinking as you zoom in.

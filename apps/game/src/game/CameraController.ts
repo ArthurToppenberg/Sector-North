@@ -3,11 +3,6 @@ import { KEY_PAN_SPEED, ZOOM } from './config'
 import { screenPxToWorld } from './units'
 import { cameraWorldView } from './camera'
 
-/**
- * The world-pixel box the camera CENTRE may occupy — the play area. Derived by
- * `MainScene` from the lon/lat `CAMERA_CENTER_BOUNDS` via the projection, so the
- * controller stays in pixel space and never reasons about geography itself.
- */
 export interface CenterBounds {
   minX: number
   maxX: number
@@ -17,7 +12,6 @@ export interface CenterBounds {
 
 interface CameraControllerOptions {
   centerBounds: CenterBounds
-  /** Called after every zoom change with the new zoom, so zoom-reactive layers can redraw. */
   onZoomChanged: (zoom: number) => void
 }
 
@@ -37,10 +31,6 @@ function assertValidCenterBounds(b: CenterBounds): void {
   }
 }
 
-/**
- * The keys bound to each pan direction. Both WASD and the arrow keys drive the
- * same direction so either hand works.
- */
 type MoveKeys = {
   up: Phaser.Input.Keyboard.Key[]
   down: Phaser.Input.Keyboard.Key[]
@@ -48,33 +38,13 @@ type MoveKeys = {
   right: Phaser.Input.Keyboard.Key[]
 }
 
-/**
- * Owns every way the player can move the camera: mouse-wheel zoom (anchored under
- * the cursor), click-drag pan, and WASD/arrow keyboard pan. Extracted from the
- * former god-scene so camera behaviour lives in exactly one place.
- *
- * Scroll is confined with a manual clamp (`clampCamera`) to the play-area box
- * (`CenterBounds`, world px) handed in by the scene — not a hard-coded scroll
- * box. We deliberately do NOT use Phaser's `camera.setBounds`: it locks and
- * re-centres the camera whenever the visible area is larger than the bounds
- * (true here — a small country in a large viewport), which would forbid panning
- * and fight the zoom-to-cursor anchor. A manual clamp always allows movement
- * within its range at any zoom level.
- */
 export class CameraController {
-  /** The scene's main camera. */
   private readonly cam: Phaser.Cameras.Scene2D.Camera
 
-  /**
-   * Notified with the new zoom after every wheel-zoom so zoom-reactive layers
-   * (hairline coastline, constant-size city markers) can re-stroke themselves.
-   */
   private readonly onZoomChanged: (zoom: number) => void
 
-  /** World-pixel box the camera centre is confined to (the play area). */
   private readonly centerBounds: CenterBounds
 
-  /** The keys bound to each pan direction (WASD + arrows). */
   private readonly moveKeys: MoveKeys
 
   constructor(scene: Phaser.Scene, options: CameraControllerOptions) {
@@ -94,16 +64,18 @@ export class CameraController {
     this.onZoomChanged(this.cam.zoom)
   }
 
-  /**
-   * Start at the most zoomed-out level the player is allowed, framed on the
-   * centre of the play area. The zoom-reactive layers are notified from the
-   * constructor so they render at this initial zoom rather than Phaser's
-   * default 1.
-   */
   private frameInitialView(): void {
     const b = this.centerBounds
     this.cam.setZoom(ZOOM.min)
     this.cam.centerOn((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2)
+  }
+
+  private installWheelZoom(scene: Phaser.Scene): void {
+    scene.input.on(
+      Phaser.Input.Events.POINTER_WHEEL,
+      (pointer: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) =>
+        this.zoomTowardPointer(pointer, dy),
+    )
   }
 
   /**
@@ -115,25 +87,26 @@ export class CameraController {
    * `getWorldPoint`, which reads a matrix Phaser only rebuilds at render time
    * and so would sample a stale transform mid-handler).
    */
-  private installWheelZoom(scene: Phaser.Scene): void {
+  private zoomTowardPointer(pointer: Phaser.Input.Pointer, deltaY: number): void {
     const cam = this.cam
-    scene.input.on(
-      Phaser.Input.Events.POINTER_WHEEL,
-      (pointer: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number) => {
-        const oldZoom = cam.zoom
-        // Scale the zoom factor by the actual scroll delta so a full wheel notch
-        // (`deltaPerStep`) applies one `ZOOM.step`, while a trackpad's many small-delta
-        // events each nudge the zoom only slightly instead of compounding a fixed step.
-        const factor = Math.pow(ZOOM.step, -dy / ZOOM.deltaPerStep)
-        const newZoom = Phaser.Math.Clamp(oldZoom * factor, ZOOM.min, ZOOM.max)
-        if (newZoom === oldZoom) return
-        const anchorScale = 1 / oldZoom - 1 / newZoom
-        cam.setZoom(newZoom)
-        cam.scrollX += (pointer.x - cam.width / 2) * anchorScale
-        cam.scrollY += (pointer.y - cam.height / 2) * anchorScale
-        this.clampCamera()
-        this.onZoomChanged(newZoom)
-      },
+    const oldZoom = cam.zoom
+    // Scale the zoom factor by the actual scroll delta so a full wheel notch
+    // (`deltaPerStep`) applies one `ZOOM.step`, while a trackpad's many small-delta
+    // events each nudge the zoom only slightly instead of compounding a fixed step.
+    const factor = Math.pow(ZOOM.step, -deltaY / ZOOM.deltaPerStep)
+    const newZoom = Phaser.Math.Clamp(oldZoom * factor, ZOOM.min, ZOOM.max)
+    if (newZoom === oldZoom) return
+    const anchorScale = 1 / oldZoom - 1 / newZoom
+    cam.setZoom(newZoom)
+    cam.scrollX += (pointer.x - cam.width / 2) * anchorScale
+    cam.scrollY += (pointer.y - cam.height / 2) * anchorScale
+    this.clampCamera()
+    this.onZoomChanged(newZoom)
+  }
+
+  private installDragPan(scene: Phaser.Scene): void {
+    scene.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) =>
+      this.dragPan(pointer),
     )
   }
 
@@ -143,14 +116,12 @@ export class CameraController {
    * delta). The pointer-move event fires constantly; the `isDown` check is
    * legitimate event filtering (only drag while a button is held), not a bail-out.
    */
-  private installDragPan(scene: Phaser.Scene): void {
+  private dragPan(pointer: Phaser.Input.Pointer): void {
+    if (!pointer.isDown) return
     const cam = this.cam
-    scene.input.on(Phaser.Input.Events.POINTER_MOVE, (pointer: Phaser.Input.Pointer) => {
-      if (!pointer.isDown) return
-      cam.scrollX -= (pointer.x - pointer.prevPosition.x) / cam.zoom
-      cam.scrollY -= (pointer.y - pointer.prevPosition.y) / cam.zoom
-      this.clampCamera()
-    })
+    cam.scrollX -= (pointer.x - pointer.prevPosition.x) / cam.zoom
+    cam.scrollY -= (pointer.y - pointer.prevPosition.y) / cam.zoom
+    this.clampCamera()
   }
 
   /**
@@ -170,17 +141,8 @@ export class CameraController {
     }
   }
 
-  /**
-   * Step the camera from held keys. Called once per frame with the elapsed time
-   * in seconds. The on-screen pan speed is kept constant regardless of zoom by
-   * converting the CSS-pixel speed into a world step via `screenPxToWorld`, so the
-   * map slides under the cursor at the same visual rate whether zoomed in or out.
-   */
   update(deltaSeconds: number): void {
-    const keys = this.moveKeys
-    const down = (group: Phaser.Input.Keyboard.Key[]) => group.some((k) => k.isDown)
-    const dx = (down(keys.right) ? 1 : 0) - (down(keys.left) ? 1 : 0)
-    const dy = (down(keys.down) ? 1 : 0) - (down(keys.up) ? 1 : 0)
+    const { dx, dy } = this.readPanDirection()
     if (dx === 0 && dy === 0) return
     const step = screenPxToWorld(KEY_PAN_SPEED * deltaSeconds, this.cam.zoom)
     this.cam.scrollX += dx * step
@@ -188,31 +150,24 @@ export class CameraController {
     this.clampCamera()
   }
 
-  /**
-   * Re-confine the camera to the play area from outside the input handlers. A
-   * window resize changes `cam.width/height` without moving scroll/zoom, which
-   * shifts the look-at centre (`scroll + size/2`) and can push it past the bounds
-   * — the scene calls this from `onResize` to snap it back. Delegates to the same
-   * locked clamp the input handlers use, so there is one clamp implementation.
-   */
+  private readPanDirection(): { dx: number; dy: number } {
+    const keys = this.moveKeys
+    const isDown = (group: Phaser.Input.Keyboard.Key[]) => group.some((k) => k.isDown)
+    return {
+      dx: (isDown(keys.right) ? 1 : 0) - (isDown(keys.left) ? 1 : 0),
+      dy: (isDown(keys.down) ? 1 : 0) - (isDown(keys.up) ? 1 : 0),
+    }
+  }
+
   reclampToBounds(): void {
     this.clampCamera()
   }
 
-  /**
-   * Confine the camera by clamping its CENTRE to the fixed play area defined in
-   * `CAMERA_CENTER_BOUNDS`. Clamping the centre (rather than the top-left scroll
-   * minus the viewport) makes the pannable region independent of zoom: the point
-   * the camera looks at can roam anywhere within that box at every zoom level,
-   * instead of the range shrinking as you zoom in. The scroll is then derived
-   * back from the clamped centre.
-   */
+  /** Confine the camera centre to the play-area box. */
   private clampCamera(): void {
     const cam = this.cam
     const view = cameraWorldView(cam)
 
-    // Fixed world region the camera centre may occupy (zoom-independent),
-    // pre-projected from the lon/lat play area by the scene.
     const b = this.centerBounds
     const centerX = Phaser.Math.Clamp(view.centerX, b.minX, b.maxX)
     const centerY = Phaser.Math.Clamp(view.centerY, b.minY, b.maxY)

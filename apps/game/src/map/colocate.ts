@@ -1,9 +1,4 @@
-/**
- * Shared geographic co-location helpers. "GPS is the source of truth", so
- * proximity between two points of interest is always judged in real-world
- * kilometres here (never in pixels), and this is the one place that logic lives —
- * used by the cross-type (airfield ↔ airfield ↔ radar) label combine.
- */
+// Shared geographic co-location helpers. See apps/game/CLAUDE.md.
 
 /** Anything carrying WGS84 lon/lat degrees. */
 export interface GeoPoint {
@@ -11,22 +6,25 @@ export interface GeoPoint {
   readonly lat: number
 }
 
-/**
- * Real-world radius (km) within which two sites are treated as one physical
- * location. Several Danish air bases host an airfield and a long-range radar (and
- * a co-located civil airport) within a couple of km of each other; this radius
- * captures such pairs without pulling in genuinely separate sites (e.g. the
- * Bornholm radar sits ~10 km from Bornholm's airport and stays separate). A
- * real-world distance, so it lives in the world layer (in km), not with the
- * on-screen pixel constants in `config.ts`.
- */
+// Real-world km distance; see apps/game/CLAUDE.md for calibration.
 export const COLOCATION_RADIUS_KM = 6
+
+/** A located, named point of interest fed into the co-location label combine. */
+export interface ColocationInput extends GeoPoint {
+  readonly name: string
+  readonly priority: number
+}
+
+export interface ColocationLabel {
+  readonly label: string
+  readonly suppressed: boolean
+}
 
 /**
  * Great-circle distance between two points in kilometres (haversine). Used only
  * to decide co-location, so the exact earth radius is immaterial.
  */
-export function distanceKm(a: GeoPoint, b: GeoPoint): number {
+function distanceKm(a: GeoPoint, b: GeoPoint): number {
   const earthRadiusKm = 6371
   const toRad = (deg: number) => (deg * Math.PI) / 180
   const dLat = toRad(b.lat - a.lat)
@@ -37,33 +35,58 @@ export function distanceKm(a: GeoPoint, b: GeoPoint): number {
   return 2 * earthRadiusKm * Math.asin(Math.sqrt(h))
 }
 
-/** A located, named point of interest fed into the co-location label combine. */
-export interface ColocationInput extends GeoPoint {
-  readonly name: string
-  /**
-   * Lower value wins ownership of a co-located cluster's shared label — its name is
-   * the one shown (ties break to the earlier item). The caller sets the ordering;
-   * `MainScene` ranks military airfield < major < minor < radar.
-   */
-  readonly priority: number
-}
-
-/** The label decision for one input item. */
-export interface ColocationLabel {
-  /** Text to display: the owner's `name +N` badge on the cluster owner, else the item's own name. */
-  readonly label: string
-  /** True when a co-located sibling owns the shared label (or this item is hidden), so it draws no label. */
-  readonly suppressed: boolean
+/**
+ * Precondition check for every co-location input: names must be non-empty and
+ * every number the algorithm depends on (coordinates, priority) must be finite.
+ * A non-finite coordinate would make `distanceKm` return `NaN` and silently drop
+ * the site into its own singleton cluster; a non-finite priority would silently
+ * lose the owner comparison. Both are masked failures, so we throw instead.
+ */
+function assertValidInputs(items: readonly ColocationInput[]): void {
+  items.forEach((item, i) => {
+    if (typeof item.name !== 'string' || item.name.length === 0) {
+      throw new Error(`[map/colocate] item ${i} has an empty or non-string name`)
+    }
+    if (!Number.isFinite(item.lon) || !Number.isFinite(item.lat)) {
+      throw new Error(
+        `[map/colocate] item ${i} (${item.name}) has non-finite coordinates: lon=${item.lon}, lat=${item.lat}`,
+      )
+    }
+    if (!Number.isFinite(item.priority)) {
+      throw new Error(`[map/colocate] item ${i} (${item.name}) has non-finite priority: ${item.priority}`)
+    }
+  })
 }
 
 /**
- * Group point-of-interest indices by proximity: any items within `radiusKm` of
- * one another (single-linkage) form one cluster — a single physical site. Every
- * item appears in exactly one returned group (lone sites are singletons), and each
- * group is in ascending index order. Computed once; label ownership within a
- * cluster is resolved separately (see `resolveColocationLabels`) because it
- * depends on which layers are currently shown.
+ * Precondition check that `clusters` is an exact partition of `[0, itemCount)`:
+ * every item index appears in exactly one cluster, and no index is out of range or
+ * duplicated. `resolveColocationLabels` relies on this to guarantee every item is
+ * covered — without it, an item missing from all clusters would silently keep its
+ * suppressed default, masking a malformed clustering.
  */
+function assertClusterPartition(
+  clusters: readonly (readonly number[])[],
+  itemCount: number,
+): void {
+  const seen = new Array<boolean>(itemCount).fill(false)
+  for (const cluster of clusters) {
+    for (const index of cluster) {
+      if (!Number.isInteger(index) || index < 0 || index >= itemCount) {
+        throw new Error(`[map/colocate] cluster index ${index} out of range [0, ${itemCount})`)
+      }
+      if (seen[index]) {
+        throw new Error(`[map/colocate] item index ${index} appears in more than one cluster`)
+      }
+      seen[index] = true
+    }
+  }
+  const missing = seen.indexOf(false)
+  if (missing !== -1) {
+    throw new Error(`[map/colocate] item index ${missing} is not present in any cluster`)
+  }
+}
+
 export function clusterByProximity(
   items: readonly ColocationInput[],
   radiusKm: number,
@@ -71,6 +94,7 @@ export function clusterByProximity(
   if (!Number.isFinite(radiusKm) || radiusKm <= 0) {
     throw new Error(`[map/colocate] radiusKm must be finite and > 0, got ${radiusKm}`)
   }
+  assertValidInputs(items)
 
   // Union-find over item indices: union any pair within radiusKm. The POI count is
   // tiny, so the O(n²) pair scan is fine.
@@ -94,7 +118,6 @@ export function clusterByProximity(
     }
   }
 
-  // Group indices by cluster root (each group stays in ascending index order).
   const groups = new Map<number, number[]>()
   for (let i = 0; i < items.length; i++) {
     const root = find(i)
@@ -106,42 +129,44 @@ export function clusterByProximity(
 }
 
 /**
- * Resolve the display label for every item given precomputed `clusters` and which
- * items are currently `visible` (its layer/toggle is on). Within each cluster only
- * the *visible* members count: the highest-priority (lowest `priority`) visible one
- * owns the label and shows its name with a ` +N` badge for the other visible
- * members (or just its name when it's the only one shown); everyone else is
- * suppressed. So hiding a co-located layer drops both its glyph and its share of
- * the count, and can hand ownership to a lower-priority site that's still shown.
- * Returns one result per item, in input order.
+ * The cluster owner: the lowest-`priority` index among the currently shown members.
+ * `shown` is in ascending index order (inherited from the cluster), so the first
+ * hit wins ties.
  */
+function selectClusterOwner(shown: readonly number[], items: readonly ColocationInput[]): number {
+  if (shown.length === 0) {
+    throw new Error('[map/colocate] selectClusterOwner requires at least one shown member')
+  }
+  let owner = shown[0]
+  for (const index of shown) {
+    if (items[index].priority < items[owner].priority) owner = index
+  }
+  return owner
+}
+
 export function resolveColocationLabels(
   items: readonly ColocationInput[],
   clusters: readonly (readonly number[])[],
   visible: readonly boolean[],
 ): ColocationLabel[] {
+  assertValidInputs(items)
   if (visible.length !== items.length) {
     throw new Error(
       `[map/colocate] visible length ${visible.length} must match items length ${items.length}`,
     )
   }
+  assertClusterPartition(clusters, items.length)
 
-  // Default: no label. Only a cluster's visible owner overrides this below.
-  const results: ColocationLabel[] = items.map((it) => ({ label: it.name, suppressed: true }))
-  for (const group of clusters) {
-    const shown = group.filter((i) => visible[i])
+  // Suppressed default for every item; a cluster's visible owner overrides it below.
+  const results: ColocationLabel[] = items.map((item) => ({ label: item.name, suppressed: true }))
+  for (const cluster of clusters) {
+    const shown = cluster.filter((index) => visible[index])
     if (shown.length === 0) continue
 
-    // Owner = lowest priority among the shown members; `shown` is ascending-index
-    // (inherited from the cluster), so the first hit wins ties.
-    let owner = shown[0]
-    for (const i of shown) {
-      if (items[i].priority < items[owner].priority) owner = i
-    }
-
-    const others = shown.length - 1
+    const owner = selectClusterOwner(shown, items)
+    const badgeCount = shown.length - 1
     results[owner] = {
-      label: others > 0 ? `${items[owner].name} +${others}` : items[owner].name,
+      label: badgeCount > 0 ? `${items[owner].name} +${badgeCount}` : items[owner].name,
       suppressed: false,
     }
   }

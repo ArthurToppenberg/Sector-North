@@ -6,9 +6,8 @@ import { DPR, TOOLBAR, DEPTH } from './config'
 import { iconDataUri } from './svgIcon'
 
 /**
- * The toggle buttons the toolbar can show, each with its Lucide source SVG and a
- * stable Phaser texture key. Adding a toolbar toggle is a matter of adding an
- * entry here and wiring its `onToggle` where the toolbar is constructed.
+ * Add a toolbar toggle by adding an entry here and wiring its `onToggle` where
+ * the toolbar is constructed.
  */
 const ICONS = {
   cities: { key: 'toolbar-cities', raw: cityIconRaw },
@@ -18,14 +17,12 @@ const ICONS = {
 
 export type ToolbarButtonId = keyof typeof ICONS
 
-/** Configuration for one toolbar button, supplied by the scene. */
 export interface ToolbarButtonConfig {
   id: ToolbarButtonId
   initialActive: boolean
   onToggle: (active: boolean) => void
 }
 
-/** One built button: its surface, glyph, current state and toggle callback. */
 interface ToolbarButton {
   button: Phaser.GameObjects.Rectangle
   icon: Phaser.GameObjects.Image
@@ -33,21 +30,7 @@ interface ToolbarButton {
   onToggle: (active: boolean) => void
 }
 
-/**
- * Top-left HUD toolbar of icon buttons — currently the city-name and airport
- * toggles. Buttons lay out rightward from the corner, spaced by
- * `TOOLBAR.gapScreen`, so the row grows as toggles are added.
- *
- * Like every other HUD element it lives on the fixed UI camera, so it keeps a
- * constant on-screen size and ignores map pan/zoom. Each button owns its own
- * state and reports changes through the `onToggle` callback the scene supplies —
- * it never reaches into the layers directly, keeping the HUD decoupled from what
- * it controls.
- *
- * Project rule (HUD white/black only): each button is a translucent black square
- * with a white border and a white glyph. On/off is conveyed by *alpha* — a
- * full-strength vs dimmed glyph — not by any colour change.
- */
+/** Top-left HUD toolbar of icon toggle buttons. */
 export class Toolbar {
   /**
    * Load every icon texture. Must run in the scene's `preload` so the textures
@@ -62,11 +45,7 @@ export class Toolbar {
     }
   }
 
-  private readonly buttons: ToolbarButton[]
-
-  constructor(scene: Phaser.Scene, configs: ToolbarButtonConfig[]) {
-    // Fail fast on a misconfigured toolbar rather than silently rendering
-    // nothing, a broken glyph, or crashing later with an opaque message.
+  private static assertValidConfigs(scene: Phaser.Scene, configs: ToolbarButtonConfig[]): void {
     if (configs.length === 0) {
       throw new Error('Toolbar requires at least one button config; received none.')
     }
@@ -87,36 +66,42 @@ export class Toolbar {
         throw new Error(`Toolbar icon texture "${key}" is not loaded — call Toolbar.preload(scene) in the scene's preload().`)
       }
     }
+  }
 
-    const size = TOOLBAR.buttonScreenSize * DPR
+  /** Button surface edge length in device pixels (constant; DPR never changes). */
+  private readonly buttonSizePx = TOOLBAR.buttonScreenSize * DPR
+  private readonly buttons: ToolbarButton[]
 
-    this.buttons = configs.map((cfg) => {
-      // Origin (0, 0) anchors the button's top-left corner to its position; the
-      // icon is centred over it. Final positions are set in `reposition`.
-      const button = scene.add
-        .rectangle(0, 0, size, size, TOOLBAR.buttonColor, TOOLBAR.buttonAlpha)
-        .setOrigin(0, 0)
-        .setStrokeStyle(TOOLBAR.borderScreenWidth * DPR, TOOLBAR.borderColor, TOOLBAR.borderAlpha)
-        .setDepth(DEPTH.toolbarButton)
-        .setInteractive({ useHandCursor: true })
-
-      const icon = scene.add
-        .image(0, 0, ICONS[cfg.id].key)
-        .setOrigin(0.5, 0.5)
-        .setDepth(DEPTH.toolbarIcon)
-
-      const entry: ToolbarButton = { button, icon, active: cfg.initialActive, onToggle: cfg.onToggle }
-
-      // Click toggles the feature; hover just brightens the surface as an affordance.
-      button.on(Phaser.Input.Events.POINTER_UP, () => this.toggle(entry))
-      button.on(Phaser.Input.Events.POINTER_OVER, () => button.setFillStyle(TOOLBAR.buttonColor, TOOLBAR.buttonHoverAlpha))
-      button.on(Phaser.Input.Events.POINTER_OUT, () => button.setFillStyle(TOOLBAR.buttonColor, TOOLBAR.buttonAlpha))
-
-      return entry
-    })
-
+  constructor(scene: Phaser.Scene, configs: ToolbarButtonConfig[]) {
+    Toolbar.assertValidConfigs(scene, configs)
+    this.buttons = configs.map((cfg) => this.createButton(scene, cfg))
     this.reposition()
     for (const entry of this.buttons) this.refreshIcon(entry)
+  }
+
+  private createButton(scene: Phaser.Scene, cfg: ToolbarButtonConfig): ToolbarButton {
+    // Origin (0, 0) anchors the button's top-left corner to its position; the
+    // icon is centred over it. Final positions are set in `reposition`.
+    const button = scene.add
+      .rectangle(0, 0, this.buttonSizePx, this.buttonSizePx, TOOLBAR.buttonColor, TOOLBAR.buttonAlpha)
+      .setOrigin(0, 0)
+      .setStrokeStyle(TOOLBAR.borderScreenWidth * DPR, TOOLBAR.borderColor, TOOLBAR.borderAlpha)
+      .setDepth(DEPTH.toolbarButton)
+      .setInteractive({ useHandCursor: true })
+
+    const icon = scene.add
+      .image(0, 0, ICONS[cfg.id].key)
+      .setOrigin(0.5, 0.5)
+      .setDepth(DEPTH.toolbarIcon)
+
+    const entry: ToolbarButton = { button, icon, active: cfg.initialActive, onToggle: cfg.onToggle }
+
+    // Click toggles the feature; hover just brightens the surface as an affordance.
+    button.on(Phaser.Input.Events.POINTER_UP, () => this.toggle(entry))
+    button.on(Phaser.Input.Events.POINTER_OVER, () => button.setFillStyle(TOOLBAR.buttonColor, TOOLBAR.buttonHoverAlpha))
+    button.on(Phaser.Input.Events.POINTER_OUT, () => button.setFillStyle(TOOLBAR.buttonColor, TOOLBAR.buttonAlpha))
+
+    return entry
   }
 
   /**
@@ -127,18 +112,16 @@ export class Toolbar {
     return this.buttons.flatMap((b) => [b.button, b.icon])
   }
 
-  /** Pin the toolbar to the top-left corner; buttons flow rightward. */
   reposition(): void {
     const margin = TOOLBAR.marginScreen * DPR
-    const size = TOOLBAR.buttonScreenSize * DPR
     const gap = TOOLBAR.gapScreen * DPR
     const top = margin
     for (let i = 0; i < this.buttons.length; i++) {
-      const left = margin + i * (size + gap)
+      const left = margin + i * (this.buttonSizePx + gap)
       const { button, icon } = this.buttons[i]
       button.setPosition(left, top)
       // Centre the glyph within the (top-left-anchored) button square.
-      icon.setPosition(left + size / 2, top + size / 2)
+      icon.setPosition(left + this.buttonSizePx / 2, top + this.buttonSizePx / 2)
     }
   }
 

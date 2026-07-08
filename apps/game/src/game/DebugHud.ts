@@ -1,25 +1,27 @@
 import Phaser from 'phaser'
 import { DPR, FONT_FAMILY, HUD, DEPTH } from './config'
-import { cameraWorldView } from './camera'
+import { cameraWorldView, type WorldView } from './camera'
 
 /**
- * Top-right debug readout: a screen-fixed text object showing live camera state
- * (zoom, scroll, and derived world-space centre). Deliberately a tiny,
- * single-responsibility class — it holds the text object, keeps it pinned to the
- * corner, and refreshes the string from whatever camera the scene hands it. The
- * scene owns *when* it runs (viewport-reactive: once per update, behind its
- * camera-moved dirty check, plus on resize) and this class owns *what* it shows.
- *
- * Project rule: all HUD is white or black only — the text colour is '#ffffff'
- * and nothing here introduces any other colour. It is drawn by the fixed UI
- * camera (zoom 1, no scroll) so it keeps a constant on-screen size; the scene
- * routes that via the `objects` getter.
+ * Decimal places shown for the zoom readout. A display-formatting detail (not an
+ * on-screen size), so it lives here with the readout it formats rather than in
+ * `config.ts`, which holds only tunable pixel sizes.
  */
+const ZOOM_READOUT_PRECISION = 3
+
+function formatReadout(cam: Phaser.Cameras.Scene2D.Camera, view: WorldView): string {
+  return (
+    `zoom   ${cam.zoom.toFixed(ZOOM_READOUT_PRECISION)}\n` +
+    `scroll ${Math.round(cam.scrollX)}, ${Math.round(cam.scrollY)}\n` +
+    `center ${Math.round(view.centerX)}, ${Math.round(view.centerY)}`
+  )
+}
+
+/** Top-right debug readout (camera centre + zoom). */
 export class DebugHud {
   // Needed by `reposition()` to re-pin to the (new) top-right corner on resize.
   private readonly scene: Phaser.Scene
 
-  // The one game object this HUD owns — created eagerly in the constructor.
   private readonly text: Phaser.GameObjects.Text
 
   // Last string pushed to the text object. `Text.setText` re-rasterises the text
@@ -48,45 +50,26 @@ export class DebugHud {
     this.reposition()
   }
 
-  /**
-   * The game objects this HUD contributes. Exposed so the scene can route which
-   * camera draws the HUD — ignored on the world camera, rendered only on the
-   * fixed UI camera so it keeps a constant on-screen size.
-   */
   get objects(): readonly Phaser.GameObjects.GameObject[] {
     return [this.text]
   }
 
-  /**
-   * Pin the readout to the top-right corner, inset by the HUD margin. Called on
-   * window resize so the HUD tracks the changed viewport width. Margin is in CSS
-   * pixels, converted to device pixels via DPR to match the render coordinate space.
-   */
   reposition(): void {
     this.text.setPosition(this.scene.scale.width - HUD.marginScreen * DPR, HUD.marginScreen * DPR)
   }
 
   /**
-   * Refresh the readout from live camera state.
+   * Refresh the readout from live camera state. `cameraWorldView` is the single
+   * fail-fast gate: it throws on any non-finite zoom/scroll/size before we can
+   * read a centre, so a broken camera surfaces there rather than silently
+   * painting "NaN" into the HUD — no second, redundant finiteness check needed.
    */
   render(cam: Phaser.Cameras.Scene2D.Camera): void {
-    // Camera centre in world (device-pixel) coordinates — the map's own space.
-    const { centerX, centerY } = cameraWorldView(cam)
+    const view = cameraWorldView(cam)
+    this.setTextIfChanged(formatReadout(cam, view))
+  }
 
-    // Fail fast: a non-finite camera state (e.g. a zero/NaN zoom from a broken
-    // bounds or projection upstream) would silently paint "NaN" into the HUD.
-    // Surface it instead of masking the bug behind a plausible-looking readout.
-    if (!Number.isFinite(cam.zoom) || !Number.isFinite(centerX) || !Number.isFinite(centerY)) {
-      throw new Error(
-        `DebugHud.render: non-finite camera state (zoom=${cam.zoom}, center=${centerX},${centerY})`,
-      )
-    }
-
-    const next =
-      `zoom   ${cam.zoom.toFixed(3)}\n` +
-      `scroll ${Math.round(cam.scrollX)}, ${Math.round(cam.scrollY)}\n` +
-      `center ${Math.round(centerX)}, ${Math.round(centerY)}`
-    // Skip the (expensive) re-raster when nothing the readout shows has changed.
+  private setTextIfChanged(next: string): void {
     if (next === this.lastText) return
     this.lastText = next
     this.text.setText(next)

@@ -1,6 +1,4 @@
-// Central tuning + shared constants. Logic lives in the layers; the numbers you
-// might want to nudge live here. Every "screen" value is in CSS pixels and is
-// converted to world (device-pixel) units via `screenPxToWorld` in units.ts.
+// Central tuning + shared constants.
 
 /**
  * Device pixel ratio, floored at 1. The canvas backing store is sized at
@@ -31,11 +29,7 @@ export const MAP = {
   padding: 48,
   /** Coastline thickness on screen (CSS pixels), held constant across zoom. */
   strokeScreenWidth: 0.75,
-  /**
-   * Coastline colour — radar phosphor green, the green of tactical C2 / radar
-   * displays. The map geography is deliberately NOT bound by the white/black HUD
-   * rule (that governs overlay chrome); see `apps/game/CLAUDE.md`.
-   */
+  // Coastline colour — radar phosphor green.
   strokeColor: 0x33ff66,
 } as const
 
@@ -62,23 +56,7 @@ export const CITY = {
   labelRevealZoom: 10,
 } as const
 
-/**
- * Airfield markers. Drawn as a triangle glyph so they read as distinct from the
- * filled city circles at a glance, while staying inside the HUD white/black rule
- * — the tiers differ by *fill/size/shape*, never colour:
- *  - major airports + military airbases: LARGE triangle (military filled, the
- *    civil major hollow) — the prominent fields you notice first.
- *  - minor civil fields (grass strips, glider/flying clubs): SMALL hollow
- *    triangle, so the busy little fields don't shout as loud as the big ones.
- *
- * So airport *size* reads at a glance from the glyph size, and military vs civil
- * from the fill. Like the city layer, sizes are on-screen (CSS px) and held
- * constant across zoom. Every triangle is always drawn (all fields, all zooms).
- * The *labels*, though, would swamp the far-out country view, so they reveal
- * progressively as the player zooms in: the prominent fields (major airports +
- * military airbases) name themselves first, and the dense minor
- * grass-strip/glider names appear only once zoomed in close.
- */
+// Airfield markers.
 export const AIRPORT = {
   /**
    * Triangle circumradius on screen (CSS pixels), per tier — the large fields
@@ -114,19 +92,7 @@ export const AIRPORT = {
   minorLabelRevealZoom: 32,
 } as const
 
-/**
- * Air-defence radar sites. Drawn as a small hollow circle — a distinct glyph from
- * the city icons and airport triangles. Stays inside the HUD white/black rule
- * (the circle is white; distinction from other markers is by *shape*, not
- * colour). Like the other markers, sizes are on-screen (CSS px) and held constant
- * across zoom; every circle is always drawn while the layer is on.
- *
- * The sites are few (a handful of long-range radars), so — unlike the dense
- * airfields — their name+model labels don't swamp the view; they reveal at a
- * lower zoom than the airports so the coverage picture reads sooner. Where a radar
- * shares an air base with an airfield, the two markers keep their own glyphs but
- * share a single combined label (see `resolveColocationLabels` in `colocate.ts`).
- */
+// Air-defence radar sites.
 export const RADAR = {
   /** Circle radius on screen (CSS pixels), held constant across zoom. */
   markerScreenRadius: 4,
@@ -149,10 +115,7 @@ export const RADAR = {
   labelRevealZoom: 11,
 } as const
 
-// Faint real-world reference grid drawn beneath the map. Because the game is
-// built on true lon/lat, each cell is a fixed size on the ground — a constant
-// scale bar the player can read even out over open water where no land is in
-// view. Only the visible slice is drawn, re-snapped to the grid each frame.
+// Faint real-world reference grid drawn beneath the map.
 export const GRID = {
   /** Cell size on the ground, in kilometres (square). */
   cellKm: 50,
@@ -182,13 +145,7 @@ export const GRID = {
   fadeEndZoom: 16,
 } as const
 
-/**
- * Explicit draw order for every world/HUD object (higher renders on top).
- * Centralised so layering is declared in ONE place instead of scattered magic
- * `setDepth` numbers on each object. The grid is the backdrop that every other
- * layer draws over; the HUD sits above all world layers. Add new layers here so
- * their stacking is obvious at a glance.
- */
+// Explicit draw order (higher renders on top).
 export const DEPTH = {
   grid: 0,
   coastline: 10,
@@ -210,15 +167,6 @@ export const DEPTH = {
   toolbarIcon: 111,
 } as const
 
-/**
- * Camera zoom limits and wheel response.
- * `step` is the zoom factor applied by one full wheel notch; `deltaPerStep` is the
- * `deltaY` magnitude that counts as one notch. Scaling the factor by the actual delta
- * (rather than a fixed step per event) keeps a trackpad — which fires a rapid stream of
- * small-delta events — from compounding into runaway zoom.
- */
-export const ZOOM = { min: 6.5, max: 40, step: 1.12, deltaPerStep: 100 } as const
-
 export const HUD = {
   /** Debug readout font size on screen (CSS pixels). */
   fontScreenSize: 13,
@@ -228,9 +176,8 @@ export const HUD = {
 
 /**
  * Top-left toolbar of icon buttons (currently just the city-name toggle).
- * All sizes are CSS pixels, converted to device pixels via DPR when drawn.
- * HUD rule: white or black only — so on/off state is shown through *alpha*
- * (a dimmed vs full-strength glyph), never a colour change.
+ * On/off state is shown through *alpha* (a dimmed vs full-strength glyph),
+ * never a colour change.
  */
 export const TOOLBAR = {
   /** Square button edge length on screen (CSS pixels). */
@@ -253,6 +200,20 @@ export const TOOLBAR = {
   iconActiveAlpha: 1,
   iconInactiveAlpha: 0.3,
 } as const
+
+// ── Camera & input ─────────────────────────────────────────────────────────
+// Zoom limits, keyboard pan speed, and the geographic play-area bounds. The
+// zoom limits and centre bounds are LOCKED game settings — see the "Camera
+// bounds are locked" rule in `apps/game/CLAUDE.md`.
+
+/**
+ * Camera zoom limits and wheel response.
+ * `step` is the zoom factor applied by one full wheel notch; `deltaPerStep` is the
+ * `deltaY` magnitude that counts as one notch. Scaling the factor by the actual delta
+ * (rather than a fixed step per event) keeps a trackpad — which fires a rapid stream of
+ * small-delta events — from compounding into runaway zoom.
+ */
+export const ZOOM = { min: 6.5, max: 40, step: 1.12, deltaPerStep: 100 } as const
 
 /**
  * Keyboard pan speed as CSS pixels/second on screen (held constant across zoom

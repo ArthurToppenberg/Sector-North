@@ -1,55 +1,37 @@
 import Phaser from 'phaser'
 import { loadBoundaries, BOUNDARY_ASSETS } from '../map/geojson'
-import { loadMajorCities } from '../map/cities'
-import { loadAirports, type AirportTier } from '../map/airports'
-import { loadRadars } from '../map/radars'
-import { clusterByProximity, resolveColocationLabels, COLOCATION_RADIUS_KM } from '../map/colocate'
-import { projectToPixels } from '../map/project'
+import { loadMajorCities, type City } from '../map/cities'
+import { loadAirports, type AirportTier, type Airport } from '../map/airports'
+import { loadRadars, type Radar } from '../map/radars'
+import {
+  clusterByProximity,
+  resolveColocationLabels,
+  COLOCATION_RADIUS_KM,
+  type ColocationInput,
+  type ColocationLabel,
+} from '../map/colocate'
+import { projectToPixels, type Projector } from '../map/project'
 import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS } from './config'
 import { GridLayer } from './GridLayer'
 import { CoastlineLayer } from './CoastlineLayer'
 import { CityLayer, type CityMarker } from './CityLayer'
 import { AirportLayer, type AirportMarker } from './AirportLayer'
 import { RadarLayer, type RadarMarker } from './RadarLayer'
-import { CameraController } from './CameraController'
+import { CameraController, type CenterBounds } from './CameraController'
 import { DebugHud } from './DebugHud'
 import { Toolbar } from './Toolbar'
 
-/**
- * Which co-located site's name wins the shared "name +N" label: the more
- * significant airfield first (military airbase, then large/major airport, then
- * small/minor field), with a radar last — so a base's own name shows in
- * preference to the radar sitting on it. Lower number = higher priority.
- */
 const AIRPORT_LABEL_PRIORITY: Record<AirportTier, number> = { military: 0, major: 1, minor: 2 }
 const RADAR_LABEL_PRIORITY = 3
 
 /**
- * Composition root for the game. The scene owns no rendering or input logic of
- * its own — it loads and projects the world once, then wires up the independent
- * layers (grid, coastline, cities), the camera controller, and the debug HUD,
- * and forwards the per-frame/per-event signals they need (update tick, resize,
- * zoom change).
- *
- * Zoom-reactive layers (coastline, cities) are refreshed via the camera's
- * `onZoomChanged` callback. Viewport-reactive work (the grid, which draws only
- * the visible slice, and the HUD readout) runs in `update`, but only on frames
- * where the camera actually moved — see the dirty check there.
- *
- * Everything it holds is created in `create()` and is therefore always present
- * by the time `update`/`onResize` run — hence definite-assignment fields and no
- * optional-chaining guards. A missing dependency is a bug we want to crash on.
+ * Composition root: loads & projects the world, wires layers/camera/HUD, forwards signals.
  */
 export class MainScene extends Phaser.Scene {
-  /** Viewport-reactive reference grid; redrawn when the camera moves. */
   private gridLayer!: GridLayer
-  /** Drives all camera movement; polled every frame for keyboard panning. */
   private cameraController!: CameraController
-  /** Top-right telemetry readout; refreshed when the camera moves, re-pinned on resize. */
   private debugHud!: DebugHud
-  /** Top-left toolbar (city-name toggle); re-pinned on resize. */
   private toolbar!: Toolbar
-  /** Fixed UI camera that never zooms/pans, so the HUD stays a constant size. */
   private uiCamera!: Phaser.Cameras.Scene2D.Camera
 
   // Camera state from the previous frame, so `update` can skip viewport-reactive
@@ -62,7 +44,6 @@ export class MainScene extends Phaser.Scene {
     super('MainScene')
   }
 
-  /** Namespaced key under which a boundary asset lives in Phaser's JSON cache. */
   private boundaryCacheKey(name: string): string {
     return `boundary:${name}`
   }
@@ -73,26 +54,20 @@ export class MainScene extends Phaser.Scene {
     Toolbar.preload(this)
     CityLayer.preload(this)
 
-    // Fetch the country boundaries (emitted to `dist/` via Vite `?url`, not
-    // inlined). Phaser's loader parses each into the JSON cache before `create`
-    // runs; we read + validate them there.
+    // Fetch the country boundaries. Phaser's loader parses each into the JSON
+    // cache before `create` runs; we read + validate them there.
     for (const { name, url } of BOUNDARY_ASSETS) {
       this.load.json(this.boundaryCacheKey(name), url)
     }
   }
 
   create() {
-    // Load + validate the world data (both throw loudly on anything unexpected).
-    const geometry = loadBoundaries((name) =>
-      this.cache.json.get(this.boundaryCacheKey(name)),
-    )
+    // Load + validate the world data (each throws loudly on anything unexpected).
+    const geometry = loadBoundaries((name) => this.cache.json.get(this.boundaryCacheKey(name)))
     const cities = loadMajorCities()
     const airports = loadAirports()
     const radars = loadRadars()
 
-    // Project the country once to fit the initial viewport. This establishes the
-    // world scale; from here the Phaser camera owns all pan/zoom — the model is
-    // never re-projected.
     const { width, height } = this.scale
     const projected = projectToPixels(geometry, {
       width,
@@ -100,53 +75,29 @@ export class MainScene extends Phaser.Scene {
       padding: MAP.padding * DPR,
     })
 
-    // Place the cities in the same world space as the coastline.
-    const markers: CityMarker[] = cities.map((c) => {
-      const [x, y] = projected.project(c.lon, c.lat)
-      // Keep the real lon/lat + population on the marker — pixels are derived,
-      // GPS is the source of truth.
-      return { name: c.name, x, y, lon: c.lon, lat: c.lat, population: c.population }
-    })
-
-    // Cluster co-located sites (an air base with a radar and/or a neighbouring
-    // airfield) so they can share one "name +N" label. Judged in real GPS distance,
-    // so it happens here in world space before projection. Airfields + radars go
-    // into one list (airfields first); the clustering is computed once, but which
-    // site owns the label — and the count — is resolved per current visibility
-    // (see `applyColocationLabels`), so hiding a layer updates the count.
-    const poiInputs = [
-      ...airports.map((a) => ({ name: a.name, lon: a.lon, lat: a.lat, priority: AIRPORT_LABEL_PRIORITY[a.tier] })),
-      ...radars.map((r) => ({ name: r.name, lon: r.lon, lat: r.lat, priority: RADAR_LABEL_PRIORITY })),
-    ]
+    const poiInputs = this.buildColocationInputs(airports, radars)
     const poiClusters = clusterByProximity(poiInputs, COLOCATION_RADIUS_KM)
     // Initial labels: everything visible.
-    const labels = resolveColocationLabels(poiInputs, poiClusters, poiInputs.map(() => true))
-    const airportLabels = labels.slice(0, airports.length)
-    const radarLabels = labels.slice(airports.length)
+    const initialLabels = resolveColocationLabels(poiInputs, poiClusters, poiInputs.map(() => true))
 
-    // Place the airfields in the same world space, through the same projection.
-    const airportMarkers: AirportMarker[] = airports.map((a, i) => {
-      const [x, y] = projected.project(a.lon, a.lat)
-      const { label, suppressed } = airportLabels[i]
-      return { name: a.name, label, labelSuppressed: suppressed, x, y, lon: a.lon, lat: a.lat, tier: a.tier }
-    })
+    const cityMarkers = this.buildCityMarkers(cities, projected.project)
+    const airportMarkers = this.buildAirportMarkers(
+      airports,
+      projected.project,
+      initialLabels.slice(0, airports.length),
+    )
+    const radarMarkers = this.buildRadarMarkers(
+      radars,
+      projected.project,
+      initialLabels.slice(airports.length),
+    )
 
-    // Place the radar sites in the same world space, through the same projection.
-    const radarMarkers: RadarMarker[] = radars.map((r, i) => {
-      const [x, y] = projected.project(r.lon, r.lat)
-      const { label, suppressed } = radarLabels[i]
-      return { name: r.name, model: r.model, label, labelSuppressed: suppressed, x, y, lon: r.lon, lat: r.lat }
-    })
-
-    // World layers (drawn by the main camera) and the HUD (drawn by the UI camera).
-    // The grid sits beneath everything; cells are a fixed real-world size derived
-    // from the projection's pixels-per-km, anchored to the map's corner.
     this.gridLayer = new GridLayer(this, {
       pixelsPerKm: projected.pixelsPerKm,
       origin: { x: projected.bounds.x, y: projected.bounds.y },
     })
     const coastline = new CoastlineLayer(this, projected.polygons)
-    const cityLayer = new CityLayer(this, markers)
+    const cityLayer = new CityLayer(this, cityMarkers)
     const airportLayer = new AirportLayer(this, airportMarkers)
     const radarLayer = new RadarLayer(this, radarMarkers)
     // Cities, airports and radars are shown by default; the toolbar toggles hide
@@ -162,10 +113,6 @@ export class MainScene extends Phaser.Scene {
     radarLayer.setVisible(radarsVisible)
     this.debugHud = new DebugHud(this)
 
-    // Recompute the co-located labels for the current airport/radar visibility and
-    // push them to both layers, so a "+N" badge only counts the sites actually
-    // shown and label ownership falls to a lower-priority site if the owner's layer
-    // is hidden. Cities don't take part in co-location, so they're not in the list.
     const applyColocationLabels = () => {
       const visible = [...airports.map(() => airportsVisible), ...radars.map(() => radarsVisible)]
       const resolved = resolveColocationLabels(poiInputs, poiClusters, visible)
@@ -198,29 +145,14 @@ export class MainScene extends Phaser.Scene {
       },
     ])
 
-    // One place that fans a zoom change out to every zoom-reactive layer, so a new
-    // layer only has to be added here rather than at each call site. (The grid is
-    // viewport-reactive and redraws every frame in `update` instead.)
     const onZoomChanged = (zoom: number) => {
       coastline.onZoomChanged(zoom)
       cityLayer.onZoomChanged(zoom)
       airportLayer.onZoomChanged(zoom)
       radarLayer.onZoomChanged(zoom)
     }
-    // Turn the lon/lat play area into a world-pixel box the camera centre is
-    // confined to. Projecting through the same `project()` as everything else
-    // keeps the play area pinned to real geography (GPS is the source of truth),
-    // so it survives projection and window-size changes. Min/max rather than
-    // assuming axis direction: x grows east, y grows south (latitude flips).
-    const [x1, y1] = projected.project(CAMERA_CENTER_BOUNDS.west, CAMERA_CENTER_BOUNDS.north)
-    const [x2, y2] = projected.project(CAMERA_CENTER_BOUNDS.east, CAMERA_CENTER_BOUNDS.south)
     this.cameraController = new CameraController(this, {
-      centerBounds: {
-        minX: Math.min(x1, x2),
-        maxX: Math.max(x1, x2),
-        minY: Math.min(y1, y2),
-        maxY: Math.max(y1, y2),
-      },
+      centerBounds: this.projectCenterBounds(projected.project),
       onZoomChanged,
     })
 
@@ -240,12 +172,62 @@ export class MainScene extends Phaser.Scene {
     this.game.events.emit(APP_READY_EVENT)
   }
 
+  private buildColocationInputs(
+    airports: readonly Airport[],
+    radars: readonly Radar[],
+  ): ColocationInput[] {
+    return [
+      ...airports.map((a) => ({ name: a.name, lon: a.lon, lat: a.lat, priority: AIRPORT_LABEL_PRIORITY[a.tier] })),
+      ...radars.map((r) => ({ name: r.name, lon: r.lon, lat: r.lat, priority: RADAR_LABEL_PRIORITY })),
+    ]
+  }
+
+  private buildCityMarkers(cities: readonly City[], project: Projector): CityMarker[] {
+    return cities.map((c) => {
+      const [x, y] = project(c.lon, c.lat)
+      return { name: c.name, x, y, lon: c.lon, lat: c.lat, population: c.population }
+    })
+  }
+
+  private buildAirportMarkers(
+    airports: readonly Airport[],
+    project: Projector,
+    labels: readonly ColocationLabel[],
+  ): AirportMarker[] {
+    return airports.map((a, i) => {
+      const [x, y] = project(a.lon, a.lat)
+      const { label, suppressed } = labels[i]
+      return { name: a.name, label, labelSuppressed: suppressed, x, y, lon: a.lon, lat: a.lat, tier: a.tier }
+    })
+  }
+
+  private buildRadarMarkers(
+    radars: readonly Radar[],
+    project: Projector,
+    labels: readonly ColocationLabel[],
+  ): RadarMarker[] {
+    return radars.map((r, i) => {
+      const [x, y] = project(r.lon, r.lat)
+      const { label, suppressed } = labels[i]
+      return { name: r.name, model: r.model, label, labelSuppressed: suppressed, x, y, lon: r.lon, lat: r.lat }
+    })
+  }
+
   /**
-   * Split rendering across two cameras so the HUD is immune to the map's
-   * zoom/pan: the main camera draws only the world layers, and a separate UI
-   * camera (fixed at zoom 1, no scroll) draws only the HUD. Each camera ignores
-   * the other's objects so nothing double-renders.
+   * Min/max rather than assuming axis direction: x grows east, y grows south
+   * (latitude flips).
    */
+  private projectCenterBounds(project: Projector): CenterBounds {
+    const [x1, y1] = project(CAMERA_CENTER_BOUNDS.west, CAMERA_CENTER_BOUNDS.north)
+    const [x2, y2] = project(CAMERA_CENTER_BOUNDS.east, CAMERA_CENTER_BOUNDS.south)
+    return {
+      minX: Math.min(x1, x2),
+      maxX: Math.max(x1, x2),
+      minY: Math.min(y1, y2),
+      maxY: Math.max(y1, y2),
+    }
+  }
+
   private setupCameras(
     worldObjects: Phaser.GameObjects.GameObject[],
     hudObjects: Phaser.GameObjects.GameObject[],

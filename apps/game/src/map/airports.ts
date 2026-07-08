@@ -9,7 +9,9 @@ export type AirportTier = 'major' | 'minor' | 'military'
 
 const TIERS: ReadonlySet<AirportTier> = new Set(['major', 'minor', 'military'])
 
-/** A single airfield in lon/lat degrees (WGS84 / CRS84). */
+const AXIS_BOUND = { lon: 180, lat: 90 } as const
+type Axis = keyof typeof AXIS_BOUND
+
 export interface Airport {
   name: string
   lon: number
@@ -21,46 +23,39 @@ function fail(message: string): never {
   throw new Error(`[map/airports] ${message}`)
 }
 
-/** True only for real, finite numbers — rejects strings, NaN, and ±Infinity while narrowing. */
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value)
+function requireNonEmptyString(value: unknown, subject: string): string {
+  if (typeof value !== 'string' || value.length === 0) fail(`${subject} is missing or empty`)
+  return value
 }
 
-function isAirportTier(value: unknown): value is AirportTier {
-  return typeof value === 'string' && TIERS.has(value as AirportTier)
+function requireCoordinate(value: unknown, axis: Axis, subject: string): number {
+  const bound = AXIS_BOUND[axis]
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < -bound || value > bound) {
+    fail(`${subject} has out-of-range ${axis}: ${JSON.stringify(value)}`)
+  }
+  return value
 }
 
-/**
- * Validate one entry from the bundled list and return a typed `Airport`, or throw.
- * Every branch narrows the field so the returned object needs no casts.
- */
+function requireTier(value: unknown, subject: string): AirportTier {
+  if (typeof value !== 'string' || !TIERS.has(value as AirportTier)) {
+    fail(`${subject} has invalid tier: ${JSON.stringify(value)}`)
+  }
+  return value as AirportTier
+}
+
 function parseAirport(entry: unknown, index: number): Airport {
   if (!entry || typeof entry !== 'object') fail(`airport ${index} is not an object`)
   const { name, lon, lat, tier } = entry as Record<string, unknown>
 
-  if (typeof name !== 'string' || name.length === 0) fail(`airport ${index} has no name`)
-  if (!isFiniteNumber(lon) || lon < -180 || lon > 180) {
-    fail(`airport ${name} has out-of-range lon: ${JSON.stringify(lon)}`)
+  const validName = requireNonEmptyString(name, `airport ${index} name`)
+  return {
+    name: validName,
+    lon: requireCoordinate(lon, 'lon', `airport ${validName}`),
+    lat: requireCoordinate(lat, 'lat', `airport ${validName}`),
+    tier: requireTier(tier, `airport ${validName}`),
   }
-  if (!isFiniteNumber(lat) || lat < -90 || lat > 90) {
-    fail(`airport ${name} has out-of-range lat: ${JSON.stringify(lat)}`)
-  }
-  if (!isAirportTier(tier)) fail(`airport ${name} has invalid tier: ${JSON.stringify(tier)}`)
-
-  return { name, lon, lat, tier }
 }
 
-/**
- * Parse and strictly validate the bundled airport list — the distilled output of
- * `scripts/build-airports.mjs`, not the raw OSM dump. Like the cities and
- * boundary data this is a fixed build-time asset, so anything unexpected is a bug
- * we surface immediately (fail fast) rather than skipping.
- *
- * Every airfield is returned as its own field — co-located sites (a military
- * airbase sharing a runway with a civil airport, or a radar on the same base) are
- * NOT collapsed here. Each keeps its own glyph; only their *labels* are combined,
- * downstream and across types, by `resolveColocationLabels` (see `colocate.ts`).
- */
 export function loadAirports(): Airport[] {
   const parsed: unknown = JSON.parse(raw)
 

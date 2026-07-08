@@ -4,36 +4,17 @@ import { screenPxToWorld } from './units'
 import type { AirportTier } from '../map/airports'
 import type { ColocationLabel } from '../map/colocate'
 
-/**
- * An airfield placed in world space (device px), ready to render.
- *
- * As with cities, the projected `x/y` are what we draw, but the real lon/lat is
- * carried alongside so later milestones (aircraft routing to/from airfields,
- * re-projection) can work from the ground truth rather than the derived pixels.
- * `tier` drives the zoom-reveal and glyph.
- *
- * `label` is the text actually drawn — usually the name, but the combined "A & B"
- * label when co-located sites (a neighbouring airfield and/or a radar on the same
- * base) share this one (see `resolveColocationLabels`). `labelSuppressed` is true
- * on the members of such a cluster that don't own the shared label — their
- * triangle still draws, but a neighbour carries the combined text.
- */
 export interface AirportMarker {
   name: string
-  /** Display label — the name, or the combined "A & B" label for a co-located site. */
   label: string
-  /** True when another co-located site owns the shared label, so this one hides its own. */
   labelSuppressed: boolean
-  /** Projected device-pixel position (derived from lon/lat for the current fit). */
   x: number
   y: number
-  /** Real-world coordinates in lon/lat degrees — the source of truth. */
   lon: number
   lat: number
   tier: AirportTier
 }
 
-/** The valid airfield tiers, used to validate incoming markers. */
 const TIERS: readonly AirportTier[] = ['military', 'major', 'minor']
 
 /**
@@ -42,6 +23,21 @@ const TIERS: readonly AirportTier[] = ['military', 'major', 'minor']
  * shape — not a tunable size — so it lives here, not in config.
  */
 const TRIANGLE_HALF_WIDTH_RATIO = Math.sin(Math.PI / 3)
+
+interface Point {
+  readonly x: number
+  readonly y: number
+}
+
+function triangleVertices(x: number, y: number, r: number): readonly [Point, Point, Point] {
+  const halfWidth = r * TRIANGLE_HALF_WIDTH_RATIO
+  const halfHeight = r / 2 // inradius: how far the base sits below the centre
+  return [
+    { x, y: y - r },
+    { x: x - halfWidth, y: y + halfHeight },
+    { x: x + halfWidth, y: y + halfHeight },
+  ]
+}
 
 function fail(message: string): never {
   throw new Error(`[game/AirportLayer] ${message}`)
@@ -77,34 +73,12 @@ function assertMarkers(markers: readonly AirportMarker[]): void {
   })
 }
 
-/**
- * Renders the airfield markers — a triangle glyph per field, plus name labels.
- *
- * Distinct from the city markers by *shape* (triangle); within the airfields the
- * tiers read by *size* (major airports + military airbases draw large, minor
- * fields small) and by *fill* (military solid, civil hollow) — never by colour,
- * so it stays inside the white/black HUD rule. Like the cities everything lives
- * in world space (so it pans/zooms with the map) but is re-derived on every zoom
- * change to hold a constant on-screen size.
- *
- * Every triangle is always drawn while the layer is on. The *names* are managed
- * by a tiered reveal: major airports + military airbases label once the camera
- * zooms past `AIRPORT.labelRevealZoom`; minor fields only past
- * `AIRPORT.minorLabelRevealZoom` (closer in).
- */
+/** Renders airfield markers (triangle glyphs) and their name labels. */
 export class AirportLayer {
   private readonly markers: readonly AirportMarker[]
-  /** World-space Graphics holding every marker glyph; re-drawn on zoom. */
   private readonly gfx: Phaser.GameObjects.Graphics
-  /** One world-space Text label per airfield; re-positioned/re-scaled on zoom. */
   private readonly labels: Phaser.GameObjects.Text[]
-  /**
-   * Per-marker label suppression: true when a co-located site owns the shared
-   * label so this field draws no name of its own. Mutable — recomputed via
-   * `setLabels` whenever a layer is toggled (co-located counts depend on it).
-   */
   private readonly suppressed: boolean[]
-  /** Master on/off from the toolbar, independent of the label reveal/de-dup. */
   private layerVisible = true
 
   constructor(scene: Phaser.Scene, markers: readonly AirportMarker[]) {
@@ -133,19 +107,10 @@ export class AirportLayer {
     this.onZoomChanged(scene.cameras.main.zoom)
   }
 
-  /**
-   * Every game object this layer owns, so the scene can hand them to the
-   * appropriate camera (e.g. tell the fixed UI camera to ignore them).
-   */
   get objects(): Phaser.GameObjects.GameObject[] {
     return [this.gfx, ...this.labels]
   }
 
-  /**
-   * Show or hide the whole airport layer — triangles and names alike. This is
-   * the master toggle; while on, individual *names* are still governed by the
-   * zoom reveal below, but every triangle shows.
-   */
   setVisible(visible: boolean): void {
     this.layerVisible = visible
     this.gfx.setVisible(visible)
@@ -153,12 +118,6 @@ export class AirportLayer {
     this.onZoomChanged(this.gfx.scene.cameras.main.zoom)
   }
 
-  /**
-   * Replace every marker's label text + suppression from a co-location resolve
-   * (recomputed whenever a layer is toggled, since a `+N` count depends on which
-   * co-located sites are shown) and re-apply at the current zoom. One result per
-   * marker, in marker order.
-   */
   setLabels(labels: readonly ColocationLabel[]): void {
     if (labels.length !== this.labels.length) {
       fail(`expected ${this.labels.length} labels, got ${labels.length}`)
@@ -170,77 +129,54 @@ export class AirportLayer {
     this.onZoomChanged(this.gfx.scene.cameras.main.zoom)
   }
 
-  /** Lowest zoom at which this field is allowed to show its name (tiered reveal). */
   private labelRevealZoom(tier: AirportTier): number {
     return tier === 'minor' ? AIRPORT.minorLabelRevealZoom : AIRPORT.labelRevealZoom
   }
 
-  /**
-   * Decide which labels to show at this zoom: every field whose tier has been
-   * revealed at this zoom. Returns the set of marker indices whose label should
-   * be visible.
-   */
-  private visibleLabelIndices(zoom: number): Set<number> {
-    const shown = new Set<number>()
-    if (!this.layerVisible) return shown
-
-    for (const i of this.markers.keys()) {
-      if (!this.suppressed[i] && zoom >= this.labelRevealZoom(this.markers[i].tier)) shown.add(i)
-    }
-    return shown
+  private isLabelRevealed(index: number, zoom: number): boolean {
+    if (!this.layerVisible || this.suppressed[index]) return false
+    return zoom >= this.labelRevealZoom(this.markers[index].tier)
   }
 
-  /**
-   * Re-draw the triangles (always all of them, while the layer is on) and
-   * re-place/scale the labels so each renders at a fixed on-screen size, applying
-   * the tiered reveal. Cheap — a few dozen fields — so it runs on every zoom
-   * change.
-   */
   onZoomChanged(zoom: number): void {
     assertZoom(zoom)
+    this.drawMarkers(zoom)
+    this.layoutLabels(zoom)
+  }
 
+  private drawMarkers(zoom: number): void {
     // Constant on-screen stroke width converted to world units at this zoom. The
-    // marker radius is per-tier (large fields bigger than minor ones), so it's
-    // resolved inside the loop rather than once here.
+    // marker radius is per-tier, so it's resolved inside the loop instead.
     const strokeWidth = screenPxToWorld(AIRPORT.strokeScreenWidth, zoom)
 
     this.gfx.clear()
     this.gfx.fillStyle(AIRPORT.color, 1)
     this.gfx.lineStyle(strokeWidth, AIRPORT.color, 1)
 
-    const labelled = this.visibleLabelIndices(zoom)
-
-    for (let i = 0; i < this.markers.length; i++) {
-      const m = this.markers[i]
-
-      // Glyph size encodes airport size: majors/airbases large, minor fields
-      // small. Equilateral triangle (circumradius r) pointing up, centred on it.
+    for (const m of this.markers) {
       const r = screenPxToWorld(AIRPORT.markerScreenRadius[m.tier], zoom)
-      const halfWidth = r * TRIANGLE_HALF_WIDTH_RATIO
-      const halfHeight = r / 2
-
-      // Every field's triangle is always drawn (military filled, civil hollow).
-      const [ax, ay] = [m.x, m.y - r] // top vertex
-      const [bx, by] = [m.x - halfWidth, m.y + halfHeight] // bottom-left
-      const [cx, cy] = [m.x + halfWidth, m.y + halfHeight] // bottom-right
+      const [a, b, c] = triangleVertices(m.x, m.y, r)
       if (m.tier === 'military') {
-        this.gfx.fillTriangle(ax, ay, bx, by, cx, cy)
+        this.gfx.fillTriangle(a.x, a.y, b.x, b.y, c.x, c.y)
       } else {
-        this.gfx.strokeTriangle(ax, ay, bx, by, cx, cy)
+        this.gfx.strokeTriangle(a.x, a.y, b.x, b.y, c.x, c.y)
       }
+    }
+  }
 
-      // Names are gated by the reveal + de-dup computed above. Offset clears this
-      // field's own (tier-sized) triangle so the label always sits just above it.
+  private layoutLabels(zoom: number): void {
+    for (let i = 0; i < this.markers.length; i++) {
       const label = this.labels[i]
-      const show = labelled.has(i)
+      const show = this.isLabelRevealed(i, zoom)
       label.setVisible(show)
-      if (show) {
-        const labelOffset = screenPxToWorld(
-          AIRPORT.markerScreenRadius[m.tier] + AIRPORT.labelScreenGap,
-          zoom,
-        )
-        label.setScale(1 / zoom).setPosition(m.x, m.y - labelOffset)
-      }
+      if (!show) continue
+
+      const m = this.markers[i]
+      const labelOffset = screenPxToWorld(
+        AIRPORT.markerScreenRadius[m.tier] + AIRPORT.labelScreenGap,
+        zoom,
+      )
+      label.setScale(1 / zoom).setPosition(m.x, m.y - labelOffset)
     }
   }
 }
