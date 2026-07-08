@@ -1,6 +1,11 @@
 import Phaser from 'phaser'
+import cityIconRaw from 'lucide-static/icons/building-2.svg?raw'
 import { DPR, FONT_FAMILY, CITY, DEPTH } from './config'
 import { screenPxToWorld } from './units'
+import { iconDataUri } from './svgIcon'
+
+/** Phaser texture key for the rasterised city marker glyph. */
+const CITY_ICON_TEXTURE = 'city-icon'
 
 /**
  * A city placed in world space (device px), ready to render.
@@ -23,27 +28,48 @@ export interface CityMarker {
 }
 
 /**
- * Renders the city markers — a filled dot plus a name label per city — as a
- * single self-contained layer.
+ * Renders the city markers — the Lucide `building-2` icon plus a name label per
+ * city — as a single self-contained layer. It's the same glyph the toolbar shows
+ * for the cities toggle, so the control and what it toggles read as one thing.
  *
  * Everything lives in world space so it pans and zooms with the map, but the
- * dots and labels are re-derived on every zoom change so they render at a
+ * icons and labels are re-scaled on every zoom change so they render at a
  * *constant on-screen size* (like the coastline hairline) instead of ballooning
  * or vanishing as the player zooms.
  */
 export class CityLayer {
   private readonly markers: CityMarker[]
-  /** World-space Graphics holding every city dot; re-drawn on zoom. */
-  private readonly gfx: Phaser.GameObjects.Graphics
+  /** One world-space icon Image per city; re-scaled on zoom to hold screen size. */
+  private readonly icons: Phaser.GameObjects.Image[]
   /** One world-space Text label per city; re-positioned/re-scaled on zoom. */
   private readonly labels: Phaser.GameObjects.Text[]
+  /** Master on/off from the toolbar, independent of the per-zoom label reveal. */
+  private layerVisible = true
+
+  /**
+   * Rasterise the city icon into a texture. Must run in the scene's `preload` so
+   * the texture exists by the time the constructor places the marker images in
+   * `create`.
+   */
+  static preload(scene: Phaser.Scene): void {
+    scene.load.svg(CITY_ICON_TEXTURE, iconDataUri(cityIconRaw), {
+      width: CITY.iconScreenSize * DPR,
+      height: CITY.iconScreenSize * DPR,
+    })
+  }
 
   constructor(scene: Phaser.Scene, markers: CityMarker[]) {
     this.markers = markers
 
-    // Dots sit just above the coastline; labels just above the dots (draw order
-    // declared centrally in DEPTH).
-    this.gfx = scene.add.graphics().setDepth(DEPTH.cityDots)
+    // Icons sit just above the coastline; labels just above the icons (draw order
+    // declared centrally in DEPTH). The texture is rasterised at the target device
+    // size, so at zoom 1 it's already right; `onZoomChanged` scales it thereafter.
+    this.icons = markers.map((m) =>
+      scene.add
+        .image(m.x, m.y, CITY_ICON_TEXTURE)
+        .setOrigin(0.5, 0.5)
+        .setDepth(DEPTH.cityDots),
+    )
 
     this.labels = markers.map((m) =>
       scene.add
@@ -55,7 +81,7 @@ export class CityLayer {
           // Rasterise at device resolution so labels stay crisp on HiDPI displays.
           resolution: DPR,
         })
-        // Anchor bottom-centre so the label sits above its city, centred on the dot.
+        // Anchor bottom-centre so the label sits above its city, centred on the icon.
         .setOrigin(0.5, 1)
         .setDepth(DEPTH.cityLabels),
     )
@@ -69,39 +95,41 @@ export class CityLayer {
    * appropriate camera (e.g. tell the fixed UI camera to ignore them).
    */
   get objects(): Phaser.GameObjects.GameObject[] {
-    return [this.gfx, ...this.labels]
+    return [...this.icons, ...this.labels]
   }
 
   /**
-   * Show or hide the whole city layer — both the dots and their name labels.
-   * Driven by the HUD toolbar toggle. Visibility is independent of the
-   * zoom-reactive re-positioning in `onZoomChanged`, which only touches
-   * scale/position — so a hidden marker stays hidden across zooms.
+   * Show or hide the whole city layer. This is the master toggle driven by the
+   * HUD toolbar; the actual on-screen visibility of the name labels is still
+   * gated by the per-zoom reveal (`CITY.labelRevealZoom`), so re-showing the
+   * layer while zoomed out keeps the names hidden until the player zooms in.
    */
   setVisible(visible: boolean): void {
-    this.gfx.setVisible(visible)
-    for (const label of this.labels) label.setVisible(visible)
+    this.layerVisible = visible
+    this.onZoomChanged(this.icons[0].scene.cameras.main.zoom)
   }
 
   /**
-   * Re-draw the dots and re-place/scale the labels so each renders at a fixed
-   * on-screen size regardless of camera zoom. Cheap — a handful of cities — so
-   * it runs on every zoom change.
+   * Re-scale the icons and re-place/scale the labels so each renders at a fixed
+   * on-screen size regardless of camera zoom, and apply the per-zoom label reveal
+   * (names appear only at/above `CITY.labelRevealZoom`). Cheap — a handful of
+   * cities — so it runs on every zoom change.
    */
   onZoomChanged(zoom: number): void {
-    // Constant on-screen sizes converted to world units at the current zoom.
-    const dotRadius = screenPxToWorld(CITY.dotScreenRadius, zoom)
-    const labelOffset = screenPxToWorld(CITY.dotScreenRadius + CITY.labelScreenGap, zoom)
+    // The icon texture is baked at `iconScreenSize * DPR` device px; dividing by
+    // the camera zoom cancels the camera's magnification so it holds a constant
+    // on-screen size (same trick the labels use).
+    const iconScale = 1 / zoom
+    // Half the icon's on-screen height plus the gap, in world units, so the label
+    // clears the top of the icon.
+    const labelOffset = screenPxToWorld(CITY.iconScreenSize / 2 + CITY.labelScreenGap, zoom)
+    // Icons follow the master toggle; names also require zooming in past the reveal.
+    const labelsVisible = this.layerVisible && zoom >= CITY.labelRevealZoom
 
-    this.gfx.clear()
-    this.gfx.fillStyle(CITY.dotColor, 1)
-    for (const m of this.markers) {
-      this.gfx.fillCircle(m.x, m.y, dotRadius)
-    }
-
-    for (let i = 0; i < this.labels.length; i++) {
+    for (let i = 0; i < this.markers.length; i++) {
       const m = this.markers[i]
-      this.labels[i].setScale(1 / zoom).setPosition(m.x, m.y - labelOffset)
+      this.icons[i].setScale(iconScale).setVisible(this.layerVisible)
+      this.labels[i].setScale(iconScale).setPosition(m.x, m.y - labelOffset).setVisible(labelsVisible)
     }
   }
 }

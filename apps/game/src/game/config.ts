@@ -40,16 +40,86 @@ export const MAP = {
 } as const
 
 export const CITY = {
-  /** Marker dot radius on screen (CSS pixels). */
-  dotScreenRadius: 3.5,
-  /** Dot fill colour. */
-  dotColor: 0xffffff,
+  /**
+   * City marker icon (the Lucide `building-2` glyph, the same icon the toolbar
+   * uses for the cities toggle) — its edge length on screen in CSS pixels, held
+   * constant across zoom.
+   */
+  iconScreenSize: 15,
   /** Label text colour. */
   labelColor: '#ffffff',
   /** Label font size on screen (CSS pixels). */
   labelScreenSize: 13,
-  /** Clear gap between the top of the dot and the bottom of the label (CSS pixels). */
+  /** Clear gap between the top of the icon and the bottom of the label (CSS pixels). */
   labelScreenGap: 4,
+  /**
+   * Zoom at/above which the city name labels appear. Below it only the icons
+   * show, so the far-out country view isn't crowded with names. Sits inside the
+   * reachable range (`ZOOM.min`..`ZOOM.max` = 6.5..40).
+   */
+  labelRevealZoom: 10,
+} as const
+
+/**
+ * Airfield markers. Drawn as a triangle glyph so they read as distinct from the
+ * filled city circles at a glance, while staying inside the HUD white/black rule
+ * — the tiers differ by *fill/size/shape*, never colour:
+ *  - major airports + military airbases: LARGE triangle (military filled, the
+ *    civil major hollow) — the prominent fields you notice first.
+ *  - minor civil fields (grass strips, glider/flying clubs): SMALL hollow
+ *    triangle, so the busy little fields don't shout as loud as the big ones.
+ *
+ * So airport *size* reads at a glance from the glyph size, and military vs civil
+ * from the fill. Like the city layer, sizes are on-screen (CSS px) and held
+ * constant across zoom. Every triangle is always drawn (all fields, all zooms).
+ * The *labels*, though, would swamp the far-out country view, so they reveal
+ * progressively as the player zooms in: the prominent fields (major airports +
+ * military airbases) name themselves first, and the dense minor
+ * grass-strip/glider names appear only once zoomed in close.
+ */
+export const AIRPORT = {
+  /**
+   * Triangle circumradius on screen (CSS pixels), per tier — the large fields
+   * (major airports, military airbases) get a bigger glyph than the minor
+   * grass strips/glider fields so relative importance reads from size alone.
+   */
+  markerScreenRadius: { military: 5, major: 5, minor: 3 },
+  /** Marker outline width on screen (CSS pixels). */
+  strokeScreenWidth: 1.25,
+  /** Marker colour — outline for civil fields, fill for military (HUD: white). */
+  color: 0xffffff,
+  /** Label text colour. */
+  labelColor: '#ffffff',
+  /** Label font size on screen (CSS pixels). */
+  labelScreenSize: 11,
+  /** Clear gap between the marker and the bottom of the label (CSS pixels). */
+  labelScreenGap: 3,
+  /**
+   * Zoom at/above which the prominent airfields (major airports + military
+   * airbases) show their name labels. Sits well above `ZOOM.min` (6.5) so the
+   * map opens — and stays, through the mid-range — with triangles but no names;
+   * the names appear only once the player has zoomed in close on a region.
+   */
+  labelRevealZoom: 14,
+  /**
+   * Zoom at/above which the minor airfields (grass strips, glider/flying clubs)
+   * show their names. Their triangles are always drawn (like every field); only
+   * the dense minor *names* stay hidden until the player is zoomed right in.
+   * Higher than `labelRevealZoom` and near the top of the reachable range
+   * (`ZOOM.min`..`ZOOM.max` = 6.5..40), so the minor names only label up once
+   * the player is zoomed in close.
+   */
+  minorLabelRevealZoom: 32,
+  /**
+   * De-clutter radius for name labels, on screen (CSS pixels). When two
+   * airfields fall within this on-screen distance only ONE name is shown — the
+   * highest-priority field in the cluster: a military airbase wins, else the
+   * major airport, else a minor field. This collapses co-located pairs (e.g. the
+   * civil + military fields that share Aalborg/Karup/Skrydstrup) to a single
+   * name. Because it's an on-screen distance, zooming in separates the fields and
+   * their individual names reappear. Triangles are never suppressed — only names.
+   */
+  labelClusterScreenRadius: 34,
 } as const
 
 // Faint real-world reference grid drawn beneath the map. Because the game is
@@ -97,6 +167,10 @@ export const DEPTH = {
   coastline: 10,
   cityDots: 20,
   cityLabels: 30,
+  // Airports sit just above the city labels so their markers/labels aren't
+  // hidden under a nearby city's name.
+  airportMarkers: 40,
+  airportLabels: 50,
   hud: 100,
   // Interactive chrome sits above the read-only telemetry HUD; the icon draws
   // one step above its own button surface.

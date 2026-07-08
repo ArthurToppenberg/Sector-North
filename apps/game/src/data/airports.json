@@ -1,0 +1,625 @@
+[
+  {
+    "name": "Anholt Flyveplads",
+    "name_en": null,
+    "lon": 11.5558,
+    "lat": 56.69867,
+    "tier": "minor"
+  },
+  {
+    "name": "Annisse Flyveplads",
+    "name_en": null,
+    "lon": 12.21476,
+    "lat": 55.98485,
+    "tier": "minor"
+  },
+  {
+    "name": "Aversi",
+    "name_en": null,
+    "lon": 11.83424,
+    "lat": 55.34289,
+    "tier": "minor"
+  },
+  {
+    "name": "Billund Airport",
+    "name_en": "Billund Airport",
+    "lon": 9.1565,
+    "lat": 55.74005,
+    "tier": "major"
+  },
+  {
+    "name": "Bjedstrup Flyveplads",
+    "name_en": null,
+    "lon": 9.86754,
+    "lat": 56.07122,
+    "tier": "minor"
+  },
+  {
+    "name": "Bornholms Lufthavn",
+    "name_en": "Bornholm Airport",
+    "lon": 14.75806,
+    "lat": 55.06446,
+    "tier": "major"
+  },
+  {
+    "name": "Brædstrup Flyveplads",
+    "name_en": null,
+    "lon": 9.65278,
+    "lat": 55.94408,
+    "tier": "minor"
+  },
+  {
+    "name": "Christianshede Flyveplads",
+    "name_en": null,
+    "lon": 9.39304,
+    "lat": 56.10436,
+    "tier": "minor"
+  },
+  {
+    "name": "Ejstruphede Flyveplads",
+    "name_en": null,
+    "lon": 8.69141,
+    "lat": 56.02045,
+    "tier": "minor"
+  },
+  {
+    "name": "Ejstrupholm Flyveplads",
+    "name_en": null,
+    "lon": 9.26707,
+    "lat": 55.99076,
+    "tier": "minor"
+  },
+  {
+    "name": "Elsesminde Airfield",
+    "name_en": null,
+    "lon": 10.23767,
+    "lat": 55.93818,
+    "tier": "minor"
+  },
+  {
+    "name": "Emmelev Flyveplads",
+    "name_en": null,
+    "lon": 10.78552,
+    "lat": 56.47533,
+    "tier": "minor"
+  },
+  {
+    "name": "Esbjerg Lufthavn",
+    "name_en": "Esbjerg Airport",
+    "lon": 8.55399,
+    "lat": 55.52554,
+    "tier": "major"
+  },
+  {
+    "name": "Fasterholt Hanggliding & Paragliding Center",
+    "name_en": null,
+    "lon": 9.09434,
+    "lat": 56.00311,
+    "tier": "minor"
+  },
+  {
+    "name": "Filskov Flyveplads",
+    "name_en": null,
+    "lon": 9.04917,
+    "lat": 55.81416,
+    "tier": "minor"
+  },
+  {
+    "name": "Flyvestation Karup",
+    "name_en": null,
+    "lon": 9.13533,
+    "lat": 56.31254,
+    "tier": "military"
+  },
+  {
+    "name": "Flyvestation Skrydstrup",
+    "name_en": null,
+    "lon": 9.26303,
+    "lat": 55.22369,
+    "tier": "military"
+  },
+  {
+    "name": "Flyvestation Aalborg",
+    "name_en": null,
+    "lon": 9.8558,
+    "lat": 57.09655,
+    "tier": "military"
+  },
+  {
+    "name": "Frederikssund Syd Flyveplads",
+    "name_en": null,
+    "lon": 12.08048,
+    "lat": 55.8151,
+    "tier": "minor"
+  },
+  {
+    "name": "Frederiksund Nord",
+    "name_en": null,
+    "lon": 12.07161,
+    "lat": 55.8526,
+    "tier": "minor"
+  },
+  {
+    "name": "Freerslev Flyveplads",
+    "name_en": null,
+    "lon": 12.24471,
+    "lat": 55.90008,
+    "tier": "minor"
+  },
+  {
+    "name": "Gesten Svæveflyveplads",
+    "name_en": null,
+    "lon": 9.18644,
+    "lat": 55.55212,
+    "tier": "minor"
+  },
+  {
+    "name": "Grenaa Flyveplads",
+    "name_en": null,
+    "lon": 10.93025,
+    "lat": 56.4411,
+    "tier": "minor"
+  },
+  {
+    "name": "Grimlund/Hoven",
+    "name_en": null,
+    "lon": 8.71784,
+    "lat": 55.82244,
+    "tier": "minor"
+  },
+  {
+    "name": "Grønbæk flyveplads",
+    "name_en": null,
+    "lon": 9.6249,
+    "lat": 56.27096,
+    "tier": "minor"
+  },
+  {
+    "name": "Grønholt Flyveplads",
+    "name_en": null,
+    "lon": 12.3801,
+    "lat": 55.94124,
+    "tier": "minor"
+  },
+  {
+    "name": "Gørlev Flyveplads",
+    "name_en": null,
+    "lon": 11.19743,
+    "lat": 55.55182,
+    "tier": "minor"
+  },
+  {
+    "name": "Gørløse Svæveflyvecenter",
+    "name_en": "Gørlose Airfield",
+    "lon": 12.2279,
+    "lat": 55.88491,
+    "tier": "minor"
+  },
+  {
+    "name": "Haderslev Flyveplads",
+    "name_en": null,
+    "lon": 9.52578,
+    "lat": 55.3017,
+    "tier": "minor"
+  },
+  {
+    "name": "Hammer Svæveflyveplads",
+    "name_en": null,
+    "lon": 9.44958,
+    "lat": 55.90749,
+    "tier": "minor"
+  },
+  {
+    "name": "Hans Christian Andersen Airport",
+    "name_en": null,
+    "lon": 10.32849,
+    "lat": 55.4747,
+    "tier": "major"
+  },
+  {
+    "name": "Herning Flyveplads",
+    "name_en": null,
+    "lon": 9.04059,
+    "lat": 56.18525,
+    "tier": "minor"
+  },
+  {
+    "name": "Hesselø Airstrip",
+    "name_en": null,
+    "lon": 11.70138,
+    "lat": 56.19805,
+    "tier": "minor"
+  },
+  {
+    "name": "Holbæk Flyveplads",
+    "name_en": null,
+    "lon": 11.60362,
+    "lat": 55.73391,
+    "tier": "minor"
+  },
+  {
+    "name": "Holstebro Flyveklub",
+    "name_en": null,
+    "lon": 8.58618,
+    "lat": 56.30654,
+    "tier": "minor"
+  },
+  {
+    "name": "Holsted Flyveplads",
+    "name_en": null,
+    "lon": 8.93667,
+    "lat": 55.56228,
+    "tier": "minor"
+  },
+  {
+    "name": "Kaleko Flyveplads",
+    "name_en": null,
+    "lon": 10.26878,
+    "lat": 55.09872,
+    "tier": "minor"
+  },
+  {
+    "name": "Kalundborg Flyveplads",
+    "name_en": null,
+    "lon": 11.25125,
+    "lat": 55.70023,
+    "tier": "minor"
+  },
+  {
+    "name": "Kolding Lufthavn",
+    "name_en": null,
+    "lon": 9.33013,
+    "lat": 55.43677,
+    "tier": "major"
+  },
+  {
+    "name": "Kongsted Flyveplads",
+    "name_en": null,
+    "lon": 12.06351,
+    "lat": 55.25134,
+    "tier": "minor"
+  },
+  {
+    "name": "Korsør Flyveplads",
+    "name_en": null,
+    "lon": 11.24226,
+    "lat": 55.33688,
+    "tier": "minor"
+  },
+  {
+    "name": "Koster Vig Flyveplads",
+    "name_en": null,
+    "lon": 12.1989,
+    "lat": 54.96496,
+    "tier": "minor"
+  },
+  {
+    "name": "Kruså-Padborg Flyveplads",
+    "name_en": "Kruså-Padborg Airport",
+    "lon": 9.27964,
+    "lat": 54.87108,
+    "tier": "minor"
+  },
+  {
+    "name": "Københavns Lufthavn",
+    "name_en": "Copenhagen Airport",
+    "lon": 12.64396,
+    "lat": 55.61326,
+    "tier": "major"
+  },
+  {
+    "name": "Lemvig flyveplads",
+    "name_en": "Lemvig Airfield",
+    "lon": 8.30968,
+    "lat": 56.50381,
+    "tier": "minor"
+  },
+  {
+    "name": "Lindtorp Flyvecenter",
+    "name_en": null,
+    "lon": 8.4435,
+    "lat": 56.39629,
+    "tier": "minor"
+  },
+  {
+    "name": "Lolland Falster Lufthavn",
+    "name_en": "Lolland Falster Airport",
+    "lon": 11.44029,
+    "lat": 54.69901,
+    "tier": "major"
+  },
+  {
+    "name": "Læsø Flyveplads",
+    "name_en": "Læsø Airport",
+    "lon": 11.00277,
+    "lat": 57.27694,
+    "tier": "minor"
+  },
+  {
+    "name": "Midtjylland Karup Airport",
+    "name_en": "Midtjylland Karup Airport",
+    "lon": 9.12171,
+    "lat": 56.31091,
+    "tier": "major"
+  },
+  {
+    "name": "Midtsjællands Svæveflyveklub",
+    "name_en": null,
+    "lon": 11.6445,
+    "lat": 55.45228,
+    "tier": "minor"
+  },
+  {
+    "name": "Morsø Flyveplads",
+    "name_en": "Morsø Airport, Tødsø",
+    "lon": 8.78577,
+    "lat": 56.82462,
+    "tier": "minor"
+  },
+  {
+    "name": "Nordjyllands Ultra Light Flyveklub",
+    "name_en": null,
+    "lon": 9.94021,
+    "lat": 57.2481,
+    "tier": "minor"
+  },
+  {
+    "name": "Næstved Flyveplads",
+    "name_en": null,
+    "lon": 11.71684,
+    "lat": 55.2108,
+    "tier": "minor"
+  },
+  {
+    "name": "Orupgaard Flyveplads",
+    "name_en": null,
+    "lon": 11.94943,
+    "lat": 54.76901,
+    "tier": "minor"
+  },
+  {
+    "name": "Randers Flyveplads",
+    "name_en": null,
+    "lon": 10.03675,
+    "lat": 56.50629,
+    "tier": "minor"
+  },
+  {
+    "name": "Revninge Flyveplads",
+    "name_en": null,
+    "lon": 10.67082,
+    "lat": 55.41902,
+    "tier": "minor"
+  },
+  {
+    "name": "Ringsted Flyveplads",
+    "name_en": null,
+    "lon": 11.80881,
+    "lat": 55.42648,
+    "tier": "minor"
+  },
+  {
+    "name": "Rolfsted Flyveplads",
+    "name_en": "Rolfsted Airfield",
+    "lon": 10.58216,
+    "lat": 55.32577,
+    "tier": "minor"
+  },
+  {
+    "name": "Roskilde Lufthavn",
+    "name_en": "Roskilde Airport",
+    "lon": 12.12793,
+    "lat": 55.58702,
+    "tier": "major"
+  },
+  {
+    "name": "Rårup Flyveplads",
+    "name_en": null,
+    "lon": 9.94232,
+    "lat": 55.7773,
+    "tier": "minor"
+  },
+  {
+    "name": "Samsø Flyveplads",
+    "name_en": null,
+    "lon": 10.61318,
+    "lat": 55.88951,
+    "tier": "minor"
+  },
+  {
+    "name": "Sindal Lufthavn I/S",
+    "name_en": null,
+    "lon": 10.22889,
+    "lat": 57.50371,
+    "tier": "major"
+  },
+  {
+    "name": "Skalmstrup landingsplads",
+    "name_en": null,
+    "lon": 10.19798,
+    "lat": 56.54283,
+    "tier": "minor"
+  },
+  {
+    "name": "Skive Lufthavn",
+    "name_en": null,
+    "lon": 9.17134,
+    "lat": 56.55081,
+    "tier": "major"
+  },
+  {
+    "name": "Solbjerg Flyveplads",
+    "name_en": null,
+    "lon": 10.08136,
+    "lat": 56.05723,
+    "tier": "minor"
+  },
+  {
+    "name": "Spjald Flyveplads",
+    "name_en": null,
+    "lon": 8.51469,
+    "lat": 56.10299,
+    "tier": "minor"
+  },
+  {
+    "name": "Stauning Lufthavn",
+    "name_en": null,
+    "lon": 8.35422,
+    "lat": 55.99068,
+    "tier": "major"
+  },
+  {
+    "name": "Sulkendrup Flyveplads",
+    "name_en": null,
+    "lon": 10.71384,
+    "lat": 55.28368,
+    "tier": "minor"
+  },
+  {
+    "name": "Svæveflyvecenter Arnborg",
+    "name_en": "Arnborg Glider Field",
+    "lon": 9.01733,
+    "lat": 56.01061,
+    "tier": "minor"
+  },
+  {
+    "name": "Sæby Flyveplads",
+    "name_en": null,
+    "lon": 10.40985,
+    "lat": 57.34541,
+    "tier": "minor"
+  },
+  {
+    "name": "Sønder Felding Flyveplads",
+    "name_en": null,
+    "lon": 8.74518,
+    "lat": 55.94615,
+    "tier": "minor"
+  },
+  {
+    "name": "Sønderborg Lufthavn",
+    "name_en": "Sønderborg Airport",
+    "lon": 9.79306,
+    "lat": 54.9631,
+    "tier": "major"
+  },
+  {
+    "name": "Sønderjysk Flyveklub",
+    "name_en": null,
+    "lon": 9.30028,
+    "lat": 55.07885,
+    "tier": "minor"
+  },
+  {
+    "name": "Thisted Lufthavn",
+    "name_en": "Thisted Airport",
+    "lon": 8.70465,
+    "lat": 57.06903,
+    "tier": "major"
+  },
+  {
+    "name": "True Svæveflyvebane",
+    "name_en": null,
+    "lon": 10.07733,
+    "lat": 56.17897,
+    "tier": "minor"
+  },
+  {
+    "name": "Tølløse Flyveklub",
+    "name_en": null,
+    "lon": 11.75885,
+    "lat": 55.58164,
+    "tier": "minor"
+  },
+  {
+    "name": "Tønder Flyveplads",
+    "name_en": null,
+    "lon": 8.84112,
+    "lat": 54.92913,
+    "tier": "minor"
+  },
+  {
+    "name": "Tåsinge / Elvira Madigan Airport",
+    "name_en": null,
+    "lon": 10.5645,
+    "lat": 55.01583,
+    "tier": "major"
+  },
+  {
+    "name": "Varde Flyveplads",
+    "name_en": "Varde Airfield",
+    "lon": 8.44137,
+    "lat": 55.60817,
+    "tier": "minor"
+  },
+  {
+    "name": "Vesthimmerlands Flyveplads",
+    "name_en": "Vesthimmerlands Airport",
+    "lon": 9.46062,
+    "lat": 56.84603,
+    "tier": "minor"
+  },
+  {
+    "name": "Vestjysk Svæveflyveklub",
+    "name_en": null,
+    "lon": 8.75541,
+    "lat": 55.63193,
+    "tier": "minor"
+  },
+  {
+    "name": "Viborg Flyveplads",
+    "name_en": null,
+    "lon": 9.41042,
+    "lat": 56.41057,
+    "tier": "minor"
+  },
+  {
+    "name": "Vojens Lufthavn",
+    "name_en": null,
+    "lon": 9.29151,
+    "lat": 55.22141,
+    "tier": "major"
+  },
+  {
+    "name": "Vøjstrup Svæveflyveplads",
+    "name_en": "Vøjstrup Glider Field",
+    "lon": 10.20198,
+    "lat": 55.24802,
+    "tier": "minor"
+  },
+  {
+    "name": "Ærø Flyveplads",
+    "name_en": null,
+    "lon": 10.45741,
+    "lat": 54.85227,
+    "tier": "minor"
+  },
+  {
+    "name": "Ølgod/Vallund",
+    "name_en": null,
+    "lon": 8.55331,
+    "lat": 55.83342,
+    "tier": "minor"
+  },
+  {
+    "name": "Aalborg Lufthavn",
+    "name_en": "Aalborg Airport",
+    "lon": 9.86828,
+    "lat": 57.08593,
+    "tier": "major"
+  },
+  {
+    "name": "Aarhus Lufthavn",
+    "name_en": "Aarhus Airport",
+    "lon": 10.61891,
+    "lat": 56.30427,
+    "tier": "major"
+  },
+  {
+    "name": "Aarhus Vandflyveplads",
+    "name_en": "Aarhus Seaplane Terminal",
+    "lon": 10.2505,
+    "lat": 56.15177,
+    "tier": "minor"
+  }
+]

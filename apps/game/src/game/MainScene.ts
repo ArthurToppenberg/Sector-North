@@ -1,11 +1,13 @@
 import Phaser from 'phaser'
 import { loadBoundaries, BOUNDARY_ASSETS } from '../map/geojson'
 import { loadMajorCities } from '../map/cities'
+import { loadAirports } from '../map/airports'
 import { projectToPixels } from '../map/project'
 import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS } from './config'
 import { GridLayer } from './GridLayer'
 import { CoastlineLayer } from './CoastlineLayer'
 import { CityLayer, type CityMarker } from './CityLayer'
+import { AirportLayer, type AirportMarker } from './AirportLayer'
 import { CameraController } from './CameraController'
 import { DebugHud } from './DebugHud'
 import { Toolbar } from './Toolbar'
@@ -54,9 +56,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   preload() {
-    // Rasterise the toolbar's SVG glyph into a texture before `create` builds
-    // the button from it.
+    // Rasterise the SVG glyphs into textures before `create` builds the toolbar
+    // buttons and the city markers from them.
     Toolbar.preload(this)
+    CityLayer.preload(this)
 
     // Fetch the country boundaries (emitted to `dist/` via Vite `?url`, not
     // inlined). Phaser's loader parses each into the JSON cache before `create`
@@ -72,6 +75,7 @@ export class MainScene extends Phaser.Scene {
       this.cache.json.get(this.boundaryCacheKey(name)),
     )
     const cities = loadMajorCities()
+    const airports = loadAirports()
 
     // Project the country once to fit the initial viewport. This establishes the
     // world scale; from here the Phaser camera owns all pan/zoom — the model is
@@ -91,6 +95,12 @@ export class MainScene extends Phaser.Scene {
       return { name: c.name, x, y, lon: c.lon, lat: c.lat, population: c.population }
     })
 
+    // Place the airfields in the same world space, through the same projection.
+    const airportMarkers: AirportMarker[] = airports.map((a) => {
+      const [x, y] = projected.project(a.lon, a.lat)
+      return { name: a.name, x, y, lon: a.lon, lat: a.lat, tier: a.tier }
+    })
+
     // World layers (drawn by the main camera) and the HUD (drawn by the UI camera).
     // The grid sits beneath everything; cells are a fixed real-world size derived
     // from the projection's pixels-per-km, anchored to the map's corner.
@@ -100,20 +110,22 @@ export class MainScene extends Phaser.Scene {
     })
     const coastline = new CoastlineLayer(this, projected.polygons)
     const cityLayer = new CityLayer(this, markers)
-    // Cities are shown by default; the toolbar toggle hides them. One literal
-    // feeds both the layer's start visibility and the toolbar's initial state so
-    // the glyph and the actual visibility can't drift apart.
+    const airportLayer = new AirportLayer(this, airportMarkers)
+    // Cities and airports are shown by default; the toolbar toggles hide them.
+    // One literal per layer feeds both the layer's start visibility and the
+    // toolbar's initial state so the glyph and the actual visibility can't drift.
     const citiesVisible = true
+    const airportsVisible = true
     cityLayer.setVisible(citiesVisible)
+    airportLayer.setVisible(airportsVisible)
     this.debugHud = new DebugHud(this)
 
-    // Toolbar toggles the city markers (dots + names). It owns its on/off state
-    // and only hands us the new value — the scene is the one wiring that to the
-    // city layer.
-    this.toolbar = new Toolbar(this, {
-      initialActive: citiesVisible,
-      onToggle: (active) => cityLayer.setVisible(active),
-    })
+    // Toolbar toggles the city and airport markers. Each button owns its on/off
+    // state and only hands us the new value — the scene wires that to the layers.
+    this.toolbar = new Toolbar(this, [
+      { id: 'cities', initialActive: citiesVisible, onToggle: (active) => cityLayer.setVisible(active) },
+      { id: 'airports', initialActive: airportsVisible, onToggle: (active) => airportLayer.setVisible(active) },
+    ])
 
     // One place that fans a zoom change out to every zoom-reactive layer, so a new
     // layer only has to be added here rather than at each call site. (The grid is
@@ -121,6 +133,7 @@ export class MainScene extends Phaser.Scene {
     const onZoomChanged = (zoom: number) => {
       coastline.onZoomChanged(zoom)
       cityLayer.onZoomChanged(zoom)
+      airportLayer.onZoomChanged(zoom)
     }
     // Turn the lon/lat play area into a world-pixel box the camera centre is
     // confined to. Projecting through the same `project()` as everything else
@@ -140,7 +153,7 @@ export class MainScene extends Phaser.Scene {
     })
 
     this.setupCameras(
-      [...this.gridLayer.objects, ...coastline.objects, ...cityLayer.objects],
+      [...this.gridLayer.objects, ...coastline.objects, ...cityLayer.objects, ...airportLayer.objects],
       [...this.debugHud.objects, ...this.toolbar.objects],
     )
 
