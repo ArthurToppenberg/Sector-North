@@ -149,6 +149,14 @@ request. They are not free to "improve", refactor away, or adjust as a side effe
 another change. If a task seems to require different zoom/pan limits, stop and ask the
 user first rather than editing them.
 
+Note: `CAMERA_CENTER_BOUNDS` was widened from the original Denmark-only box to the full
+radar-coverage footprint on 2026-07-08 **at the user's explicit request**, so the player
+can pan out to see every radar's range. The opening framing is pinned separately by
+`CAMERA_INITIAL_CENTER` (central Denmark) and passed to `CameraController` as
+`initialCenter`, so the roam box and the start view are independent — widening the box does
+not move where the map opens. The "locked" rule still stands for any *future* change:
+don't touch either constant without a fresh explicit request.
+
 The bounds are enforced by a **manual centre-clamp** (`CameraController.clampCamera`), not
 Phaser's `camera.setBounds`. `setBounds` locks and re-centres the camera whenever the visible
 area is larger than the bounds — which is the normal case here (a small country in a large

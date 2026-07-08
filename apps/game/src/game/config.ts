@@ -113,6 +113,30 @@ export const RADAR = {
    * reachable range (`ZOOM.min`..`ZOOM.max` = 6.5..40).
    */
   labelRevealZoom: 11,
+  /**
+   * The animated coverage sweep: a rotating "hand" whose length is the site's real
+   * detection range and whose rotation period is the antenna's real revolution
+   * time, plus a faint static ring at the range extent. The radius is a real-world
+   * distance (km × `pixelsPerKm`), so it lives in world space and zooms with the
+   * map — only the stroke widths below are constant on screen.
+   *
+   * Drawn in the coastline's phosphor green (`MAP.strokeColor`), not white: this is
+   * a deliberate, user-requested exception to the HUD white/black rule so the sweep
+   * reads as part of the tactical radar picture alongside the borders. See the HUD
+   * colour rule in the root `CLAUDE.md`.
+   */
+  sweep: {
+    /** Sweep-hand line width on screen (CSS pixels), held constant across zoom. */
+    lineScreenWidth: 1.25,
+    /** Range-ring line width on screen (CSS pixels). */
+    ringScreenWidth: 1,
+    /** Sweep + ring colour — phosphor green, matching the coastline (see above). */
+    color: MAP.strokeColor,
+    /** Sweep-hand opacity. */
+    lineAlpha: 0.7,
+    /** Range-ring opacity — faint, so it reads as a background extent marker. */
+    ringAlpha: 0.12,
+  },
 } as const
 
 // Faint real-world reference grid drawn beneath the map.
@@ -149,6 +173,10 @@ export const GRID = {
 export const DEPTH = {
   grid: 0,
   coastline: 10,
+  // Radar coverage sweeps sit just above the coastline but beneath every marker
+  // layer: the large, faint rings and rotating hands wash behind the city/airport/
+  // radar glyphs so those stay legible on top.
+  radarSweep: 15,
   cityDots: 20,
   cityLabels: 30,
   // Airports sit just above the city labels so their markers/labels aren't
@@ -223,9 +251,14 @@ export const KEY_PAN_SPEED = 700
 
 /**
  * The play area: fixed limits for where the camera CENTRE (the world point it
- * looks at) may roam, expressed as a **geographic** lon/lat box around Denmark.
- * The game is focused on Danish airspace, so this confines the player to that
- * region regardless of zoom.
+ * looks at) may roam, expressed as a **geographic** lon/lat box.
+ *
+ * Sized to encompass the **full radar coverage footprint** (the union of every
+ * site's detection range, which reaches ~470-500 km out from Skagen and Bornholm),
+ * so the player can pan out to see all the airspace the radars watch — not just
+ * Denmark itself. The opening framing is held on Denmark separately via
+ * `CAMERA_INITIAL_CENTER` below, so widening the roam box doesn't move where the
+ * map first opens.
  *
  * Kept in lon/lat — not pixels — on purpose: pixel bounds would break the moment
  * the projection changes (adding a country rescales/shifts the whole map) or the
@@ -234,15 +267,26 @@ export const KEY_PAN_SPEED = 700
  * always tracks the same real-world patch of Earth. This is the "GPS is the
  * source of truth" rule applied to the camera. Degrees are WGS84.
  *
- * DO NOT change these values (or the ZOOM min/max above) without an explicit
- * request from the user — see the "Camera bounds are locked" rule in
- * `apps/game/CLAUDE.md`.
+ * These were widened from the original Denmark-only box with the user's explicit
+ * permission (2026-07-08) to reveal the radar coverage. Otherwise DO NOT change
+ * these values (or the ZOOM min/max above) without an explicit request from the
+ * user — see the "Camera bounds are locked" rule in `apps/game/CLAUDE.md`.
  */
 export const CAMERA_CENTER_BOUNDS = {
-  /** Longitude (°E) extents — into the North Sea (west) out past Bornholm (east). */
-  west: 6,
-  east: 15.5,
-  /** Latitude (°N) extents — south of the German border to north of Skagen. */
-  south: 54,
-  north: 58,
+  /** Longitude (°E) extents — out to the west/east edges of the radar coverage. */
+  west: 2,
+  east: 23,
+  /** Latitude (°N) extents — from below Bornholm's reach up past Skagen's. */
+  south: 50,
+  north: 62,
+} as const
+
+/**
+ * The geographic point the map is framed on at startup (central Denmark). Kept
+ * separate from `CAMERA_CENTER_BOUNDS` so the pan box can extend far out over the
+ * radar coverage while the game still opens looking at Denmark. Degrees are WGS84.
+ */
+export const CAMERA_INITIAL_CENTER = {
+  lon: 10.75,
+  lat: 56,
 } as const

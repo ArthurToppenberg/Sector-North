@@ -10,8 +10,15 @@ export interface CenterBounds {
   maxY: number
 }
 
+/** The world-pixel point the camera is framed on at startup. */
+export interface InitialCenter {
+  x: number
+  y: number
+}
+
 interface CameraControllerOptions {
   centerBounds: CenterBounds
+  initialCenter: InitialCenter
   onZoomChanged: (zoom: number) => void
 }
 
@@ -31,6 +38,23 @@ function assertValidCenterBounds(b: CenterBounds): void {
   }
 }
 
+/**
+ * The opening framing point must be finite (a projection that produced `NaN` is a
+ * bug to surface now) and must sit inside the roam box — otherwise the initial
+ * `clampCamera` would immediately yank the camera off the intended start point,
+ * silently masking a mis-set constant.
+ */
+function assertValidInitialCenter(c: InitialCenter, b: CenterBounds): void {
+  if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) {
+    throw new Error(`[CameraController] initialCenter must be finite: ${JSON.stringify(c)}`)
+  }
+  if (c.x < b.minX || c.x > b.maxX || c.y < b.minY || c.y > b.maxY) {
+    throw new Error(
+      `[CameraController] initialCenter ${JSON.stringify(c)} is outside centerBounds ${JSON.stringify(b)}`,
+    )
+  }
+}
+
 type MoveKeys = {
   up: Phaser.Input.Keyboard.Key[]
   down: Phaser.Input.Keyboard.Key[]
@@ -45,13 +69,17 @@ export class CameraController {
 
   private readonly centerBounds: CenterBounds
 
+  private readonly initialCenter: InitialCenter
+
   private readonly moveKeys: MoveKeys
 
   constructor(scene: Phaser.Scene, options: CameraControllerOptions) {
     assertValidCenterBounds(options.centerBounds)
+    assertValidInitialCenter(options.initialCenter, options.centerBounds)
     this.cam = scene.cameras.main
     this.onZoomChanged = options.onZoomChanged
     this.centerBounds = options.centerBounds
+    this.initialCenter = options.initialCenter
 
     this.frameInitialView()
     this.installWheelZoom(scene)
@@ -65,9 +93,8 @@ export class CameraController {
   }
 
   private frameInitialView(): void {
-    const b = this.centerBounds
     this.cam.setZoom(ZOOM.min)
-    this.cam.centerOn((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2)
+    this.cam.centerOn(this.initialCenter.x, this.initialCenter.y)
   }
 
   private installWheelZoom(scene: Phaser.Scene): void {

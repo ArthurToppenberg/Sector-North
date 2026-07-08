@@ -11,12 +11,13 @@ import {
   type ColocationLabel,
 } from '../map/colocate'
 import { projectToPixels, type Projector } from '../map/project'
-import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS } from './config'
+import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER } from './config'
 import { GridLayer } from './GridLayer'
 import { CoastlineLayer } from './CoastlineLayer'
 import { CityLayer, type CityMarker } from './CityLayer'
 import { AirportLayer, type AirportMarker } from './AirportLayer'
 import { RadarLayer, type RadarMarker } from './RadarLayer'
+import { RadarSweepLayer, type RadarSweepMarker } from './RadarSweepLayer'
 import { CameraController, type CenterBounds } from './CameraController'
 import { DebugHud } from './DebugHud'
 import { Toolbar } from './Toolbar'
@@ -29,6 +30,7 @@ const RADAR_LABEL_PRIORITY = 3
  */
 export class MainScene extends Phaser.Scene {
   private gridLayer!: GridLayer
+  private radarSweepLayer!: RadarSweepLayer
   private cameraController!: CameraController
   private debugHud!: DebugHud
   private toolbar!: Toolbar
@@ -100,6 +102,11 @@ export class MainScene extends Phaser.Scene {
     const cityLayer = new CityLayer(this, cityMarkers)
     const airportLayer = new AirportLayer(this, airportMarkers)
     const radarLayer = new RadarLayer(this, radarMarkers)
+    this.radarSweepLayer = new RadarSweepLayer(
+      this,
+      this.buildRadarSweepMarkers(radars, projected.project),
+      projected.pixelsPerKm,
+    )
     // Cities, airports and radars are shown by default; the toolbar toggles hide
     // them. One variable per layer feeds both the layer's start visibility and the
     // toolbar's initial state so the glyph and the actual visibility can't drift.
@@ -111,6 +118,7 @@ export class MainScene extends Phaser.Scene {
     cityLayer.setVisible(citiesVisible)
     airportLayer.setVisible(airportsVisible)
     radarLayer.setVisible(radarsVisible)
+    this.radarSweepLayer.setVisible(radarsVisible)
     this.debugHud = new DebugHud(this)
 
     const applyColocationLabels = () => {
@@ -140,6 +148,7 @@ export class MainScene extends Phaser.Scene {
         onToggle: (active) => {
           radarsVisible = active
           radarLayer.setVisible(active)
+          this.radarSweepLayer.setVisible(active)
           applyColocationLabels()
         },
       },
@@ -151,13 +160,22 @@ export class MainScene extends Phaser.Scene {
       airportLayer.onZoomChanged(zoom)
       radarLayer.onZoomChanged(zoom)
     }
+    const [initX, initY] = projected.project(CAMERA_INITIAL_CENTER.lon, CAMERA_INITIAL_CENTER.lat)
     this.cameraController = new CameraController(this, {
       centerBounds: this.projectCenterBounds(projected.project),
+      initialCenter: { x: initX, y: initY },
       onZoomChanged,
     })
 
     this.setupCameras(
-      [...this.gridLayer.objects, ...coastline.objects, ...cityLayer.objects, ...airportLayer.objects, ...radarLayer.objects],
+      [
+        ...this.gridLayer.objects,
+        ...coastline.objects,
+        ...this.radarSweepLayer.objects,
+        ...cityLayer.objects,
+        ...airportLayer.objects,
+        ...radarLayer.objects,
+      ],
       [...this.debugHud.objects, ...this.toolbar.objects],
     )
 
@@ -213,6 +231,13 @@ export class MainScene extends Phaser.Scene {
     })
   }
 
+  private buildRadarSweepMarkers(radars: readonly Radar[], project: Projector): RadarSweepMarker[] {
+    return radars.map((r) => {
+      const [x, y] = project(r.lon, r.lat)
+      return { name: r.name, x, y, rangeKm: r.rangeKm, updateIntervalSec: r.updateIntervalSec }
+    })
+  }
+
   /**
    * Min/max rather than assuming axis direction: x grows east, y grows south
    * (latitude flips).
@@ -257,6 +282,11 @@ export class MainScene extends Phaser.Scene {
     this.cameraController.update(deltaMs / 1000)
 
     const cam = this.cameras.main
+
+    // Radar sweeps animate on real elapsed time, so they must advance every frame —
+    // including while the camera is idle. Run before the camera-dirty early-out below.
+    this.radarSweepLayer.update(deltaMs / 1000, cam.zoom)
+
     if (cam.scrollX === this.lastScrollX && cam.scrollY === this.lastScrollY && cam.zoom === this.lastZoom) {
       // Camera hasn't moved this frame — the grid slice and HUD readout are still
       // valid, so skip the grid re-tessellation and the HUD text re-raster.

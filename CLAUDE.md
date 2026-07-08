@@ -68,6 +68,20 @@ all costs.
 This is a **pnpm workspace**. Use `pnpm` only — never `npm` or `yarn`. Do not create
 `package-lock.json` or `yarn.lock`; the lockfile is `pnpm-lock.yaml`.
 
+## Do not run the game yourself
+
+Never try to launch, serve, or drive the game to verify a change — no dev server, no
+headless browser, no end-to-end/screenshot run. The user runs and visually checks the
+game themselves.
+
+- Verify your work with `pnpm --filter sector-north-game typecheck` (or `build`) instead;
+  that is the extent of automated checking expected here.
+- Do not install or invoke browser-driving tooling (Playwright, Puppeteer, chromium, xvfb,
+  etc.) for the game.
+- When a change needs a visual check, hand it back to the user to run rather than running
+  it — you may suggest the command (`pnpm --filter sector-north-game dev`), but do not
+  execute it.
+
 ## HUD colours — white or black only
 
 All HUD elements must be rendered in **white or black only** — no other colours.
@@ -85,3 +99,10 @@ outlines are rendered in radar phosphor green (`MAP.strokeColor`, `0x33ff66`) to
 tactical C2 / radar display. This exemption is only for the drawn world geography (the
 country outlines) — every overlay *on top* of it (labels, markers, readouts, chrome)
 stays white or black. Do not extend the green to HUD elements.
+
+**Sanctioned exception — radar coverage sweeps.** The animated radar sweep hands and
+range rings (`RADAR.sweep`) are drawn in the same phosphor green as the coastline
+(`MAP.strokeColor`), by explicit user request, so the coverage picture reads as part of
+the tactical radar display rather than as chrome. This is the *only* overlay allowed to
+use the green; do not treat it as licence to colour other HUD elements. Everything else
+on top of the map stays white or black.
