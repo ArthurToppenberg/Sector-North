@@ -46,12 +46,28 @@ If the branch already has an upstream, a plain `git push` is fine. If the push i
 (remote has commits you don't), STOP and surface it — do not force-push unless the user
 explicitly asks.
 
+## Naming convention — Conventional Commits (required)
+
+Both commit messages (Step 2) **and** the PR title (Step 4) must follow the
+[Conventional Commits](https://www.conventionalcommits.org/) format:
+
+```
+<type>(<optional scope>): <imperative, lower-case summary>
+```
+
+- Allowed `type` prefixes: `feat`, `fix`, `refactor`, `chore`, `docs`, `perf`, `test`,
+  `build`, `ci`, `style`, `revert`. Pick the one that best describes the change.
+- The scope is optional and names the area touched, e.g. `feat(map):`, `perf(tidy):`.
+- Summary is imperative and concise (`add radar sweep`, not `added radar sweep`).
+- A commit/PR that doesn't parse under this convention is not acceptable — fix it before
+  committing or opening the PR.
+
 ## Step 4 — Write the description and open the PR
 
 Compose the body from the diff and commits. Structure it so a reviewer gets context fast:
 
-- **Title** — concise, imperative, matching the repo's commit-message style (e.g.
-  `perf(tidy): tier agent models to cut wall-clock`). Don't just echo the branch name.
+- **Title** — concise, imperative, and **must follow Conventional Commits** (see below),
+  e.g. `perf(tidy): tier agent models to cut wall-clock`. Don't just echo the branch name.
 - **Summary** — 1-3 sentences: what changed and *why*. Lead with intent, not mechanics.
 - **Changes** — a short bullet list of the substantive changes, grouped logically. Reference
   files/areas where it helps a reviewer navigate.
