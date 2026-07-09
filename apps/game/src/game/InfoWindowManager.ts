@@ -2,18 +2,6 @@ import Phaser from 'phaser'
 import { DPR, INFO_WINDOW, TOOLBAR, DEPTH } from './config'
 import { InfoWindow, type InfoWindowContent } from './InfoWindow'
 
-/**
- * Owns the live set of detail windows, at most one per location. Clicking a
- * location toggles its window: the first click opens a fresh window (cascaded so
- * windows for different locations don't land exactly on top of each other),
- * clicking the same location again closes it. Clicking or dragging a window
- * raises it above the rest, and its close button disposes it.
- *
- * New windows are created after `MainScene.setupCameras` has run, so the manager
- * must itself route each window's objects to the correct camera: a HUD object
- * renders on every camera until told otherwise, so the world camera is told to
- * ignore them, leaving them on the fixed UI camera only.
- */
 export class InfoWindowManager {
   private readonly scene: Phaser.Scene
   private readonly worldCamera: Phaser.Cameras.Scene2D.Camera

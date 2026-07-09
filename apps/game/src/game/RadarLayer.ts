@@ -21,13 +21,6 @@ export interface RadarMarker {
  */
 export type RadarSelectHandler = (index: number) => void
 
-/**
- * On-screen edge length (CSS px) of each site's invisible click target. Larger
- * than the drawn marker so the small circle is comfortable to hit; held constant
- * on screen (re-derived per zoom) like the marker itself.
- */
-const HIT_TARGET_SCREEN_SIZE = 24
-
 function fail(message: string): never {
   throw new Error(`[game/RadarLayer] ${message}`)
 }
@@ -157,8 +150,7 @@ export class RadarLayer {
 
   /**
    * Re-derive everything zoom-dependent so the layer holds a constant on-screen
-   * size: the circles and the labels. Cheap — a handful of sites — so it runs on
-   * every zoom change. Kept as two focused passes below.
+   * size. Cheap — a handful of sites — so it runs on every zoom change.
    */
   onZoomChanged(zoom: number): void {
     assertZoom(zoom)
@@ -173,7 +165,7 @@ export class RadarLayer {
    * rather than growing/shrinking with the world as you zoom.
    */
   private sizeHitZones(zoom: number): void {
-    const size = screenPxToWorld(HIT_TARGET_SCREEN_SIZE, zoom)
+    const size = screenPxToWorld(RADAR.hitTargetScreenSize, zoom)
     for (const zone of this.hitZones) zone.setSize(size, size)
   }
 

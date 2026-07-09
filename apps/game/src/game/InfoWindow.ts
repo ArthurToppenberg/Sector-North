@@ -1,18 +1,19 @@
 import Phaser from 'phaser'
 import { DPR, FONT_FAMILY, INFO_WINDOW } from './config'
 
+/**
+ * A scene object that carries Phaser's Depth component — every object an
+ * `InfoWindow` owns (Rectangle, Text, Image) is one, so its depth can be re-based
+ * without widening back to bare `GameObject` (which has no `setDepth`).
+ */
+type DepthObject = Phaser.GameObjects.GameObject & Phaser.GameObjects.Components.Depth
+
 /** One label/value row in a detail window (e.g. "Band" → "L-band"). */
 export interface InfoField {
   readonly label: string
   readonly value: string
 }
 
-/**
- * The content of a detail window, independent of what kind of site it describes.
- * A town, an airfield, or a radar each map their own record to this shape, so the
- * window itself never learns about entity types — add a new type by writing a new
- * content builder, not by touching this component.
- */
 export interface InfoWindowContent {
   readonly title: string
   readonly fields: readonly InfoField[]
@@ -45,16 +46,6 @@ function fail(message: string): never {
   throw new Error(`[game/InfoWindow] ${message}`)
 }
 
-/**
- * One draggable detail window: a close button, the site name, a placeholder for
- * an image, and its metadata as label/value rows. Height grows to fit the content.
- *
- * Each click spawns its own instance (see `InfoWindowManager`); the window owns
- * its position and can be dragged by its body. It lives on the fixed UI camera
- * like the rest of the HUD, so it keeps a constant on-screen size — the owner is
- * responsible for routing `objects` to the right camera right after construction
- * (they render on every camera until told otherwise).
- */
 export class InfoWindow {
   private readonly scene: Phaser.Scene
   private readonly onClose: (window: InfoWindow) => void
@@ -165,19 +156,26 @@ export class InfoWindow {
 
     // The photo, if any. It must already be loaded (see `preloadRadarImages`); a
     // missing texture is a wiring bug, so fail loudly rather than draw an empty box.
+    // With a photo, the caption is its (small, bottom-anchored) attribution; without
+    // one it's the centred "NO IMAGE" placeholder.
+    let captionText: string
     if (content.imageTextureKey !== undefined) {
       if (!scene.textures.exists(content.imageTextureKey)) {
         fail(`image texture "${content.imageTextureKey}" is not loaded`)
       }
+      // A photo always carries its licence attribution (see `RadarImageAsset.credit`);
+      // a photo with no credit is a wiring bug, so fail rather than render a blank caption.
+      if (content.imageCredit === undefined) {
+        fail(`image texture "${content.imageTextureKey}" has no attribution credit`)
+      }
       // Sits between the frame fill and the caption; scaled/positioned in `layout`.
       this.photo = scene.add.image(0, 0, content.imageTextureKey).setOrigin(0.5, 0.5).setDepth(contentDepth)
+      captionText = content.imageCredit
     } else {
       this.photo = null
+      captionText = INFO_WINDOW.imageCaption
     }
 
-    // With a photo, the caption becomes its (small, bottom-anchored) attribution;
-    // without one it's the centred "NO IMAGE" placeholder.
-    const captionText = this.photo ? (content.imageCredit ?? '') : INFO_WINDOW.imageCaption
     this.imageCaption = scene.add
       .text(0, 0, captionText, {
         fontFamily: FONT_FAMILY,
@@ -226,18 +224,20 @@ export class InfoWindow {
 
   private setCloseHovered(hovered: boolean): void {
     if (hovered) {
-      this.closeButton.setFillStyle(INFO_WINDOW.borderColor, 1)
-      this.closeGlyph.setColor('#000000')
+      this.closeButton.setFillStyle(INFO_WINDOW.borderColor, INFO_WINDOW.closeButtonHoverFillAlpha)
+      this.closeGlyph.setColor(INFO_WINDOW.closeGlyphHoverColor)
     } else {
       this.closeButton.setFillStyle(INFO_WINDOW.panelColor, INFO_WINDOW.panelAlpha)
       this.closeGlyph.setColor(INFO_WINDOW.titleColor)
     }
   }
 
-  /** Every object the window owns, so the owner can route them to the UI camera. */
-  get objects(): Phaser.GameObjects.GameObject[] {
+  /**
+   * The objects drawn one depth level above the panel (everything except the
+   * panel surface itself). Single source of truth for `objects` and `setDepthBase`.
+   */
+  private get contentObjects(): DepthObject[] {
     return [
-      this.panel,
       this.image,
       ...(this.photo ? [this.photo] : []),
       this.imageCaption,
@@ -249,21 +249,16 @@ export class InfoWindow {
     ]
   }
 
+  /** Every object the window owns, so the owner can route them to the UI camera. */
+  get objects(): DepthObject[] {
+    return [this.panel, ...this.contentObjects]
+  }
+
   /** Raise this window above others by re-basing every object's depth. */
   setDepthBase(depthBase: number): void {
     this.panel.setDepth(depthBase)
     const contentDepth = depthBase + 1
-    const content = [
-      this.image,
-      ...(this.photo ? [this.photo] : []),
-      this.imageCaption,
-      this.closeButton,
-      this.closeGlyph,
-      this.title,
-      ...this.labels,
-      ...this.values,
-    ]
-    for (const obj of content) obj.setDepth(contentDepth)
+    for (const obj of this.contentObjects) obj.setDepth(contentDepth)
   }
 
   /** Keep the window on screen after a resize (its origin is absolute device px). */

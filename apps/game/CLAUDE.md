@@ -18,7 +18,12 @@ the repo-root `CLAUDE.md` and apply here in full.
   GeoJSON or re-derives the projection. Within it, keep the small pure-helper modules
   separate so each has one reason to change: `math.ts` (generic, domain-agnostic math —
   no Phaser/projection/game knowledge), `units.ts` (screen↔world pixel scaling), and
-  `camera.ts` (camera → world-view geometry).
+  `camera.ts` (camera → world-view geometry). `radarImages.ts` holds the
+  radar-name → photo-asset join — the seam between world data and the bundled photos.
+  Keeping it here deliberately leaves `src/map/radars.ts` pure world data with no asset
+  URLs. The map is intentionally partial (only sites with a licensed photo have an entry),
+  so `radarImageAsset` returns `null` rather than throwing for a radar with no photo — a
+  genuinely image-less case, not a missing asset; keep that fail-fast-exception note inline.
 - `src/data/` — bundled data assets. Coordinates are lon/lat (WGS84); prefer simplified
   geometry (fewer points = faster to draw). Every dataset is imported the same way — via
   Vite `?url`, so each file is emitted to `dist/` and fetched at runtime (through Phaser's
@@ -33,6 +38,17 @@ the repo-root `CLAUDE.md` and apply here in full.
   - `major-cities.json`, `airports.json` and `radars.json` — each exposes a
     `*_ASSET` ({ cacheKey, url }) from `cities.ts` / `airports.ts` / `radars.ts`, which
     also parse and validate the fetched JSON.
+    - An airport's `tier` (`major` / `minor` / `military`) is a coarse importance tier
+      **carried directly as a field on each entry in the bundled `airports.json`**; the
+      render layer reads it to decide what shows at which zoom (majors + airbases always,
+      minor strips only once zoomed in — see the reveal-zoom rule under rendering).
+    - A radar record also carries **researched flavour/spec metadata** (`manufacturer`,
+      `origin`, `type`, `dimensionality`, `band`, `altitudeCeilingKm`, `notes`). These are
+      now surfaced in the radar detail/info window that opens on click; they are kept
+      strictly validated and in sync with `radars.json`. The `dimensionality`/`band`/
+      altitude values are still reserved for the future 2D-vs-3D altitude / band-based
+      gameplay mechanics discussed for later. `altitudeCeilingKm` is `null` for a 2D
+      sensor: an honest "not applicable", never a masked missing value.
 
 Co-located sites are **never collapsed** — no marker is merged away or moved to a
 midpoint. `loadAirports()` just parses and validates; every airfield keeps its own glyph
@@ -125,6 +141,20 @@ lon/lat becomes pixels.
 - **Two cameras:** the main camera draws only world layers; a fixed UI camera (zoom 1, no
   scroll) draws only the HUD, so HUD elements keep a constant on-screen size. Each camera
   `ignore()`s the other's objects. Register any new object with the correct camera.
+- **Detail/info windows are per-location HUD panels on the UI camera.** At most one window
+  exists per location; clicking a location *toggles* it (open a fresh one, or close the
+  existing one). New windows cascade so they don't stack exactly on top of each other, and
+  a click or drag raises a window to front; its close button disposes it. Each window is
+  its own draggable instance that owns its position and lives on the fixed UI camera, so it
+  keeps a constant on-screen size like the rest of the HUD. Because windows are created
+  *after* `setupCameras` runs, `InfoWindowManager` must route each new window's objects to
+  the UI camera itself and have the world camera `ignore()` them — a HUD object otherwise
+  renders on every camera. This is a concrete instance of the two-camera rule above.
+  Window content (`InfoWindowContent`) is **entity-agnostic**: a record maps into the same
+  title / fields / optional-image shape, so the window component never learns about entity
+  types. Today only the radar builder (`radarWindowContent`) is wired — towns and airfields
+  are not yet clickable; the entity-agnostic shape is what lets each get its own content
+  builder later without editing the window.
 - **Constant on-screen sizes** (hairline strokes, marker dots, pan speed) are computed
   with `screenPxToWorld(screenPx, zoom)` from `src/game/units.ts` — the single source of
   truth for the screen↔world scaling trick. Don't hand-roll `x * DPR / zoom`.

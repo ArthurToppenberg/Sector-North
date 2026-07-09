@@ -179,18 +179,10 @@ function projectRings(geometry: MultiPolygon, project: Projector): Float32Array[
 }
 
 /**
- * Project a lon/lat MultiPolygon into device pixels, fit to `viewport` with the
- * aspect ratio preserved and the result centered. See `computeFit` for the
- * projection formula. Every precondition (viewport, geometry extent, per-point
- * finiteness) is validated by the step that needs it; nothing degrades to a
- * placeholder fit.
- *
- * `fitGeometry` is the geometry the fit (scale, origin, `pixelsPerKm`) is
- * computed from; it defaults to `geometry`. Pass a fixed subset here to pin the
- * map's scale/zoom to a stable frame so that adding further geometry to
- * `geometry` (drawn for context) does not rescale the map — see
- * `PROJECTION_FRAME_ASSETS`. Both share one projector, so all of `geometry`
- * still lands in the same coordinate space.
+ * Project a lon/lat MultiPolygon into device pixels, fit to `viewport` (aspect
+ * preserved, centered). `fitGeometry` (default `geometry`) is the subset the fit
+ * is computed from; pass a fixed frame to pin scale/zoom while still drawing all
+ * of `geometry` through one projector. See apps/game/CLAUDE.md.
  */
 export function projectToPixels(
   geometry: MultiPolygon,

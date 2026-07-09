@@ -43,14 +43,8 @@ export const BOUNDARY_ASSETS: ReadonlyArray<BoundaryAsset> = [
   { name: 'united-kingdom', url: unitedKingdomUrl },
 ]
 
-/**
- * The countries whose combined extent defines the projection/zoom frame — the
- * original Denmark-centred set. The map fit (scale, `pixelsPerKm`, and therefore
- * the projected camera bounds) is pinned to THIS set only, so adding further
- * boundaries to `BOUNDARY_ASSETS` for context (e.g. Russia) draws them without
- * rescaling the map or changing the zoom. Every name here must exist in
- * `BOUNDARY_ASSETS`; the filter below throws if that ever drifts.
- */
+// Frame the projection/zoom fit is pinned to (see apps/game/CLAUDE.md); adding a
+// context boundary to BOUNDARY_ASSETS must not appear here, or the map rescales.
 const PROJECTION_FRAME_NAMES: ReadonlyArray<string> = [
   'denmark',
   'germany',

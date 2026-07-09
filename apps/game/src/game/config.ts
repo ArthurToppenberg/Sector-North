@@ -96,6 +96,12 @@ export const AIRPORT = {
 export const RADAR = {
   /** Circle radius on screen (CSS pixels), held constant across zoom. */
   markerScreenRadius: 4,
+  /**
+   * On-screen edge length (CSS px) of each site's invisible click target. Larger
+   * than the drawn marker so the small circle is comfortable to hit; held constant
+   * on screen (re-derived per zoom via `screenPxToWorld`) like the marker itself.
+   */
+  hitTargetScreenSize: 24,
   /** Circle outline width on screen (CSS pixels). */
   strokeScreenWidth: 1.25,
   /** Marker colour — the circle outline (HUD: white). */
@@ -207,9 +213,9 @@ export const HUD = {
 } as const
 
 /**
- * Top-left toolbar of icon buttons (currently just the city-name toggle).
- * On/off state is shown through *alpha* (a dimmed vs full-strength glyph),
- * never a colour change.
+ * Top-left toolbar of icon buttons (currently the city, airport, and radar
+ * name toggles). On/off state is shown through *alpha* (a dimmed vs
+ * full-strength glyph), never a colour change.
  */
 export const TOOLBAR = {
   /** Square button edge length on screen (CSS pixels). */
@@ -237,9 +243,11 @@ export const TOOLBAR = {
  * The site detail window: a HUD panel that opens when the player clicks a marker
  * (currently radar sites; designed to serve towns and airfields too). All sizes
  * are CSS pixels, converted with `DPR` at render time. Chrome stays white/black
- * per the HUD rule. The window is type-agnostic — it renders a title, a
- * placeholder image, and a list of label/value rows supplied by the caller — so
- * a new entity type only needs its own row list, not a new window.
+ * per the HUD rule. The window is type-agnostic — it renders a title, an
+ * optional photo (the real site photo when one exists, else a "NO IMAGE"
+ * placeholder box) with an attribution caption, and a list of label/value rows
+ * supplied by the caller — so a new entity type only needs its own row list,
+ * not a new window.
  */
 export const INFO_WINDOW = {
   /** Panel width on screen (CSS pixels); height grows to fit its content. */
@@ -268,7 +276,7 @@ export const INFO_WINDOW = {
   valueColor: '#ffffff',
   valueFontWeight: '400',
   valueFontScreenSize: 13,
-  /** Placeholder image box height (CSS pixels) and its caption. */
+  /** Image box height (CSS pixels); holds the real photo or the placeholder + its caption. */
   imageHeightScreen: 130,
   imageFillAlpha: 1,
   imageCaption: 'NO IMAGE',
@@ -281,8 +289,14 @@ export const INFO_WINDOW = {
   /** Close button square edge and its "×" glyph size (CSS pixels). */
   closeButtonScreenSize: 22,
   closeGlyphFontScreenSize: 18,
-  closeButtonAlpha: 0.35,
-  closeButtonHoverAlpha: 0.6,
+  /**
+   * Close-button hover state (see `InfoWindow.setCloseHovered`): the square fills
+   * with the border white at this alpha and its "×" glyph flips to black for
+   * contrast — both inside the HUD white/black rule. At rest the button matches
+   * the panel surface instead.
+   */
+  closeButtonHoverFillAlpha: 1,
+  closeGlyphHoverColor: '#000000',
   /** Gap between the close button and the title (CSS pixels). */
   closeTitleGapScreen: 8,
   /** Vertical gap between major sections — header / image / fields (CSS pixels). */

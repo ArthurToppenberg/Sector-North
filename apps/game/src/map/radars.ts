@@ -1,11 +1,5 @@
 import radarsUrl from '../data/radars.json?url'
 
-/**
- * Emitted as a standalone `dist/` file (Vite `?url`) and fetched at runtime by
- * Phaser's loader, not inlined into the JS bundle — same mechanism as the country
- * boundaries. `MainScene` preloads `url` into the JSON cache under `cacheKey`, then
- * hands the parsed value to `loadRadars` for validation.
- */
 export const RADARS_ASSET = { cacheKey: 'radars', url: radarsUrl } as const
 
 export type RadarDimensionality = '2D' | '3D'
@@ -19,9 +13,6 @@ export interface Radar {
   rangeKm: number
   /** Antenna sweep period in seconds (time between updates on a given bearing). */
   updateIntervalSec: number
-  // Researched flavour/spec metadata. Not yet consumed by rendering — kept
-  // validated and in sync with radars.json for future info fields (site readouts,
-  // 2D-vs-3D altitude and band-based mechanics discussed for later).
   /** Who built it and where. */
   manufacturer: string
   origin: string
@@ -95,9 +86,6 @@ function requireDimensionality(value: unknown, label: string): RadarDimensionali
   return value
 }
 
-/**
- * Every branch narrows the field so the returned object needs no casts.
- */
 function parseRadar(entry: unknown, index: number): Radar {
   if (!entry || typeof entry !== 'object') fail(`radar ${index} is not an object`)
   const {

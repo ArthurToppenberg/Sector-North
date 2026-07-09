@@ -13,16 +13,6 @@ export interface RadarImageAsset {
   readonly credit: string
 }
 
-/**
- * Radar name (the id in `radars.json`) → its image asset. This is the join
- * between the world data and the bundled photos; keeping it here leaves
- * `src/map/radars.ts` pure data (no asset URLs).
- *
- * Deliberately partial: only Skagen and Bornholm have a photo of the real Danish
- * site that we have permission to use. The other radars have no entry and their
- * windows show the "NO IMAGE" placeholder — a genuinely image-less case, not a
- * missing asset, so the lookup returns null rather than throwing.
- */
 const RADAR_IMAGES: Record<string, RadarImageAsset> = {
   Skagen: {
     textureKey: 'radar-img:skagen',
@@ -36,7 +26,11 @@ const RADAR_IMAGES: Record<string, RadarImageAsset> = {
   },
 }
 
-/** The image asset for a radar by name, or null when it has no photo yet. */
+/**
+ * The image asset for a radar by name, or null when it has no photo. Deliberately
+ * image-less (not a masked missing asset), so this returns null rather than
+ * throwing — the sanctioned fail-fast exception.
+ */
 export function radarImageAsset(radarName: string): RadarImageAsset | null {
   return RADAR_IMAGES[radarName] ?? null
 }
