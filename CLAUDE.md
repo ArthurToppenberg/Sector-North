@@ -1,5 +1,14 @@
 # Project rules for Claude
 
+## Never commit to main — always open a PR
+
+Committing directly to `main` is **never allowed**. All changes must land on `main`
+through a pull request.
+
+- Never `git commit` (or push) onto the `main` branch. Do work on a feature branch.
+- Always create the PR using the **`pr` skill** — do not open PRs by hand with raw
+  `gh`/`git` commands. Invoke it via the Skill tool (`/pr`).
+
 ## Core architecture: GPS is the source of truth
 
 The entire game is built around **real-world geographic coordinates**, not screen pixels.
