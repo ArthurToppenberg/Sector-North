@@ -4,10 +4,10 @@ export const meta = {
   whenToUse: 'Invoked by the tidy skill after the main loop has computed the change set.',
   phases: [
     { title: 'Analyze', detail: 'cluster changed files into disjoint features' },
-    { title: 'Refactor', detail: 'one agent per feature (SRP + fail-fast)' },
-    { title: 'Shared edits', detail: 'serialize edits to files shared across clusters' },
-    { title: 'Typecheck', detail: 'tsc --noEmit, fix once if needed' },
-    { title: 'Comments', detail: 'relocate module blocks to CLAUDE.md, strip valueless comments' },
+    { title: 'Refactor', detail: 'one agent per feature (SRP + fail-fast)', model: 'sonnet' },
+    { title: 'Shared edits', detail: 'edit shared files in parallel with comment analysis', model: 'sonnet' },
+    { title: 'Comments', detail: 'relocate module blocks to CLAUDE.md + strip valueless comments', model: 'sonnet' },
+    { title: 'Typecheck', detail: 'single tsc --noEmit gate, fix once if needed', model: 'haiku' },
   ],
 }
 
@@ -22,6 +22,17 @@ const GUARDRAILS = `
 - pnpm only. Never npm/yarn; never create package-lock.json/yarn.lock.
 - Preserve observable game behavior. These are refactors + doc changes, not feature changes.
   If a genuine behavior change seems required, DO NOT guess — note it in your report and leave it.`.trim()
+
+// ── Model tiers: spend the priciest model only where judgment is needed ──
+// This workflow otherwise inherits the session model (often Opus + 1M ctx), which is far more
+// than a scoped mechanical cleanup needs and is the dominant cost. Overriding is justified here
+// because each agent's task shape is known — not the open-ended case where inheriting is safest.
+//   FAST — pure command-runner / report agents (run tsc, read back ok/errors).
+//   EDIT — scoped code + comment edits (refactor a cluster, merge given prose, delete listed lines).
+//   Left inherited (strongest model): analyze:structure (clustering judgment) and docs:outline
+//   (whole-repo staleness audit) — the two genuinely reasoning-heavy steps.
+const FAST = { model: 'haiku', effort: 'low' }
+const EDIT = { model: 'sonnet', effort: 'medium' }
 
 // ── Schemas (structured agent output validated at the tool layer) ──
 const CLUSTER_SCHEMA = {
@@ -167,68 +178,55 @@ const refactorResults = (await parallel(
       `You are refactoring the "${c.name}" feature of the Sector North game. You OWN these files and may
 edit ONLY them:\n${c.files.map((f) => '  - ' + f).join('\n')}
 ${diffHint}
-Fix the cluster as a coherent unit, focused on what the recent changes touched. Apply:
-- SRP: each module/class/function does one thing; split mixed responsibilities.
-- Future-proofing: remove dead code, tighten types (no stray any), move on-screen magic numbers into
-  src/game/config.ts.
-- FAIL-FAST (the priority): eliminate every fallback. try/catch that only keeps going -> let it throw;
-  ?? / || / defaults masking a missing input -> validate up front and throw with a clear message;
-  null/undefined returned to signal failure -> throw an explicit Error; swallowed errors -> surface them.
+Stay TIGHTLY scoped: read the diff and the files you own — do not go spelunking through unrelated
+modules or refactor code the recent changes did not touch. The changed lines are the target.
+Priorities, in order:
+1. FAIL-FAST (the point of this pass): eliminate every fallback the changes introduced. try/catch that
+   only keeps going -> let it throw; ?? / || / defaults masking a missing input -> validate up front and
+   throw with a clear message; null/undefined returned to signal failure -> throw an explicit Error;
+   swallowed errors -> surface them.
+2. Move on-screen magic numbers the changes touched into src/game/config.ts.
+3. Only the obvious: dead code and stray \`any\` in the changed lines.
 Known concerns from analysis: ${c.concerns.join('; ') || '(none flagged)'}.
-Do NOT change observable game behavior. Do NOT edit files you don't own. If a change genuinely requires
-editing a shared file (${sharedNames}), DO NOT edit it — describe the needed edit in sharedEdits instead.
+If the cluster is already fail-fast and clean, SAY SO and make NO edits — do not invent refactors or
+restructure for its own sake. Do NOT change observable game behavior. Do NOT edit files you don't own.
+If a change genuinely requires editing a shared file (${sharedNames}), DO NOT edit it — describe the
+needed edit in sharedEdits instead.
 GUARDRAILS:\n${GUARDRAILS}
 Report: changes made, every fallback removed (and what happens now instead), anything left alone + why,
 and any sharedEdits.`,
-      { label: `refactor:${c.name}`, phase: 'Refactor', schema: REFACTOR_SCHEMA }
+      { label: `refactor:${c.name}`, phase: 'Refactor', schema: REFACTOR_SCHEMA, ...EDIT }
     ).then((r) => (r ? { ...r, cluster: c.name } : null))
   )
 )).filter(Boolean)
 
-// ── Phase B2 — apply edits to shared files serially (single writer => no races) ──
+// ── Phase B2 / C1 — shared-file edits run CONCURRENTLY with (read-only) comment analysis ──
+// The shared-edit agent writes only shared files; comment analysis only READS cluster files.
+// Disjoint file sets => safe to overlap, hiding the read-only pass behind the slower serial edit
+// instead of stacking both on the critical path. (Typecheck moves to a single gate after Phase C.)
 phase('Shared edits')
 const sharedEdits = refactorResults.flatMap((r) => r.sharedEdits ?? [])
 let sharedSummary = 'none'
-if (sharedFiles.length && sharedEdits.length) {
-  const applied = await agent(
-    `Apply these requested edits to the SHARED files of the Sector North game. These files are shared
+
+const sharedRun = (async () => {
+  if (sharedFiles.length && sharedEdits.length) {
+    const applied = await agent(
+      `Apply these requested edits to the SHARED files of the Sector North game. These files are shared
 across feature clusters, so you are the ONLY writer — apply every edit coherently and resolve conflicts.
 Shared files:\n${sharedFiles.map((s) => '  - ' + s.path + (s.note ? ' (' + s.note + ')' : '')).join('\n')}
 Requested edits:\n${sharedEdits.map((e, i) => `  ${i + 1}. [${e.file}] ${e.change}`).join('\n')}
 Honor fail-fast (no fallbacks) and keep observable behavior unchanged.
 GUARDRAILS:\n${GUARDRAILS}
 Report a concise summary of what you changed.`,
-    { label: 'refactor:shared', phase: 'Shared edits', schema: PLAIN_SCHEMA }
-  )
-  sharedSummary = applied?.summary ?? 'applied'
-} else {
-  log('No shared-file edits requested.')
-}
+      { label: 'refactor:shared', phase: 'Shared edits', schema: PLAIN_SCHEMA, ...EDIT }
+    )
+    sharedSummary = applied?.summary ?? 'applied'
+  } else {
+    log('No shared-file edits requested.')
+  }
+})()
 
-// ── Phase B3 — typecheck; fix once if it fails ──
-phase('Typecheck')
-let typecheck = await agent(
-  'Run `pnpm --filter sector-north-game exec tsc --noEmit` (or `pnpm exec tsc --noEmit` inside apps/game). ' +
-    'Report ok:true if clean, else ok:false with the raw error lines in errors.',
-  { label: 'typecheck', phase: 'Typecheck', schema: TYPECHECK_SCHEMA }
-)
-if (!typecheck.ok) {
-  log('Typecheck failed after refactor — dispatching a fix.')
-  await agent(
-    `The Sector North typecheck failed after a refactor. Fix the type errors WITHOUT changing observable
-behavior and WITHOUT reintroducing any fallback. Errors:\n${typecheck.errors ?? '(see tsc output)'}
-GUARDRAILS:\n${GUARDRAILS}`,
-    { label: 'typecheck:fix', phase: 'Typecheck' }
-  )
-  typecheck = await agent(
-    'Re-run `pnpm --filter sector-north-game exec tsc --noEmit`. Report ok + any remaining error lines.',
-    { label: 'typecheck:recheck', phase: 'Typecheck', schema: TYPECHECK_SCHEMA }
-  )
-}
-
-// ── Phase C — comments -> docs. Analyze per cluster, serialize CLAUDE.md writes, then strip. ──
-phase('Comments')
-const commentAnalyses = (await parallel(
+const commentAnalysisRun = parallel(
   clusters.map((c) => () =>
     agent(
       `Read these files of the Sector North game and identify comment cleanup — do NOT edit:
@@ -240,25 +238,32 @@ Classify comments:
 2. DELETE — valueless comments: restate-the-code, stale/obsolete, commented-out code, redundant JSDoc.
 3. KEEP — short inline "why" notes that only make sense next to their line. (Do not report these.)
 Return relocations and deletions.`,
-      { label: `comments:${c.name}`, phase: 'Comments', schema: COMMENTS_SCHEMA }
+      { label: `comments:${c.name}`, phase: 'Comments', schema: COMMENTS_SCHEMA, ...EDIT }
     ).then((a) => (a ? { ...a, cluster: c.name } : null))
   )
-)).filter(Boolean)
+)
 
+const [, commentAnalysesRaw] = await Promise.all([sharedRun, commentAnalysisRun])
+const commentAnalyses = commentAnalysesRaw.filter(Boolean)
+
+// ── Phase C2 — fold relocated blocks into CLAUDE.md and strip source comments CONCURRENTLY ──
+// docs:claude-md writes only CLAUDE.md; each strip:* edits only its own cluster's source files —
+// all disjoint, so the doc write and the strips run together.
+phase('Comments')
 const relocations = commentAnalyses.flatMap((a) => a.relocations ?? [])
-if (relocations.length) {
-  await agent(
-    `Fold these relocated comment blocks into the Sector North CLAUDE.md files. You are the ONLY writer of
+const docsWrite = relocations.length
+  ? agent(
+      `Fold these relocated comment blocks into the Sector North CLAUDE.md files. You are the ONLY writer of
 CLAUDE.md — apply all coherently, MERGING into existing sections (do not dump raw, do not duplicate).
 Relocations:\n${relocations
-      .map((r, i) => `  ${i + 1}. target=${r.target} · section="${r.section}" · from=${r.file}\n       ${r.substance}`)
-      .join('\n')}
+        .map((r, i) => `  ${i + 1}. target=${r.target} · section="${r.section}" · from=${r.file}\n       ${r.substance}`)
+        .join('\n')}
 Report a concise summary of what you added and where.`,
-    { label: 'docs:claude-md', phase: 'Comments', schema: PLAIN_SCHEMA }
-  )
-}
+      { label: 'docs:claude-md', phase: 'Comments', schema: PLAIN_SCHEMA, ...EDIT }
+    )
+  : Promise.resolve(null)
 
-await parallel(
+const stripRun = parallel(
   clusters
     .map((c) => {
       const mine = commentAnalyses.find((a) => a.cluster === c.name)
@@ -269,14 +274,38 @@ await parallel(
         agent(
           `In the Sector North game, edit ONLY these files: ${c.files.join(', ')}.
 Remove the top-of-file blocks whose substance was relocated to CLAUDE.md, and delete the valueless
-comments listed. Keep short inline "why" notes. Do not change any code behavior.
+comments listed. Keep short inline "why" notes. Do not change any code behavior. These are comment-only
+edits — do NOT run tsc yourself; a single typecheck gate runs after this phase.
 Relocated blocks to remove (by file): ${relo.map((r) => r.file).join(', ') || 'none'}
 Comments to delete:\n${dels.map((d) => `  - [${d.file}] ${d.what}`).join('\n') || '  (none)'}`,
-          { label: `strip:${c.name}`, phase: 'Comments' }
+          { label: `strip:${c.name}`, phase: 'Comments', ...EDIT }
         )
     })
     .filter(Boolean)
 )
+
+await Promise.all([docsWrite, stripRun])
+
+// ── Phase B3 — ONE typecheck gate covering refactor + shared + strip edits; fix once if it fails ──
+phase('Typecheck')
+let typecheck = await agent(
+  'Run `pnpm --filter sector-north-game exec tsc --noEmit` (or `pnpm exec tsc --noEmit` inside apps/game). ' +
+    'Report ok:true if clean, else ok:false with the raw error lines in errors.',
+  { label: 'typecheck', phase: 'Typecheck', schema: TYPECHECK_SCHEMA, ...FAST }
+)
+if (!typecheck.ok) {
+  log('Typecheck failed — dispatching a fix.')
+  await agent(
+    `The Sector North typecheck failed after the cleanup. Fix the type errors WITHOUT changing observable
+behavior and WITHOUT reintroducing any fallback. Errors:\n${typecheck.errors ?? '(see tsc output)'}
+GUARDRAILS:\n${GUARDRAILS}`,
+    { label: 'typecheck:fix', phase: 'Typecheck', ...EDIT }
+  )
+  typecheck = await agent(
+    'Re-run `pnpm --filter sector-north-game exec tsc --noEmit`. Report ok + any remaining error lines.',
+    { label: 'typecheck:recheck', phase: 'Typecheck', schema: TYPECHECK_SCHEMA, ...FAST }
+  )
+}
 
 // ── Phase D — build the Part 3 documentation outline. NO edits: the main loop gates it. ──
 const docOutline = await agent(
