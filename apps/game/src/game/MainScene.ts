@@ -27,6 +27,7 @@ import { InfoWindowManager } from './InfoWindowManager'
 import { ConsoleWindow } from './ConsoleWindow'
 import { Subwoofer, SUBWOOFER_IMAGE_KEY, SUBWOOFER_AUDIO_KEY } from './subwoofer'
 import { preloadRadarImages, radarImageAsset } from './radarImages'
+import { preloadCityImages, cityImageAsset } from './cityImages'
 import { log } from '../log/logger'
 import { commands } from '../commands/registry'
 import subwooferImageUrl from './assets/subwoofer/subwoofer.webp?url'
@@ -69,8 +70,10 @@ export class MainScene extends Phaser.Scene {
     // buttons and the city markers from them.
     Toolbar.preload(this)
     CityLayer.preload(this)
-    // Radar site photos (only the sites we have a usable photo for), shown in each
-    // radar's detail window (opened on click in `create`), so load them before then.
+    // City + radar site photos, shown in each marker's detail window (opened on
+    // click in `create`), so load them before then. Cities all have a photo; only
+    // some radar sites do (the rest show the "NO IMAGE" placeholder).
+    preloadCityImages(this)
     preloadRadarImages(this)
 
     // Fetch the country boundaries. Phaser's loader parses each into the JSON
@@ -134,12 +137,14 @@ export class MainScene extends Phaser.Scene {
       origin: { x: projected.bounds.x, y: projected.bounds.y },
     })
     const coastline = new CoastlineLayer(this, projected.polygons)
-    const cityLayer = new CityLayer(this, cityMarkers)
-    const airportLayer = new AirportLayer(this, airportMarkers)
-    // Clicking a radar opens a fresh detail window. The layer reports the site
-    // index; the scene owns the radar records and the window manager, so it maps
-    // one to the other.
+    // Clicking a city or radar opens a fresh detail window. The layer reports the
+    // marker index; the scene owns the records and the window manager, so it maps
+    // one to the other. The layers stay decoupled from the window itself.
     this.infoWindows = new InfoWindowManager(this, this.cameras.main)
+    const cityLayer = new CityLayer(this, cityMarkers, (index) => {
+      this.infoWindows.toggle(`city:${index}`, this.cityWindowContent(cities[index]))
+    })
+    const airportLayer = new AirportLayer(this, airportMarkers)
     const radarLayer = new RadarLayer(this, radarMarkers, (index) => {
       this.infoWindows.toggle(`radar:${index}`, this.radarWindowContent(radars[index]))
     })
@@ -329,6 +334,23 @@ export class MainScene extends Phaser.Scene {
       const { label, suppressed } = labels[i]
       return { name: r.name, model: r.model, label, labelSuppressed: suppressed, x, y, lon: r.lon, lat: r.lat }
     })
+  }
+
+  private cityWindowContent(city: City): InfoWindowContent {
+    // Every current city has a photo, but a photo-less city is a valid case that
+    // falls back to the placeholder — same contract as the radar builder.
+    const image = cityImageAsset(city.name)
+    return {
+      title: city.name,
+      imageTextureKey: image?.textureKey,
+      imageCredit: image?.credit,
+      fields: [
+        { label: 'Region', value: city.region },
+        { label: 'Population', value: city.population.toLocaleString('en-US') },
+        { label: 'Founded', value: city.founded },
+        { label: 'Notes', value: city.notes },
+      ],
+    }
   }
 
   private radarWindowContent(radar: Radar): InfoWindowContent {
