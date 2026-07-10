@@ -44,7 +44,9 @@ Danish coastline (with its neighbouring countries) plus city, airport, and radar
 markers, the radar sites showing animated coverage sweeps sized to their real range —
 scroll to zoom (anchored under the cursor), and pan by click-dragging or with
 WASD / arrow keys. Click a radar-site marker to open a draggable detail window
-showing the site's name, a photo where available, and its specs.
+showing the site's name, a photo where available, and its specs. The top-left
+toolbar toggles the city, airport, and radar layers; the terminal icon (or the
+`.` key) opens a draggable developer console that streams the game's log.
 
 ### Other useful commands
 
@@ -65,6 +67,7 @@ Sector-North/
 │  └─ game/                # The Phaser + Vite game app
 │     ├─ src/map/          # World data loading + the projection layer (no Phaser)
 │     ├─ src/game/         # Phaser scenes, layers, camera, HUD
+│     ├─ src/log/          # Pure, framework-free logging (the shared Logger singleton)
 │     ├─ src/data/         # Bundled map data (country boundaries, cities, airports, radars)
 │     └─ CLAUDE.md         # App-level architecture rules
 ├─ docs/                   # Repo documentation assets (screenshots, etc.)

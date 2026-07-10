@@ -6,9 +6,6 @@ import { DPR, FONT_FAMILY, APP_READY_EVENT } from './game/config'
 import { MainScene } from './game/MainScene'
 import { log } from './log/logger'
 
-// DOM contract with index.html: the mount that Phaser draws into and the boot
-// spinner overlaid on it. Both are fixed build-time markup, so a missing one is
-// a bug we crash on rather than paper over.
 const MOUNT_ID = 'game'
 const LOADER_ID = 'loader'
 
@@ -70,7 +67,6 @@ function teardownLoaderWhenReady(game: Phaser.Game, loader: HTMLElement): void {
   game.events.once(APP_READY_EVENT, () => loader.remove())
 }
 
-// Keep the canvas matched to the window at full device resolution.
 function keepCanvasSizedToWindow(game: Phaser.Game): void {
   window.addEventListener('resize', () => {
     game.scale.resize(window.innerWidth * DPR, window.innerHeight * DPR)

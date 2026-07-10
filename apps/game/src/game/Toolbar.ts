@@ -99,7 +99,6 @@ export class Toolbar {
 
     const entry: ToolbarButton = { id: cfg.id, button, icon, active: cfg.initialActive, onToggle: cfg.onToggle }
 
-    // Click toggles the feature; hover just brightens the surface as an affordance.
     button.on(Phaser.Input.Events.POINTER_UP, () => this.toggle(entry))
     button.on(Phaser.Input.Events.POINTER_OVER, () => button.setFillStyle(TOOLBAR.buttonColor, TOOLBAR.buttonHoverAlpha))
     button.on(Phaser.Input.Events.POINTER_OUT, () => button.setFillStyle(TOOLBAR.buttonColor, TOOLBAR.buttonAlpha))

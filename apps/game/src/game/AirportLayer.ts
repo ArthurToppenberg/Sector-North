@@ -18,11 +18,7 @@ export interface AirportMarker {
 
 const TIERS: readonly AirportTier[] = ['military', 'major', 'minor']
 
-/**
- * Horizontal half-width of an equilateral triangle as a fraction of its
- * circumradius (`sin 60° ≈ 0.866`). A fixed geometric constant of the glyph
- * shape — not a tunable size — so it lives here, not in config.
- */
+// Horizontal half-width of an equilateral triangle as a fraction of its circumradius.
 const TRIANGLE_HALF_WIDTH_RATIO = Math.sin(Math.PI / 3)
 
 interface Point {
@@ -44,22 +40,11 @@ function fail(message: string): never {
   throw new Error(`[game/AirportLayer] ${message}`)
 }
 
-/**
- * A usable camera zoom: finite and strictly positive. Every constant on-screen
- * size divides by it (via `screenPxToWorld`), so a zero/NaN/negative zoom would
- * silently produce Infinite/NaN geometry — fail loudly instead.
- */
 function assertZoom(zoom: number): number {
   if (!Number.isFinite(zoom) || zoom <= 0) fail(`zoom must be finite and > 0, got ${zoom}`)
   return zoom
 }
 
-/**
- * Validate the markers at the layer boundary. GPS is the source of truth, so a
- * marker with a non-finite projected position means the projection failed — we
- * refuse to render it rather than drawing garbage at a bogus point. Likewise a
- * missing name or unknown tier is a build/wiring bug we surface immediately.
- */
 function assertMarkers(markers: readonly AirportMarker[]): void {
   if (markers.length === 0) fail('expected at least one airport marker')
   markers.forEach((m, i) => {
@@ -104,7 +89,6 @@ export class AirportLayer {
         .setDepth(DEPTH.airportLabels),
     )
 
-    // Draw once at the current zoom so the layer is correct before any input.
     this.onZoomChanged(scene.cameras.main.zoom)
 
     log.debug(`AirportLayer: ${this.markers.length} airfield markers`)

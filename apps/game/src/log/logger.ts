@@ -1,10 +1,3 @@
-// Pure, framework-free application logger. A single process-wide instance so any
-// module can record a line without threading an instance through, and the in-game
-// developer console (`src/game/ConsoleWindow.ts`) subscribes to surface them on
-// screen. No Phaser and no rendering here — this layer only holds and broadcasts
-// entries; how they are drawn (timestamp/level formatting, colours) is the
-// console's concern.
-
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 export interface LogEntry {

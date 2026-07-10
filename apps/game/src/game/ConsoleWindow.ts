@@ -12,21 +12,6 @@ function formatEntry(entry: LogEntry): string {
   return `${seconds}  ${level}  ${entry.message}`
 }
 
-/**
- * Developer console: a draggable HUD panel that renders the shared logger's
- * buffer as a scrollable, monochrome text log. It opens docked at the bottom-left
- * and can be dragged anywhere. Toggled by the toolbar's developer button. Lives on
- * the fixed UI camera like the rest of the HUD, so it keeps a constant on-screen
- * size regardless of the map's zoom/pan.
- *
- * Clipping is done by CONTENT, not a mask or crop: the Text only ever holds the
- * wrapped lines that fit the viewport, so nothing can render outside it. (Crop
- * lands in the wrong space for a DPR-scaled Text texture, and geometry masks are
- * unreliable across the two-camera setup — both were tried.) Scroll position is an
- * offset into the wrapped lines; a scroll bar on the right reflects it and can be
- * dragged. The view follows the newest line until the user scrolls up, then holds
- * until they return to the bottom.
- */
 export class ConsoleWindow {
   private readonly scene: Phaser.Scene
   private readonly onCloseRequested: () => void
@@ -266,7 +251,7 @@ export class ConsoleWindow {
   private onWheel(deltaY: number): void {
     const maxOffset = this.maxOffset()
     if (maxOffset === 0) return
-    const step = Math.max(1, Math.round((Math.abs(deltaY) / 100) * CONSOLE.wheelLinesPerNotch))
+    const step = Math.max(1, Math.round((Math.abs(deltaY) / CONSOLE.wheelDeltaPerNotch) * CONSOLE.wheelLinesPerNotch))
     this.scrollLine = Phaser.Math.Clamp(this.scrollLine + Math.sign(deltaY) * step, 0, maxOffset)
     this.followTail = this.scrollLine >= maxOffset
     this.applyScroll()

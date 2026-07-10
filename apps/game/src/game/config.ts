@@ -18,9 +18,10 @@ export const FONT_FAMILY = 'Chakra Petch' as const
 
 /**
  * Game-level event the scene emits once `create` has finished — i.e. the world
- * is projected and every asset (currently the toolbar's SVG glyph) has loaded.
- * `main.ts` listens for it to tear down the boot loader. Shared here so the
- * emit and the listen can't drift apart.
+ * is projected and every preloaded asset (the toolbar + city SVG glyphs, the radar
+ * site photos, and the boundary/cities/airports/radars JSON) has loaded. `main.ts`
+ * listens for it to tear down the boot loader. Shared here so the emit and the
+ * listen can't drift apart.
  */
 export const APP_READY_EVENT = 'app-ready' as const
 
@@ -218,9 +219,10 @@ export const HUD = {
 } as const
 
 /**
- * Top-left toolbar of icon buttons (currently the city, airport, and radar
- * name toggles). On/off state is shown through *alpha* (a dimmed vs
- * full-strength glyph), never a colour change.
+ * Top-left toolbar of icon buttons (currently cities, airports, radars, and
+ * developer). The first three toggle the whole marker layer (glyphs + labels); the
+ * developer button toggles the console. On/off state is shown through *alpha* (a
+ * dimmed vs full-strength glyph), never a colour change.
  */
 export const TOOLBAR = {
   /** Square button edge length on screen (CSS pixels). */
@@ -322,7 +324,7 @@ export const INFO_WINDOW = {
 /**
  * The developer console: a draggable HUD panel (opening docked at the bottom-left)
  * that renders the shared logger's buffer (`src/log/logger.ts`) as a scrollable
- * text log, toggled by the toolbar's developer button. All sizes are CSS pixels,
+ * text log, toggled by the toolbar's developer button or the "." key. All sizes are CSS pixels,
  * converted with `DPR` at render time. Chrome stays white/black per the HUD rule;
  * log level is conveyed by a text tag ("INFO", "WARN", …), never colour.
  */
@@ -369,10 +371,12 @@ export const CONSOLE = {
   closeButtonHoverFillAlpha: 1,
   closeGlyphHoverColor: '#000000',
   /**
-   * Log lines scrolled per full wheel notch (deltaY ≈ 100); scaled by the actual
-   * delta, floored at one line. Wheel events over the panel scroll the log and are
-   * swallowed so the map underneath doesn't also zoom.
+   * `deltaY` magnitude that counts as one full wheel notch. Log lines scrolled
+   * per notch is `wheelLinesPerNotch`, scaled by the actual delta relative to
+   * this and floored at one line. Wheel events over the panel scroll the log
+   * and are swallowed so the map underneath doesn't also zoom.
    */
+  wheelDeltaPerNotch: 100,
   wheelLinesPerNotch: 3,
 } as const
 
