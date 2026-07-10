@@ -4,10 +4,8 @@ import '@fontsource/chakra-petch/latin-400.css'
 import '@fontsource/chakra-petch/latin-600.css'
 import { DPR, FONT_FAMILY, APP_READY_EVENT } from './game/config'
 import { MainScene } from './game/MainScene'
+import { log } from './log/logger'
 
-// DOM contract with index.html: the mount that Phaser draws into and the boot
-// spinner overlaid on it. Both are fixed build-time markup, so a missing one is
-// a bug we crash on rather than paper over.
 const MOUNT_ID = 'game'
 const LOADER_ID = 'loader'
 
@@ -69,7 +67,6 @@ function teardownLoaderWhenReady(game: Phaser.Game, loader: HTMLElement): void {
   game.events.once(APP_READY_EVENT, () => loader.remove())
 }
 
-// Keep the canvas matched to the window at full device resolution.
 function keepCanvasSizedToWindow(game: Phaser.Game): void {
   window.addEventListener('resize', () => {
     game.scale.resize(window.innerWidth * DPR, window.innerHeight * DPR)
@@ -78,8 +75,10 @@ function keepCanvasSizedToWindow(game: Phaser.Game): void {
 
 async function boot(mount: HTMLElement, loader: HTMLElement): Promise<void> {
   await loadHudFont()
+  log.info('Boot: HUD fonts loaded')
 
   const game = new Phaser.Game(createGameConfig(mount))
+  log.info('Boot: game instance created')
   teardownLoaderWhenReady(game, loader)
   keepCanvasSizedToWindow(game)
 }

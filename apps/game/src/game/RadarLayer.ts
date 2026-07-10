@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { DPR, FONT_FAMILY, RADAR, CLICK_MAX_TRAVEL_SCREEN, DEPTH } from './config'
 import { screenPxToWorld } from './units'
+import { log } from '../log/logger'
 import type { ColocationLabel } from '../map/colocate'
 
 export interface RadarMarker {
@@ -25,22 +26,11 @@ function fail(message: string): never {
   throw new Error(`[game/RadarLayer] ${message}`)
 }
 
-/**
- * A usable camera zoom: finite and strictly positive. Every constant on-screen
- * size divides by it (via `screenPxToWorld`), so a zero/NaN/negative zoom would
- * silently produce Infinite/NaN geometry — fail loudly instead.
- */
 function assertZoom(zoom: number): number {
   if (!Number.isFinite(zoom) || zoom <= 0) fail(`zoom must be finite and > 0, got ${zoom}`)
   return zoom
 }
 
-/**
- * Validate the markers at the layer boundary. GPS is the source of truth, so a
- * marker with a non-finite projected position means the projection failed — we
- * refuse to render it rather than drawing garbage at a bogus point. A missing
- * name or model is a build/wiring bug we surface immediately.
- */
 function assertMarkers(markers: readonly RadarMarker[]): void {
   if (markers.length === 0) fail('expected at least one radar marker')
   markers.forEach((m, i) => {
@@ -77,8 +67,9 @@ export class RadarLayer {
     this.labels = markers.map((m) => this.createLabel(m))
     this.hitZones = markers.map((m, i) => this.createHitZone(m, i, onSelect))
 
-    // Draw once at the current zoom so the layer is correct before any input.
     this.onZoomChanged(this.currentZoom())
+
+    log.debug(`RadarLayer: ${this.markers.length} radar markers`)
   }
 
   /**
@@ -108,7 +99,6 @@ export class RadarLayer {
         fontSize: `${RADAR.labelScreenSize * DPR}px`,
         color: RADAR.labelColor,
         align: 'center',
-        // Rasterise at device resolution so labels stay crisp on HiDPI displays.
         resolution: DPR,
       })
       // Anchor bottom-centre so the label sits above its marker, centred on it.

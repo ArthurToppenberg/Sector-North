@@ -4,6 +4,21 @@ These are the working conventions for the Phaser app in this directory. The proj
 rules (GPS is the source of truth, fail fast, pnpm only, HUD white/black only) live in
 the repo-root `CLAUDE.md` and apply here in full.
 
+## Boot sequence
+
+`index.html` provides fixed build-time markup — a `#game` mount and a `#loader` boot
+overlay. `src/main.ts` assumes both exist: it resolves them via `requireElement()` and
+throws immediately if either is missing, rather than treating a missing DOM node as a
+runtime/degraded state. Before the Phaser game is even created, boot first
+`await loadHudFont()`s — loading the self-hosted @fontsource Chakra Petch weights
+(400/600, declared once in `HUD_FONT_WEIGHTS`) and throwing loudly if any weight never
+resolves, because Phaser rasterises text onto a canvas and a missing face would silently
+fall back to the wrong typeface. A boot failure is surfaced into the mount's `textContent`
+and then re-thrown, rather than left as a silent black screen. The loader teardown is
+registered as a listener for `APP_READY_EVENT` *before* Phaser's async `create()` can run,
+and is only torn down once that event fires (world projected; toolbar + city SVG glyphs,
+radar photos, and world-data JSON all loaded) — never on a timer or guess.
+
 ## Module layout — keep the boundary
 
 - `src/map/` — **world data + projection.** Pure TypeScript, no Phaser imports.
@@ -77,6 +92,15 @@ radar ~10 km from Bornholm airport stays its own site).
 New code must respect this split: geographic reasoning goes in `src/map/`, drawing and
 input go in `src/game/`.
 
+- `src/log/` — **pure, framework-free logging.** `logger.ts` is a process-wide `Logger`
+  singleton with no Phaser/rendering knowledge; any module can call `log.info(...)` etc.
+  without threading an instance through. It holds a bounded newest-500 ring of entries,
+  broadcasts them via `subscribe`/`snapshot`, throws on an empty message, and mirrors every
+  entry to the matching browser-console method (`CONSOLE_METHOD`) as a deliberate second
+  sink. It knows nothing about how entries are drawn. `src/game/ConsoleWindow.ts` is the
+  sole *in-game* consumer and owns all timestamp/level formatting; the on-screen log is
+  monochrome, with level shown as a text tag (`INFO`/`WARN`/…), not colour (see below).
+
 ## The projection layer (`src/map/project.ts`)
 
 The heart of the "GPS is the source of truth" design — the **only** place that knows how
@@ -126,6 +150,16 @@ lon/lat becomes pixels.
   - *Zoom-reactive* (coastline stroke width, city / airport / radar marker/label sizing):
     refreshed via the camera controller's `onZoomChanged` fan-out in `MainScene`. New
     zoom-reactive layers are added to that one callback, not wired at individual call sites.
+    Every such layer's constructor also calls its own `onZoomChanged(currentZoom)` once,
+    immediately after creating its game objects (AirportLayer, CityLayer, CoastlineLayer,
+    RadarLayer all follow this identical constructor-call pattern) — so the layer is fully
+    and correctly rendered before any input or camera event fires, rather than left to a
+    separate first-draw step the caller must remember. The rationale now lives here rather
+    than being duplicated inline in each layer. Each also validates the camera zoom is
+    finite and strictly positive before deriving any on-screen size via `screenPxToWorld`,
+    via an identical `assertZoom` helper across AirportLayer, CityLayer, and RadarLayer —
+    throwing rather than silently producing Infinite/NaN geometry from a zero/NaN/negative
+    zoom.
   - *Viewport-reactive* (grid slice, HUD readout): runs in `update`, guarded by the
     camera-moved dirty check so idle frames do no work. Remember that a window resize
     changes the viewport without moving the camera — handle it in `onResize`.
@@ -165,6 +199,18 @@ lon/lat becomes pixels.
   types. Today only the radar builder (`radarWindowContent`) is wired — towns and airfields
   are not yet clickable; the entity-agnostic shape is what lets each get its own content
   builder later without editing the window.
+- **The developer console (`ConsoleWindow`) is a draggable HUD panel** on the fixed UI
+  camera (constant on-screen size), toggled by the toolbar's developer button *or the "."
+  (period) key*. Both paths funnel through `MainScene.setConsoleOpen()` so the window, the
+  toolbar glyph, and the key never drift; it starts closed. It renders the shared
+  `src/log/logger.ts` buffer as a scrollable monochrome text log, docked bottom-left when
+  opened. Clipping is deliberately done by content, not a mask or crop: the
+  `Text` object only ever holds the wrapped lines that fit the viewport, because Phaser
+  `crop` lands in the wrong space for a DPR-scaled Text texture and geometry masks were
+  unreliable across the two-camera setup — both were tried and rejected. Scroll position is
+  an offset into the pre-wrapped lines with a draggable scrollbar reflecting it; the view
+  auto-follows the newest line until the user scrolls up, then holds until they return to
+  the bottom.
 - **Constant on-screen sizes** (hairline strokes, marker dots, pan speed) are computed
   with `screenPxToWorld(screenPx, zoom)` from `src/game/units.ts` — the single source of
   truth for the screen↔world scaling trick. Don't hand-roll `x * DPR / zoom`.
@@ -208,7 +254,10 @@ lon/lat becomes pixels.
   config. Follow this split for new features.
 - **Device pixels:** the canvas backing store is sized at `cssPixels * DPR` and scaled
   back via Phaser's `zoom` config, so all in-game coordinates are device pixels. Convert
-  CSS-pixel config values with `DPR` (usually via `screenPxToWorld`).
+  CSS-pixel config values with `DPR` (usually via `screenPxToWorld`). Every Phaser `Text`
+  object created for a marker label (AirportLayer, CityLayer, RadarLayer) sets
+  `resolution: DPR` in its style so the text rasterizes at device resolution and stays
+  crisp on HiDPI displays — a standing convention, not a per-layer choice.
 
 ## Camera bounds are locked — never change them on your own
 

@@ -18,9 +18,10 @@ export const FONT_FAMILY = 'Chakra Petch' as const
 
 /**
  * Game-level event the scene emits once `create` has finished — i.e. the world
- * is projected and every asset (currently the toolbar's SVG glyph) has loaded.
- * `main.ts` listens for it to tear down the boot loader. Shared here so the
- * emit and the listen can't drift apart.
+ * is projected and every preloaded asset (the toolbar + city SVG glyphs, the radar
+ * site photos, and the boundary/cities/airports/radars JSON) has loaded. `main.ts`
+ * listens for it to tear down the boot loader. Shared here so the emit and the
+ * listen can't drift apart.
  */
 export const APP_READY_EVENT = 'app-ready' as const
 
@@ -198,6 +199,11 @@ export const DEPTH = {
   // one step above its own button surface.
   toolbarButton: 110,
   toolbarIcon: 111,
+  // The developer console: a fixed bottom-left HUD panel that sits above the
+  // toolbar but below the detail windows, so a dragged window can be raised over
+  // it. Panel surface first, its text/controls one step above.
+  consolePanel: 115,
+  consoleContent: 116,
   // The site detail window (opened by clicking a marker) overlays everything,
   // including the toolbar: its panel surface first, then its text and controls
   // one step above so they read on top of the panel.
@@ -213,9 +219,10 @@ export const HUD = {
 } as const
 
 /**
- * Top-left toolbar of icon buttons (currently the city, airport, and radar
- * name toggles). On/off state is shown through *alpha* (a dimmed vs
- * full-strength glyph), never a colour change.
+ * Top-left toolbar of icon buttons (currently cities, airports, radars, and
+ * developer). The first three toggle the whole marker layer (glyphs + labels); the
+ * developer button toggles the console. On/off state is shown through *alpha* (a
+ * dimmed vs full-strength glyph), never a colour change.
  */
 export const TOOLBAR = {
   /** Square button edge length on screen (CSS pixels). */
@@ -312,6 +319,65 @@ export const INFO_WINDOW = {
    */
   cascadeStepScreen: 28,
   cascadeCount: 8,
+} as const
+
+/**
+ * The developer console: a draggable HUD panel (opening docked at the bottom-left)
+ * that renders the shared logger's buffer (`src/log/logger.ts`) as a scrollable
+ * text log, toggled by the toolbar's developer button or the "." key. All sizes are CSS pixels,
+ * converted with `DPR` at render time. Chrome stays white/black per the HUD rule;
+ * log level is conveyed by a text tag ("INFO", "WARN", …), never colour.
+ */
+export const CONSOLE = {
+  /** Panel size on screen (CSS pixels) — fixed; the log scrolls within it. */
+  widthScreen: 520,
+  heightScreen: 260,
+  /** Inset of the panel from the bottom-left corner (CSS pixels). */
+  marginScreen: 10,
+  /** Inner padding between the panel edge and its content (CSS pixels). */
+  paddingScreen: 12,
+  /** Panel surface fill — black, slightly translucent so the map reads behind it. */
+  panelColor: 0x000000,
+  panelAlpha: 0.85,
+  /** Panel + close-button borders (white), width (CSS pixels) and opacity. */
+  borderColor: 0xffffff,
+  borderScreenWidth: 1,
+  borderAlpha: 0.8,
+  /** Header title ("CONSOLE") font. */
+  title: 'CONSOLE',
+  titleColor: '#ffffff',
+  titleFontWeight: '600',
+  titleFontScreenSize: 13,
+  /** Gap between the header row and the top of the log viewport (CSS pixels). */
+  headerGapScreen: 8,
+  /** Log line font (small; the message body). */
+  logColor: '#ffffff',
+  logFontWeight: '400',
+  logFontScreenSize: 12,
+  /** Extra leading between log lines (CSS pixels). */
+  lineSpacingScreen: 3,
+  /** Scroll bar (right edge of the log viewport). White per the HUD rule; the
+   * track is faint, the draggable thumb brighter. */
+  scrollbarWidthScreen: 5,
+  scrollbarGapScreen: 6,
+  scrollbarMinThumbScreen: 24,
+  scrollbarTrackAlpha: 0.15,
+  scrollbarThumbAlpha: 0.55,
+  scrollbarThumbHoverAlpha: 0.85,
+  /** Close button square edge and its "×" glyph size (CSS pixels). */
+  closeButtonScreenSize: 20,
+  closeGlyphFontScreenSize: 16,
+  /** Close-button hover: fills white, glyph flips black (see `InfoWindow`). */
+  closeButtonHoverFillAlpha: 1,
+  closeGlyphHoverColor: '#000000',
+  /**
+   * `deltaY` magnitude that counts as one full wheel notch. Log lines scrolled
+   * per notch is `wheelLinesPerNotch`, scaled by the actual delta relative to
+   * this and floored at one line. Wheel events over the panel scroll the log
+   * and are swallowed so the map underneath doesn't also zoom.
+   */
+  wheelDeltaPerNotch: 100,
+  wheelLinesPerNotch: 3,
 } as const
 
 // ── Camera & input ─────────────────────────────────────────────────────────

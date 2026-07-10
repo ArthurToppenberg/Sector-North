@@ -1,17 +1,13 @@
 import Phaser from 'phaser'
 import { DEPTH, MAP } from './config'
 import { screenPxToWorld } from './units'
+import { log } from '../log/logger'
 
 function fail(message: string): never {
   throw new Error(`[game/CoastlineLayer] ${message}`)
 }
 
-/**
- * Validate the projected coastline rings up front. Rings are interleaved x/y
- * pairs, so an even count is structural and a ring needs at least two points
- * (4 values) to stroke a segment. Anything else is a malformed projection
- * buffer we want to see immediately, so this throws rather than drawing garbage.
- */
+// Rings are interleaved x/y pairs — an even count is structural, at least 4 values needed to stroke a segment.
 function assertValidRings(rings: readonly Float32Array[]): void {
   if (rings.length === 0) fail('no coastline rings to draw')
   for (let i = 0; i < rings.length; i++) {
@@ -38,6 +34,8 @@ export class CoastlineLayer {
     // Draw once at the current zoom so the layer is fully rendered the moment it
     // exists — no separate "first draw" step for the caller to remember.
     this.onZoomChanged(scene.cameras.main.zoom)
+
+    log.debug(`CoastlineLayer: ${this.rings.length} coastline rings`)
   }
 
   get objects(): readonly Phaser.GameObjects.GameObject[] {

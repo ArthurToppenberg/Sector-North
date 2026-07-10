@@ -3,6 +3,7 @@ import cityIconRaw from 'lucide-static/icons/building-2.svg?raw'
 import { DPR, FONT_FAMILY, CITY, DEPTH } from './config'
 import { screenPxToWorld } from './units'
 import { iconDataUri } from './svgIcon'
+import { log } from '../log/logger'
 
 const CITY_ICON_TEXTURE = 'city-icon'
 
@@ -10,11 +11,6 @@ function fail(message: string): never {
   throw new Error(`[game/CityLayer] ${message}`)
 }
 
-/**
- * A usable camera zoom: finite and strictly positive. The icons and labels divide
- * by it to hold a constant on-screen size, so a zero/NaN/negative zoom would
- * silently produce Infinite/NaN geometry — fail loudly instead.
- */
 function assertZoom(zoom: number): number {
   if (!Number.isFinite(zoom) || zoom <= 0) fail(`zoom must be finite and > 0, got ${zoom}`)
   return zoom
@@ -29,12 +25,6 @@ export interface CityMarker {
   readonly population: number
 }
 
-/**
- * Reject anything unexpected up front (fail fast): the layer must draw a real,
- * non-empty set of cities whose projected pixels and source-of-truth lon/lat are
- * finite. A NaN position would silently vanish and a missing population would
- * corrupt later population-based sizing — surface both here instead.
- */
 function assertMarkers(markers: readonly CityMarker[]): void {
   if (markers.length === 0) fail('expected at least one city marker')
   markers.forEach((m, i) => {
@@ -105,7 +95,6 @@ export class CityLayer {
           fontStyle: CITY.labelFontWeight,
           fontSize: `${CITY.labelScreenSize * DPR}px`,
           color: CITY.labelColor,
-          // Rasterise at device resolution so labels stay crisp on HiDPI displays.
           resolution: DPR,
         })
         // Anchor bottom-centre so the label sits above its city, centred on the icon.
@@ -113,8 +102,9 @@ export class CityLayer {
         .setDepth(DEPTH.cityLabels),
     )
 
-    // Draw once at the current zoom so the layer is correct before any input.
     this.onZoomChanged(scene.cameras.main.zoom)
+
+    log.debug(`CityLayer: ${this.markers.length} city markers`)
   }
 
   /**
