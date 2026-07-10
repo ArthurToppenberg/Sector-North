@@ -96,21 +96,19 @@ all costs.
 - If a dependency, file, or environment value is missing, stop and report it — never
   degrade to a partial or fake result.
 
-## Comments earn their place by explaining WHY, not narrating WHAT
+## Comments are allowed only when they explain something not visible in the code
 
-A comment must add information the code cannot. Write comments that explain **why** — the
-rationale for a choice, a non-obvious constraint, an invariant that must hold, a gotcha, a
-subtle ordering dependency. Never write a comment that narrates *what* the code plainly
-already says.
+A comment is permitted **only if it conveys information that cannot be seen by reading the
+code itself** — a rationale, a non-obvious constraint, an invariant, a gotcha, a subtle
+ordering dependency, a "why". If the code already makes the point plain, the comment is not
+allowed and must be removed.
 
-- If a comment merely paraphrases the line(s) beneath it, **delete it** — it is noise that
-  rots out of sync with the code and buries the comments that matter.
-- Do **not** strip the codebase's existing rationale comments. This repo deliberately
-  documents the tricky bits (the latitude correction, projection edge cases, radar-sweep
-  ordering); those "why" comments are valued and must stay. The rule bans redundant "what"
-  comments — it does not mandate a comment-free codebase.
-- When in doubt, ask: "would a competent reader learn anything from this that the code
-  doesn't already tell them?" If no, cut it.
+- If a comment paraphrases or narrates the code beneath it, **delete it** — it is noise that
+  rots out of sync with the code and buries whatever actually matters.
+- Age grants no protection. Apply the same test to comments already in the tree as to new
+  ones; a comment that fails it is removed regardless of how long it has been there.
+- The test: "would a competent reader learn anything from this that the code doesn't already
+  tell them?" If no, cut it.
 
 ```ts
 // Bad — restates the code, adds nothing:
