@@ -287,14 +287,12 @@ export class InfoWindow {
 
     let y = ay + pad
 
-    // Header row: close button top-left, title to its right (both share this row).
     this.closeButton.setPosition(ax + pad, y)
     this.closeGlyph.setPosition(ax + pad + closeSize / 2, y + closeSize / 2)
     const titleX = ax + pad + closeSize + INFO_WINDOW.closeTitleGapScreen * DPR
     this.title.setPosition(titleX, y)
     y += Math.max(closeSize, this.title.height) + sectionGap
 
-    // Image box, full inner width.
     const imageH = INFO_WINDOW.imageHeightScreen * DPR
     this.image.setPosition(ax + pad, y)
     if (this.photo) {
@@ -317,7 +315,6 @@ export class InfoWindow {
     }
     y += imageH + sectionGap
 
-    // Metadata rows: label then its (possibly wrapped) value, stacked.
     const labelValueGap = INFO_WINDOW.labelValueGapScreen * DPR
     const rowGap = INFO_WINDOW.rowGapScreen * DPR
     for (let i = 0; i < this.labels.length; i++) {

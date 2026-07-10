@@ -48,7 +48,6 @@ export const CITY = {
    * `screenPxToWorld`) like the icon itself. Mirrors `RADAR.hitTargetScreenSize`.
    */
   hitTargetScreenSize: 26,
-  /** Label text colour. */
   labelColor: '#ffffff',
   /** Label font weight (CSS numeric weight). */
   labelFontWeight: '600',
@@ -64,7 +63,6 @@ export const CITY = {
   labelRevealZoom: 10,
 } as const
 
-// Airfield markers.
 export const AIRPORT = {
   /**
    * Triangle circumradius on screen (CSS pixels), per tier — the large fields
@@ -76,7 +74,6 @@ export const AIRPORT = {
   strokeScreenWidth: 1.25,
   /** Marker colour — outline for civil fields, fill for military (HUD: white). */
   color: 0xffffff,
-  /** Label text colour. */
   labelColor: '#ffffff',
   /** Label font size on screen (CSS pixels). */
   labelScreenSize: 11,
@@ -100,7 +97,6 @@ export const AIRPORT = {
   minorLabelRevealZoom: 32,
 } as const
 
-// Air-defence radar sites.
 export const RADAR = {
   /** Circle radius on screen (CSS pixels), held constant across zoom. */
   markerScreenRadius: 4,
@@ -114,7 +110,6 @@ export const RADAR = {
   strokeScreenWidth: 1.25,
   /** Marker colour — the circle outline (HUD: white). */
   color: 0xffffff,
-  /** Label text colour. */
   labelColor: '#ffffff',
   /** Label font size on screen (CSS pixels) — site name and model, stacked. */
   labelScreenSize: 11,
@@ -145,7 +140,6 @@ export const RADAR = {
     ringScreenWidth: 1,
     /** Sweep + ring colour — phosphor green, matching the coastline (see above). */
     color: MAP.strokeColor,
-    /** Sweep-hand opacity. */
     lineAlpha: 0.7,
     /** Range-ring opacity — faint, so it reads as a background extent marker. */
     ringAlpha: 0.12,
@@ -289,7 +283,6 @@ export const INFO_WINDOW = {
   labelFontWeight: '600',
   labelFontScreenSize: 10,
   labelAlpha: 0.6,
-  /** Field value font. */
   valueColor: '#ffffff',
   valueFontWeight: '400',
   valueFontScreenSize: 13,

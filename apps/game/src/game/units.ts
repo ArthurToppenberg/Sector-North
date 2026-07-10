@@ -12,7 +12,6 @@ function assertPositiveZoom(zoom: number): void {
   }
 }
 
-// Convert an on-screen CSS-pixel length to world (device-pixel) units at the given zoom.
 export function screenPxToWorld(screenPx: number, zoom: number): number {
   assertFiniteLength(screenPx, 'screenPx')
   assertPositiveZoom(zoom)

@@ -1,5 +1,3 @@
-// Shared geographic co-location helpers. See apps/game/CLAUDE.md.
-
 /** Anything carrying WGS84 lon/lat degrees. */
 export interface GeoPoint {
   readonly lon: number

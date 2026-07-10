@@ -35,7 +35,6 @@ function toBase64DataUri(svg: string): string {
   return `data:image/svg+xml;base64,${btoa(svg)}`
 }
 
-// Raw Lucide SVG markup -> Phaser-loadable, HUD-white base64 data URI.
 export function iconDataUri(raw: string): string {
   assertSvgMarkup(raw)
   const white = bakeHudWhite(raw)

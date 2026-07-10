@@ -6,6 +6,8 @@ export interface Command {
   readonly name: string
   /** One-line description shown by `/help`. */
   readonly description: string
+  /** When true, omit from `/help` — for easter eggs meant to be discovered, not listed. */
+  readonly hidden?: boolean
   /**
    * Run the command with the raw argument string (everything after the name).
    * Return line(s) to echo into the log, or nothing. May be async; a rejected
@@ -71,11 +73,10 @@ commands.register({
   name: 'help',
   description: 'List all available commands.',
   run() {
-    // List every command except `help` itself — the user just ran it, so echoing it
-    // back is noise.
+    // Omit `help` itself (the user just ran it) and any hidden command (easter eggs).
     return commands
       .list()
-      .filter((command) => command.name !== 'help')
+      .filter((command) => command.name !== 'help' && !command.hidden)
       .map((command) => `/${command.name} — ${command.description}`)
   },
 })

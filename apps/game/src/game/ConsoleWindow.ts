@@ -362,7 +362,6 @@ export class ConsoleWindow {
     } else if (key === 'Escape') {
       this.onCloseRequested()
     } else if (key === '/' && this.inputBuffer === '') {
-      // swallow — see method comment
     } else if (key.length === 1) {
       this.inputBuffer += key
       this.refreshInput()

@@ -35,7 +35,6 @@ export class InfoWindowManager {
     this.windows.set(key, window)
   }
 
-  /** Re-clamp every window into the viewport after a resize. */
   reposition(): void {
     const { width, height } = this.scene.scale
     for (const window of this.windows.values()) window.clampIntoView(width, height)
