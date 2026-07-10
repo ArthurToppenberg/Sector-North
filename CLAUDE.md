@@ -5,16 +5,22 @@
 Committing directly to `main` is **never allowed**. All changes must land on `main`
 through a pull request.
 
-- **Always ask the developer for explicit permission before running `git commit`,
-  `git push`, or opening a pull request.** Never commit, push, or create a PR on your own
-  initiative — stage the work, show what you're about to do, and wait for a clear go-ahead
-  each time. Prior approval for one commit/push/PR does not carry over to the next.
+- **Never `git commit`, `git push`, or open a pull request unless the developer has
+  explicitly told you to in that message.** This is the default state: do the work, stage
+  it, show what you've done — and then stop. Do not commit, push, or create a PR on your
+  own initiative, and never treat "the work is finished" as permission to ship it.
+  - Explicit instruction means the developer directly asks for that action (e.g. "commit
+    this", "push it", "open a PR"). Being asked to *do* or *fix* something is **not**
+    permission to commit/push/PR it.
+  - Permission is single-use and per-action: approval to commit is not approval to push;
+    approval to push is not approval to open a PR; and approval for one commit/push/PR
+    never carries over to the next one. Ask again each time.
+  - When you believe work is ready to ship, say so and wait — propose the commit/push/PR
+    and let the developer decide, rather than acting.
 - Never `git commit` (or push) onto the `main` branch.
 - **Before starting work**, get onto the right branch: either create a new branch whose
   name reflects the work you're about to do, or switch to an existing branch that already
   has an open PR for this line of work. Do all the work on that branch — never on `main`.
-- **When you're done working on something**, ship it: if the branch already has an open
-  PR, push the new commits to it; otherwise open a new PR from the branch.
 - **Both commit messages and PR titles MUST follow**
   [Conventional Commits](https://www.conventionalcommits.org/) — no exceptions:
   `<type>(<optional scope>): <imperative, lower-case summary>` — e.g. `feat(map): add radar sweep`.
@@ -188,3 +194,10 @@ photos, not chrome, and the box's white frame + black letterbox keeps them conta
 explicit user request these are *not* desaturated. This exception is only for genuine
 photographs placed in an image slot; it is not licence to colour any graphic, text, icon,
 or other chrome, which stay white/black (+ the phosphor green above).
+
+**Sanctioned exception — developer console log text (`ConsoleWindow`).** By explicit user
+request, the developer console colours each log line by severity (`CONSOLE.levelColors`:
+`info` white, `warn` amber, `error` red, `debug` dimmed) so level reads at a glance. The
+console is a debugging tool, not part of the tactical picture, so it is exempt from the
+white/black/green rule. This applies **only** to the console's own log lines — not to the
+rest of the HUD, and not licence to colour other chrome by state.
