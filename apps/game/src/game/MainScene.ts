@@ -25,8 +25,13 @@ import { Toolbar } from './Toolbar'
 import { type InfoWindowContent } from './InfoWindow'
 import { InfoWindowManager } from './InfoWindowManager'
 import { ConsoleWindow } from './ConsoleWindow'
+import { Subwoofer, SUBWOOFER_IMAGE_KEY, SUBWOOFER_AUDIO_KEY } from './subwoofer'
 import { preloadRadarImages, radarImageAsset } from './radarImages'
+import { preloadCityImages, cityImageAsset } from './cityImages'
 import { log } from '../log/logger'
+import { commands } from '../commands/registry'
+import subwooferImageUrl from './assets/subwoofer/subwoofer.webp?url'
+import subwooferAudioUrl from './assets/subwoofer/bass.mp3?url'
 
 const AIRPORT_LABEL_PRIORITY: Record<AirportTier, number> = { military: 0, major: 1, minor: 2 }
 const RADAR_LABEL_PRIORITY = 3
@@ -41,7 +46,8 @@ export class MainScene extends Phaser.Scene {
   private toolbar!: Toolbar
   private infoWindows!: InfoWindowManager
   private consoleWindow!: ConsoleWindow
-  /** Whether the developer console is open; toggled by the toolbar and the "." key. */
+  private subwoofer!: Subwoofer
+  /** Whether the developer console is open; toggled by the toolbar and the "/" key. */
   private consoleOpen = false
   private uiCamera!: Phaser.Cameras.Scene2D.Camera
 
@@ -64,28 +70,27 @@ export class MainScene extends Phaser.Scene {
     // buttons and the city markers from them.
     Toolbar.preload(this)
     CityLayer.preload(this)
-    // Radar site photos (only the sites we have a usable photo for), shown in each
-    // radar's detail window (opened on click in `create`), so load them before then.
+    // City + radar site photos, shown in each marker's detail window (opened on
+    // click in `create`), so load them before then. Cities all have a photo; only
+    // some radar sites do (the rest show the "NO IMAGE" placeholder).
+    preloadCityImages(this)
     preloadRadarImages(this)
 
-    // Fetch the country boundaries. Phaser's loader parses each into the JSON
-    // cache before `create` runs; we read + validate them there.
     for (const { name, url } of BOUNDARY_ASSETS) {
       this.load.json(this.boundaryCacheKey(name), url)
     }
-    // The city/airport/radar datasets ship the same way — standalone `?url`
-    // files fetched into the JSON cache here, validated in `create`.
     this.load.json(CITIES_ASSET.cacheKey, CITIES_ASSET.url)
     this.load.json(AIRPORTS_ASSET.cacheKey, AIRPORTS_ASSET.url)
     this.load.json(RADARS_ASSET.cacheKey, RADARS_ASSET.url)
+
+    // The `/subwoofer` easter-egg photo + sound (see `Subwoofer`).
+    this.load.image(SUBWOOFER_IMAGE_KEY, subwooferImageUrl)
+    this.load.audio(SUBWOOFER_AUDIO_KEY, subwooferAudioUrl)
   }
 
   create() {
-    // Load + validate the world data (each throws loudly on anything unexpected).
     const getJson = (name: string) => this.cache.json.get(this.boundaryCacheKey(name))
     const geometry = loadBoundaries(getJson)
-    // The projection/zoom is pinned to a fixed frame (the original Denmark-centred
-    // set), so boundaries added purely for context don't rescale the map.
     const frame = loadBoundaries(getJson, PROJECTION_FRAME_ASSETS)
     const cities = loadMajorCities(this.cache.json.get(CITIES_ASSET.cacheKey))
     const airports = loadAirports(this.cache.json.get(AIRPORTS_ASSET.cacheKey))
@@ -105,7 +110,6 @@ export class MainScene extends Phaser.Scene {
 
     const poiInputs = this.buildColocationInputs(airports, radars)
     const poiClusters = clusterByProximity(poiInputs, COLOCATION_RADIUS_KM)
-    // Initial labels: everything visible.
     const initialLabels = resolveColocationLabels(poiInputs, poiClusters, poiInputs.map(() => true))
 
     const cityMarkers = this.buildCityMarkers(cities, projected.project)
@@ -125,20 +129,29 @@ export class MainScene extends Phaser.Scene {
       origin: { x: projected.bounds.x, y: projected.bounds.y },
     })
     const coastline = new CoastlineLayer(this, projected.polygons)
-    const cityLayer = new CityLayer(this, cityMarkers)
-    const airportLayer = new AirportLayer(this, airportMarkers)
-    // Clicking a radar opens a fresh detail window. The layer reports the site
-    // index; the scene owns the radar records and the window manager, so it maps
-    // one to the other.
+    // Clicking a city or radar opens a fresh detail window. The layer reports the
+    // marker index; the scene owns the records and the window manager, so it maps
+    // one to the other. The layers stay decoupled from the window itself.
     this.infoWindows = new InfoWindowManager(this, this.cameras.main)
+    const cityLayer = new CityLayer(this, cityMarkers, (index) => {
+      this.infoWindows.toggle(`city:${index}`, this.cityWindowContent(cities[index]))
+    })
+    const airportLayer = new AirportLayer(this, airportMarkers)
     const radarLayer = new RadarLayer(this, radarMarkers, (index) => {
-      log.debug(`Radar site selected: ${radars[index].name}`)
       this.infoWindows.toggle(`radar:${index}`, this.radarWindowContent(radars[index]))
     })
-    // The developer console: a HUD panel that surfaces the shared logger's output.
-    // Created here (before `setupCameras`) so its objects join the UI-camera list
-    // below. Closing it via its own button flips the toolbar's developer glyph back.
     this.consoleWindow = new ConsoleWindow(this, () => this.setConsoleOpen(false))
+    // Easter-egg command wired here (not in the pure registry) because it needs the
+    // scene to play audio and draw the overlay; it captures `subwoofer` by closure.
+    this.subwoofer = new Subwoofer(this)
+    commands.register({
+      name: 'subwoofer',
+      description: 'Drop the bass.',
+      run: () => {
+        this.subwoofer.trigger()
+        return 'BWAAAAH'
+      },
+    })
     this.radarSweepLayer = new RadarSweepLayer(
       this,
       this.buildRadarSweepMarkers(radars, projected.project),
@@ -173,7 +186,6 @@ export class MainScene extends Phaser.Scene {
         initialActive: citiesVisible,
         onToggle: (active) => {
           cityLayer.setVisible(active)
-          log.debug(`Cities layer ${active ? 'shown' : 'hidden'}`)
         },
       },
       {
@@ -183,7 +195,6 @@ export class MainScene extends Phaser.Scene {
           airportsVisible = active
           airportLayer.setVisible(active)
           applyColocationLabels()
-          log.debug(`Airfields layer ${active ? 'shown' : 'hidden'}`)
         },
       },
       {
@@ -194,7 +205,6 @@ export class MainScene extends Phaser.Scene {
           radarLayer.setVisible(active)
           this.radarSweepLayer.setVisible(active)
           applyColocationLabels()
-          log.debug(`Radar layer ${active ? 'shown' : 'hidden'}`)
         },
       },
       {
@@ -204,11 +214,18 @@ export class MainScene extends Phaser.Scene {
       },
     ])
 
-    // "/" also toggles the console. Keyboard must exist (CameraController asserts
-    // the same), so fail loudly rather than silently drop the shortcut.
+    // "/" opens the console. Keyboard must exist (CameraController asserts the
+    // same), so fail loudly rather than silently drop the shortcut. Only opens: once
+    // the console is open the "/" is a command prefix the console's input captures,
+    // so it must not toggle the panel shut. Close it with its × button, the toolbar
+    // developer glyph, or Escape (handled by `ConsoleWindow`).
     const keyboard = this.input.keyboard
     if (!keyboard) throw new Error('[MainScene] keyboard input unavailable')
-    keyboard.on('keydown-FORWARD_SLASH', () => this.setConsoleOpen(!this.consoleOpen))
+    keyboard.on('keydown-FORWARD_SLASH', (event: KeyboardEvent) => {
+      if (this.consoleOpen) return
+      event.preventDefault()
+      this.setConsoleOpen(true)
+    })
 
     const onZoomChanged = (zoom: number) => {
       coastline.onZoomChanged(zoom)
@@ -232,7 +249,12 @@ export class MainScene extends Phaser.Scene {
         ...airportLayer.objects,
         ...radarLayer.objects,
       ],
-      [...this.debugHud.objects, ...this.toolbar.objects, ...this.consoleWindow.objects],
+      [
+        ...this.debugHud.objects,
+        ...this.toolbar.objects,
+        ...this.consoleWindow.objects,
+        ...this.subwoofer.objects,
+      ],
     )
 
     // Draw the grid once now that the camera is framed on the country; thereafter
@@ -247,17 +269,12 @@ export class MainScene extends Phaser.Scene {
     this.game.events.emit(APP_READY_EVENT)
   }
 
-  /**
-   * Single path for opening/closing the console, so the window, the toolbar glyph,
-   * and the "." key never drift. `Toolbar.setActive` is a no-op when the glyph is
-   * already in the target state, so routing a toolbar press back through here is safe.
-   */
   private setConsoleOpen(open: boolean): void {
     if (open === this.consoleOpen) return
     this.consoleOpen = open
     this.consoleWindow.setVisible(open)
     this.toolbar.setActive('developer', open)
-    log.debug(`Developer console ${open ? 'opened' : 'closed'}`)
+    this.cameraController.setKeyboardPanEnabled(!open)
   }
 
   private buildColocationInputs(
@@ -299,6 +316,23 @@ export class MainScene extends Phaser.Scene {
       const { label, suppressed } = labels[i]
       return { name: r.name, model: r.model, label, labelSuppressed: suppressed, x, y, lon: r.lon, lat: r.lat }
     })
+  }
+
+  private cityWindowContent(city: City): InfoWindowContent {
+    // Every current city has a photo, but a photo-less city is a valid case that
+    // falls back to the placeholder — same contract as the radar builder.
+    const image = cityImageAsset(city.name)
+    return {
+      title: city.name,
+      imageTextureKey: image?.textureKey,
+      imageCredit: image?.credit,
+      fields: [
+        { label: 'Region', value: city.region },
+        { label: 'Population', value: city.population.toLocaleString('en-US') },
+        { label: 'Founded', value: city.founded },
+        { label: 'Notes', value: city.notes },
+      ],
+    }
   }
 
   private radarWindowContent(radar: Radar): InfoWindowContent {
@@ -364,6 +398,7 @@ export class MainScene extends Phaser.Scene {
     this.toolbar.reposition()
     this.infoWindows.reposition()
     this.consoleWindow.reposition()
+    this.subwoofer.reposition()
     // A resize changes the main camera's size without moving scroll/zoom, so the
     // per-frame dirty check won't catch it. The changed width/height also shifts
     // the look-at centre (`scroll + size/2`), so re-clamp the camera back inside

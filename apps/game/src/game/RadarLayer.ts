@@ -1,7 +1,6 @@
 import Phaser from 'phaser'
 import { DPR, FONT_FAMILY, RADAR, CLICK_MAX_TRAVEL_SCREEN, DEPTH } from './config'
 import { screenPxToWorld } from './units'
-import { log } from '../log/logger'
 import type { ColocationLabel } from '../map/colocate'
 
 export interface RadarMarker {
@@ -68,8 +67,6 @@ export class RadarLayer {
     this.hitZones = markers.map((m, i) => this.createHitZone(m, i, onSelect))
 
     this.onZoomChanged(this.currentZoom())
-
-    log.debug(`RadarLayer: ${this.markers.length} radar markers`)
   }
 
   /**

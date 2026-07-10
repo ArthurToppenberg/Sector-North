@@ -3,30 +3,45 @@
       "city": "Copenhagen",
       "latitude": 55.676,
       "longitude": 12.566,
-      "population": 1408575
+      "population": 1408575,
+      "region": "Capital Region",
+      "founded": "11th century",
+      "notes": "Denmark's capital and largest city, seat of government and the monarchy, and the country's economic and cultural centre."
     },
     {
       "city": "Aarhus",
       "latitude": 56.157,
       "longitude": 10.211,
-      "population": 305227
+      "population": 305227,
+      "region": "Central Denmark Region",
+      "founded": "8th century",
+      "notes": "Denmark's second-largest city and the principal hub of the Jutland peninsula; a major port and university city."
     },
     {
       "city": "Odense",
       "latitude": 55.396,
       "longitude": 10.388,
-      "population": 187558
+      "population": 187558,
+      "region": "Region of Southern Denmark",
+      "founded": "10th century",
+      "notes": "The main city of the island of Funen and the birthplace of author Hans Christian Andersen."
     },
     {
       "city": "Aalborg",
       "latitude": 57.048,
       "longitude": 9.919,
-      "population": 122550
+      "population": 122550,
+      "region": "North Denmark Region",
+      "founded": "11th century",
+      "notes": "The largest city of North Jutland, set on the Limfjord; a historic harbour and industrial city known today for its revived waterfront."
     },
     {
       "city": "Esbjerg",
       "latitude": 55.470,
       "longitude": 8.452,
-      "population": 71371
+      "population": 71371,
+      "region": "Region of Southern Denmark",
+      "founded": "1868",
+      "notes": "Denmark's youngest major city and its principal North Sea port, a centre for the fishing and offshore energy industries."
     }
   ]

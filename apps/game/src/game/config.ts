@@ -41,6 +41,13 @@ export const CITY = {
    * constant across zoom.
    */
   iconScreenSize: 15,
+  /**
+   * On-screen edge length (CSS px) of each city's invisible click target that
+   * opens its detail window. A touch larger than the icon so the small glyph is
+   * comfortable to hit; held constant on screen (re-derived per zoom via
+   * `screenPxToWorld`) like the icon itself. Mirrors `RADAR.hitTargetScreenSize`.
+   */
+  hitTargetScreenSize: 26,
   /** Label text colour. */
   labelColor: '#ffffff',
   /** Label font weight (CSS numeric weight). */
@@ -209,6 +216,9 @@ export const DEPTH = {
   // one step above so they read on top of the panel.
   window: 120,
   windowContent: 121,
+  // The `/subwoofer` easter-egg image overlays the entire scene, above every
+  // panel and window, for the brief moment it plays.
+  subwoofer: 200,
 } as const
 
 export const HUD = {
@@ -324,9 +334,9 @@ export const INFO_WINDOW = {
 /**
  * The developer console: a draggable HUD panel (opening docked at the bottom-left)
  * that renders the shared logger's buffer (`src/log/logger.ts`) as a scrollable
- * text log, toggled by the toolbar's developer button or the "." key. All sizes are CSS pixels,
- * converted with `DPR` at render time. Chrome stays white/black per the HUD rule;
- * log level is conveyed by a text tag ("INFO", "WARN", …), never colour.
+ * text log, toggled by the toolbar's developer button or the "/" key. All sizes are CSS pixels,
+ * converted with `DPR` at render time. Chrome stays white/black per the HUD rule; log lines
+ * are coloured by level (`levelColors`) — the sanctioned HUD-colour exception for the console.
  */
 export const CONSOLE = {
   /** Panel size on screen (CSS pixels) — fixed; the log scrolls within it. */
@@ -350,24 +360,33 @@ export const CONSOLE = {
   titleFontScreenSize: 13,
   /** Gap between the header row and the top of the log viewport (CSS pixels). */
   headerGapScreen: 8,
-  /**
-   * Header min-level filter control. Clicking it cycles the lowest level shown
-   * (debug→info→warn→error→debug); lines below it are hidden, not dropped. It
-   * defaults to `info` so the routine `debug` chatter (layer toggles, zoom-limit
-   * hits, console/window open-close) is filtered out on open but one click away.
-   * Dimmed until hovered so it reads as secondary chrome next to the title.
-   */
-  filterDefaultLevel: 'info',
-  filterFontScreenSize: 11,
-  filterFontWeight: '600',
-  filterAlpha: 0.55,
-  filterHoverAlpha: 1,
-  /** Gap between the filter control and the close button (CSS pixels). */
-  filterGapScreen: 10,
   /** Log line font (small; the message body). */
   logColor: '#ffffff',
   logFontWeight: '400',
   logFontScreenSize: 12,
+  /**
+   * Per-level log-line colour. The developer console is a debugging tool, not
+   * tactical chrome, so it is the sanctioned exception to the white/black/green
+   * HUD rule (see root CLAUDE.md): severity is read at a glance by hue. `info` is
+   * plain white; `warn`/`error` escalate; `debug` is dimmed (no source emits it
+   * today, but the level stays supported).
+   */
+  levelColors: {
+    debug: '#8a8a8a',
+    info: '#ffffff',
+    warn: '#ffcc00',
+    error: '#ff5555',
+  },
+  /**
+   * Command input row pinned below the log viewport. The prompt precedes the
+   * typed text; a block caret blinks at the end while the console is open. Typing
+   * routes to the command registry (see `src/commands/`) on Enter.
+   */
+  inputPrompt: '> ',
+  inputColor: '#ffffff',
+  inputGapScreen: 6,
+  caretWidthScreen: 7,
+  caretBlinkMs: 530,
   /** Extra leading between log lines (CSS pixels). */
   lineSpacingScreen: 3,
   /** Scroll bar (right edge of the log viewport). White per the HUD rule; the
@@ -392,6 +411,18 @@ export const CONSOLE = {
    */
   wheelDeltaPerNotch: 100,
   wheelLinesPerNotch: 3,
+} as const
+
+/**
+ * The `/subwoofer` easter egg — a photo shown centred on screen while a sound
+ * plays, then faded out. The image is a real photograph, the sanctioned
+ * photographic-imagery exception to the white/black HUD rule (see root CLAUDE.md).
+ */
+export const SUBWOOFER = {
+  /** Longest image edge as a fraction of the smaller viewport dimension. */
+  maxScreenFraction: 0.6,
+  /** Fade in/out duration (ms). */
+  fadeMs: 200,
 } as const
 
 // ── Camera & input ─────────────────────────────────────────────────────────

@@ -1,7 +1,6 @@
 import Phaser from 'phaser'
 import { RADAR, DEPTH } from './config'
 import { screenPxToWorld } from './units'
-import { log } from '../log/logger'
 
 export interface RadarSweepMarker {
   name: string
@@ -66,8 +65,6 @@ export class RadarSweepLayer {
     this.rangePx = markers.map((m) => m.rangeKm * pixelsPerKm)
     this.angle = markers.map((_, i) => (i / markers.length) * TAU)
     this.gfx = scene.add.graphics().setDepth(DEPTH.radarSweep)
-
-    log.debug(`RadarSweepLayer: ${this.markers.length} sweep sites`)
   }
 
   get objects(): Phaser.GameObjects.GameObject[] {

@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { DPR, FONT_FAMILY, CONSOLE, DEPTH } from './config'
-import { log, LOG_LEVELS, type LogEntry, type LogLevel } from '../log/logger'
+import { log, type LogEntry } from '../log/logger'
+import { commands, parseCommandLine, type CommandOutput } from '../commands/registry'
 
 function fail(message: string): never {
   throw new Error(`[game/ConsoleWindow] ${message}`)
@@ -12,9 +13,16 @@ function formatEntry(entry: LogEntry): string {
   return `${seconds}  ${level}  ${entry.message}`
 }
 
-/** Header label for the min-level filter — e.g. `INFO+` (this level and above). */
-function filterLabel(level: LogLevel): string {
-  return `${level.toUpperCase()}+`
+/** One rendered log line: its text plus the colour for its level. */
+interface VisualLine {
+  readonly text: string
+  readonly color: string
+}
+
+/** Render a thrown/rejected value for the log. `Error.message` only exists on `Error` —
+ * a command that throws a string or plain object would otherwise log `undefined`. */
+function describeError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 export class ConsoleWindow {
@@ -23,17 +31,26 @@ export class ConsoleWindow {
 
   private readonly panel: Phaser.GameObjects.Rectangle
   private readonly title: Phaser.GameObjects.Text
-  /** Clickable header control that cycles the lowest log level shown. */
-  private readonly filterButton: Phaser.GameObjects.Text
   private readonly closeButton: Phaser.GameObjects.Rectangle
   private readonly closeGlyph: Phaser.GameObjects.Text
-  private readonly logText: Phaser.GameObjects.Text
+  /**
+   * One Text object per visible viewport row, so each line can carry its own
+   * per-level colour (a single Text object is one colour). The pool is sized once
+   * from the fixed panel height and reused across scroll — creating Text objects
+   * after `MainScene.setupCameras` would make them render on both cameras.
+   */
+  private readonly lineTexts: Phaser.GameObjects.Text[]
+  /** Off-screen Text used only to wrap each entry against the column width. */
+  private readonly measure: Phaser.GameObjects.Text
+  private readonly inputText: Phaser.GameObjects.Text
+  private readonly caret: Phaser.GameObjects.Rectangle
   private readonly scrollTrack: Phaser.GameObjects.Rectangle
   /** Track hit area, resized in `layout` — a Rectangle's default hit area is
    * captured once at `setInteractive` and would not follow `setSize`. */
   private readonly scrollTrackHit: Phaser.Geom.Rectangle
   private readonly scrollThumb: Phaser.GameObjects.Rectangle
   private readonly unsubscribe: () => void
+  private readonly blinkEvent: Phaser.Time.TimerEvent
 
   private readonly panelWidth: number
   private readonly panelHeight: number
@@ -44,31 +61,31 @@ export class ConsoleWindow {
   /** Rendered height of the first log line, and the added height per extra line. */
   private readonly firstLineHeight: number
   private readonly lineHeight: number
+  /** Log viewport height and how many whole lines fit — both fixed (panel is fixed). */
+  private readonly viewHeight: number
+  private readonly maxLines: number
 
   /** Panel top-left in device pixels — the single source of truth for its place. */
   private originX = 0
   private originY = 0
 
-  /** Log viewport rect in device pixels, recomputed in `layout`. */
+  /** Log viewport top-left in device pixels, recomputed in `layout`. */
   private viewX = 0
   private viewY = 0
-  private viewHeight = 0
 
-  /** Lowest level rendered; entries below it are hidden (not dropped). */
-  private minLevel: LogLevel = CONSOLE.filterDefaultLevel
-
-  /** Every wrapped line of the current buffer, and the topmost one shown. */
-  private allLines: string[] = []
+  /** Every rendered log line (post-wrap, coloured), and the topmost one shown. */
+  private visualLines: VisualLine[] = []
   private scrollLine = 0
   private followTail = true
+
+  /** The command line currently being typed (without the prompt). */
+  private inputBuffer = ''
+  /** Caret on-phase for the blink; only shown while the console is visible. */
+  private caretOn = true
 
   /** Log content changed while hidden; re-rendered lazily on the next show. */
   private dirty = true
   private isVisible = false
-
-  /** Cache guards so an unchanged buffer/slice skips re-wrapping and re-rastering. */
-  private lastFullText = ''
-  private shownText = ''
 
   constructor(scene: Phaser.Scene, onCloseRequested: () => void) {
     this.scene = scene
@@ -141,46 +158,68 @@ export class ConsoleWindow {
       .setOrigin(0, 0)
       .setDepth(contentDepth)
 
-    // Right-aligned so it grows leftward from a fixed right edge as the label
-    // widens (WARN+ vs DEBUG+), keeping its gap to the close button constant.
-    this.filterButton = scene.add
-      .text(0, 0, filterLabel(this.minLevel), {
-        fontFamily: FONT_FAMILY,
-        fontStyle: CONSOLE.filterFontWeight,
-        fontSize: `${CONSOLE.filterFontScreenSize * DPR}px`,
-        color: CONSOLE.titleColor,
-        resolution: DPR,
-      })
-      .setOrigin(1, 0.5)
-      .setAlpha(CONSOLE.filterAlpha)
-      .setDepth(contentDepth)
-      .setInteractive({ useHandCursor: true })
-    this.filterButton.on(Phaser.Input.Events.POINTER_UP, () => this.cycleMinLevel())
-    this.filterButton.on(Phaser.Input.Events.POINTER_OVER, () => this.filterButton.setAlpha(CONSOLE.filterHoverAlpha))
-    this.filterButton.on(Phaser.Input.Events.POINTER_OUT, () => this.filterButton.setAlpha(CONSOLE.filterAlpha))
-    this.attachWheel(this.filterButton)
-
-    this.logText = scene.add
-      .text(0, 0, '', {
-        fontFamily: FONT_FAMILY,
-        fontStyle: CONSOLE.logFontWeight,
-        fontSize: `${CONSOLE.logFontScreenSize * DPR}px`,
-        color: CONSOLE.logColor,
-        resolution: DPR,
-        lineSpacing: CONSOLE.lineSpacingScreen * DPR,
-        wordWrap: { width: this.textWidth, useAdvancedWrap: true },
-      })
-      .setOrigin(0, 0)
-      .setDepth(contentDepth)
+    const logStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: FONT_FAMILY,
+      fontStyle: CONSOLE.logFontWeight,
+      fontSize: `${CONSOLE.logFontScreenSize * DPR}px`,
+      color: CONSOLE.logColor,
+      resolution: DPR,
+      lineSpacing: CONSOLE.lineSpacingScreen * DPR,
+    }
 
     // Measure the log font's line box so the viewport can be sized in whole lines.
     // A one-line render gives the first line's height; a two-line render adds one
-    // full line advance (glyph height + lineSpacing).
-    this.logText.setText('M')
-    this.firstLineHeight = this.logText.height
-    this.logText.setText('M\nM')
-    this.lineHeight = Math.max(1, this.logText.height - this.firstLineHeight)
-    this.logText.setText('')
+    // full line advance (glyph height + lineSpacing). Advanced word-wrap is enabled
+    // so `getWrappedText` splits each entry the same way it renders.
+    this.measure = scene.add
+      .text(0, 0, '', { ...logStyle, wordWrap: { width: this.textWidth, useAdvancedWrap: true } })
+      .setOrigin(0, 0)
+      .setVisible(false)
+      .setDepth(contentDepth)
+    this.measure.setText('M')
+    this.firstLineHeight = this.measure.height
+    this.measure.setText('M\nM')
+    this.lineHeight = Math.max(1, this.measure.height - this.firstLineHeight)
+    this.measure.setText('')
+
+    // Viewport height is fixed: the panel never resizes (a drag only moves its
+    // origin), so the line count — and thus the Text pool size — is computed once.
+    const headerHeight = Math.max(closeSize, this.title.height)
+    const inputRowHeight = this.firstLineHeight
+    this.viewHeight =
+      this.panelHeight -
+      pad * 2 -
+      headerHeight -
+      CONSOLE.headerGapScreen * DPR -
+      CONSOLE.inputGapScreen * DPR -
+      inputRowHeight
+    if (this.viewHeight < this.firstLineHeight) {
+      fail(`console height ${CONSOLE.heightScreen} is too small for its header, input row, and one log line`)
+    }
+    this.maxLines = 1 + Math.floor((this.viewHeight - this.firstLineHeight) / this.lineHeight)
+
+    this.lineTexts = Array.from({ length: this.maxLines }, () =>
+      scene.add
+        .text(0, 0, '', logStyle)
+        .setOrigin(0, 0)
+        .setDepth(contentDepth),
+    )
+
+    // Command input row, pinned below the log viewport. Its text is set through
+    // `refreshInput`; a block caret follows the end of the typed text.
+    this.inputText = scene.add
+      .text(0, 0, CONSOLE.inputPrompt, { ...logStyle, color: CONSOLE.inputColor })
+      .setOrigin(0, 0)
+      .setDepth(contentDepth)
+    this.caret = scene.add
+      .rectangle(0, 0, CONSOLE.caretWidthScreen * DPR, this.firstLineHeight, CONSOLE.borderColor, 1)
+      .setOrigin(0, 0)
+      .setDepth(contentDepth)
+    this.blinkEvent = scene.time.addEvent({
+      delay: CONSOLE.caretBlinkMs,
+      loop: true,
+      callback: this.blinkCaret,
+    })
 
     // Track first, thumb second so the thumb draws on top. The track is the drag
     // target (fixed size → stable hit area); the thumb is a visual indicator.
@@ -209,6 +248,15 @@ export class ConsoleWindow {
     // Subscribe for the life of the window; the buffer's history is read via
     // `snapshot()` on each render, so no backlog replay is needed here.
     this.unsubscribe = log.subscribe(() => this.onLogEntry())
+
+    // Keyboard capture for the input row. Fail loudly if the plugin is missing
+    // (CameraController and MainScene assert the same), rather than silently
+    // losing the command line.
+    const keyboard = scene.input.keyboard
+    if (!keyboard) fail('keyboard input unavailable')
+    keyboard.on(Phaser.Input.Keyboard.Events.ANY_KEY_DOWN, this.onKeyDown)
+
+    this.refreshInput()
 
     // Open docked at the bottom-left; the user can drag it anywhere from there.
     // `scale.height` is already in device pixels (the canvas is sized at CSS×DPR).
@@ -243,10 +291,12 @@ export class ConsoleWindow {
     return [
       this.panel,
       this.title,
-      this.filterButton,
       this.closeButton,
       this.closeGlyph,
-      this.logText,
+      this.measure,
+      ...this.lineTexts,
+      this.inputText,
+      this.caret,
       this.scrollTrack,
       this.scrollThumb,
     ]
@@ -256,15 +306,18 @@ export class ConsoleWindow {
     this.isVisible = visible
     this.panel.setVisible(visible)
     this.title.setVisible(visible)
-    this.filterButton.setVisible(visible)
     this.closeButton.setVisible(visible)
     this.closeGlyph.setVisible(visible)
-    this.logText.setVisible(visible)
+    for (const line of this.lineTexts) line.setVisible(visible)
+    this.inputText.setVisible(visible)
     this.scrollTrack.setVisible(visible)
     this.scrollThumb.setVisible(visible)
+    // Caret only shows while open; the blink resumes from the on-phase so it is
+    // immediately visible rather than possibly mid-off-phase.
+    this.caretOn = true
+    this.caret.setVisible(visible)
     // A hidden panel must not eat clicks or wheel events meant for the map.
     if (this.panel.input) this.panel.input.enabled = visible
-    if (this.filterButton.input) this.filterButton.input.enabled = visible
     if (this.closeButton.input) this.closeButton.input.enabled = visible
     if (this.scrollTrack.input) this.scrollTrack.input.enabled = visible
     if (visible) this.renderIfDirty()
@@ -280,12 +333,89 @@ export class ConsoleWindow {
 
   destroy(): void {
     this.unsubscribe()
+    this.blinkEvent.remove()
+    const keyboard = this.scene.input.keyboard
+    if (keyboard) keyboard.off(Phaser.Input.Keyboard.Events.ANY_KEY_DOWN, this.onKeyDown)
     for (const obj of this.objects) obj.destroy()
   }
 
   private onLogEntry(): void {
     this.dirty = true
     if (this.isVisible) this.renderIfDirty()
+  }
+
+  /**
+   * Handle a keystroke into the command line. Only consumes keys while the console
+   * is open; lets browser/devtools chords (Ctrl/Cmd/Alt) through untouched. An
+   * empty-buffer "/" is swallowed so the "/" that opened the console — and the
+   * optional command prefix — never lands as a stray character.
+   */
+  private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (!this.isVisible) return
+    if (event.ctrlKey || event.metaKey || event.altKey) return
+    const { key } = event
+    if (key === 'Enter') {
+      this.submit()
+    } else if (key === 'Backspace') {
+      this.inputBuffer = this.inputBuffer.slice(0, -1)
+      this.refreshInput()
+    } else if (key === 'Escape') {
+      this.onCloseRequested()
+    } else if (key === '/' && this.inputBuffer === '') {
+      // swallow — see method comment
+    } else if (key.length === 1) {
+      this.inputBuffer += key
+      this.refreshInput()
+    } else {
+      return
+    }
+    event.preventDefault()
+  }
+
+  /**
+   * Dispatch the typed line to the command registry. The line is echoed first (so
+   * the log reads like a real console), then the command's output is logged, or a
+   * warning for an unknown name. A blank submit is ignored. An unknown command is
+   * expected user error surfaced to the log — not a bug — so it does not throw.
+   */
+  private submit(): void {
+    const raw = this.inputBuffer
+    this.inputBuffer = ''
+    this.refreshInput()
+
+    const parsed = parseCommandLine(raw)
+    if (!parsed) return
+    log.info(`> ${raw.trim()}`)
+
+    const command = commands.get(parsed.name)
+    if (!command) {
+      log.warn(`unknown command: /${parsed.name} — type /help`)
+      return
+    }
+    try {
+      const output = command.run(parsed.args)
+      Promise.resolve(output)
+        .then((lines) => this.logOutput(lines))
+        .catch((err: unknown) => log.error(`/${parsed.name}: ${describeError(err)}`))
+    } catch (err) {
+      log.error(`/${parsed.name}: ${describeError(err)}`)
+    }
+  }
+
+  private logOutput(output: CommandOutput): void {
+    if (output === undefined) return
+    for (const line of Array.isArray(output) ? output : [output]) log.info(line)
+  }
+
+  private refreshInput(): void {
+    this.inputText.setText(CONSOLE.inputPrompt + this.inputBuffer)
+    this.caret.setPosition(this.inputText.x + this.inputText.width, this.inputText.y)
+  }
+
+  private readonly blinkCaret = (): void => {
+    if (!this.isVisible) return
+    this.caretOn = !this.caretOn
+    this.caret.setVisible(this.caretOn)
   }
 
   private onWheel(deltaY: number): void {
@@ -318,64 +448,51 @@ export class ConsoleWindow {
     }
   }
 
-  /** Advance the min-level filter one step (wrapping), then re-render. */
-  private cycleMinLevel(): void {
-    const next = (LOG_LEVELS.indexOf(this.minLevel) + 1) % LOG_LEVELS.length
-    this.minLevel = LOG_LEVELS[next]
-    this.filterButton.setText(filterLabel(this.minLevel))
-    // The filtered buffer changed even though no new entry arrived; force a rebuild.
-    this.dirty = true
-    if (this.isVisible) this.renderIfDirty()
-  }
-
   private renderIfDirty(): void {
     if (!this.dirty) return
     this.dirty = false
-    const threshold = LOG_LEVELS.indexOf(this.minLevel)
-    const full = log
-      .snapshot()
-      .filter((entry) => LOG_LEVELS.indexOf(entry.level) >= threshold)
-      .map(formatEntry)
-      .join('\n')
-    if (full !== this.lastFullText) {
-      this.lastFullText = full
-      // Wrap once against the text column so scrolling counts real visual lines.
-      this.allLines = full === '' ? [] : this.logText.getWrappedText(full)
+    // Rebuild the wrapped, coloured line list from the buffer. Wrapping per entry
+    // (not over the joined text) keeps each visual line tagged with its level's
+    // colour even when a long message wraps across several rows.
+    const lines: VisualLine[] = []
+    for (const entry of log.snapshot()) {
+      const color = CONSOLE.levelColors[entry.level]
+      for (const wrapped of this.measure.getWrappedText(formatEntry(entry))) {
+        lines.push({ text: wrapped, color })
+      }
     }
+    this.visualLines = lines
     this.applyScroll()
-  }
-
-  /** How many whole lines fit the viewport (first line plus as many advances as fit). */
-  private visibleLineCount(): number {
-    if (this.viewHeight < this.firstLineHeight) return 0
-    return 1 + Math.floor((this.viewHeight - this.firstLineHeight) / this.lineHeight)
   }
 
   /** Topmost line index the log can be scrolled to (content lines beyond the viewport). */
   private maxOffset(): number {
-    return Math.max(0, this.allLines.length - this.visibleLineCount())
+    return Math.max(0, this.visualLines.length - this.maxLines)
   }
 
   /** Scroll-thumb height: track shrunk by the fraction of lines off-screen, floored. */
   private thumbHeight(): number {
-    const total = this.allLines.length
-    const visible = this.visibleLineCount()
-    if (total <= visible || total === 0) return this.viewHeight
-    return Math.max(CONSOLE.scrollbarMinThumbScreen * DPR, (this.viewHeight * visible) / total)
+    const total = this.visualLines.length
+    if (total <= this.maxLines || total === 0) return this.viewHeight
+    return Math.max(CONSOLE.scrollbarMinThumbScreen * DPR, (this.viewHeight * this.maxLines) / total)
   }
 
-  /** Show the line slice at the current offset and place the scroll thumb. */
+  /** Show the line slice at the current offset, colour each row, and place the thumb. */
   private applyScroll(): void {
     const maxOffset = this.maxOffset()
     this.scrollLine = this.followTail ? maxOffset : Phaser.Math.Clamp(this.scrollLine, 0, maxOffset)
 
-    const visible = this.visibleLineCount()
-    const slice = this.allLines.slice(this.scrollLine, this.scrollLine + visible).join('\n')
-    if (slice !== this.shownText) {
-      this.shownText = slice
-      this.logText.setText(slice)
+    for (let i = 0; i < this.lineTexts.length; i++) {
+      const line = this.visualLines[this.scrollLine + i]
+      const slot = this.lineTexts[i]
+      if (line === undefined) {
+        slot.setText('')
+        continue
+      }
+      slot.setText(line.text)
+      slot.setColor(line.color)
+      slot.setPosition(this.viewX, this.viewY + i * this.lineHeight)
     }
-    this.logText.setPosition(this.viewX, this.viewY)
 
     const th = this.thumbHeight()
     const travel = this.viewHeight - th
@@ -384,7 +501,7 @@ export class ConsoleWindow {
     this.scrollThumb.setPosition(this.viewX + this.innerWidth - this.scrollbarWidth, this.viewY + travel * t)
   }
 
-  /** Place the panel and its chrome from the current origin, then measure the log viewport. */
+  /** Place the panel and its chrome from the current origin, then position the log/input. */
   private layout(): void {
     const pad = CONSOLE.paddingScreen * DPR
     const ax = this.originX
@@ -393,26 +510,22 @@ export class ConsoleWindow {
     this.panel.setPosition(ax, ay)
 
     const closeSize = CONSOLE.closeButtonScreenSize * DPR
-    // Header: title top-left, then the filter control, then the close button
-    // top-right — all sharing the first row. Filter and close are centred on the
-    // close-button's vertical mid-line so they line up regardless of glyph height.
-    const closeLeft = ax + this.panelWidth - pad - closeSize
-    const rowMidY = ay + pad + closeSize / 2
-    this.closeButton.setPosition(closeLeft, ay + pad)
-    this.closeGlyph.setPosition(closeLeft + closeSize / 2, rowMidY)
-    this.filterButton.setPosition(closeLeft - CONSOLE.filterGapScreen * DPR, rowMidY)
+    // Header: title top-left, close button top-right, sharing the first row.
+    this.closeButton.setPosition(ax + this.panelWidth - pad - closeSize, ay + pad)
+    this.closeGlyph.setPosition(ax + this.panelWidth - pad - closeSize / 2, ay + pad + closeSize / 2)
     this.title.setPosition(ax + pad, ay + pad)
 
     const headerHeight = Math.max(closeSize, this.title.height)
-    const headerGap = CONSOLE.headerGapScreen * DPR
     this.viewX = ax + pad
-    this.viewY = ay + pad + headerHeight + headerGap
-    this.viewHeight = ay + this.panelHeight - pad - this.viewY
-    if (this.viewHeight <= 0) fail(`console height ${CONSOLE.heightScreen} is too small for its header + padding`)
+    this.viewY = ay + pad + headerHeight + CONSOLE.headerGapScreen * DPR
 
     this.scrollTrack.setSize(this.scrollbarWidth, this.viewHeight)
     this.scrollTrackHit.height = this.viewHeight
     this.scrollTrack.setPosition(this.viewX + this.innerWidth - this.scrollbarWidth, this.viewY)
+
+    // Input row sits on the last line inside the bottom padding.
+    this.inputText.setPosition(this.viewX, ay + this.panelHeight - pad - this.firstLineHeight)
+    this.refreshInput()
 
     this.applyScroll()
   }

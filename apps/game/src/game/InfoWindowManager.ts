@@ -1,7 +1,6 @@
 import Phaser from 'phaser'
 import { DPR, INFO_WINDOW, TOOLBAR, DEPTH } from './config'
 import { InfoWindow, type InfoWindowContent } from './InfoWindow'
-import { log } from '../log/logger'
 
 export class InfoWindowManager {
   private readonly scene: Phaser.Scene
@@ -18,19 +17,13 @@ export class InfoWindowManager {
     this.worldCamera = worldCamera
   }
 
-  /**
-   * Toggle the window for `key` (a stable location id): close it if one is open,
-   * otherwise open a fresh window for `content`.
-   */
   toggle(key: string, content: InfoWindowContent): void {
     const existing = this.windows.get(key)
     if (existing) {
       this.windows.delete(key)
       existing.destroy()
-      log.debug(`Detail window closed (${key})`)
       return
     }
-    log.debug(`Detail window opened: ${content.title}`)
     const window = new InfoWindow(this.scene, content, {
       origin: this.nextOrigin(),
       depthBase: this.allocDepth(),
@@ -57,7 +50,6 @@ export class InfoWindowManager {
       if (open === window) {
         this.windows.delete(key)
         window.destroy()
-        log.debug(`Detail window closed (${key})`)
         return
       }
     }
