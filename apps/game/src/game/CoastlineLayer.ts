@@ -1,7 +1,6 @@
 import Phaser from 'phaser'
 import { DEPTH, MAP } from './config'
 import { screenPxToWorld } from './units'
-import { log } from '../log/logger'
 
 function fail(message: string): never {
   throw new Error(`[game/CoastlineLayer] ${message}`)
@@ -34,8 +33,6 @@ export class CoastlineLayer {
     // Draw once at the current zoom so the layer is fully rendered the moment it
     // exists — no separate "first draw" step for the caller to remember.
     this.onZoomChanged(scene.cameras.main.zoom)
-
-    log.debug(`CoastlineLayer: ${this.rings.length} coastline rings`)
   }
 
   get objects(): readonly Phaser.GameObjects.GameObject[] {

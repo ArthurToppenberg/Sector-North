@@ -25,8 +25,12 @@ import { Toolbar } from './Toolbar'
 import { type InfoWindowContent } from './InfoWindow'
 import { InfoWindowManager } from './InfoWindowManager'
 import { ConsoleWindow } from './ConsoleWindow'
+import { Subwoofer, SUBWOOFER_IMAGE_KEY, SUBWOOFER_AUDIO_KEY } from './subwoofer'
 import { preloadRadarImages, radarImageAsset } from './radarImages'
 import { log } from '../log/logger'
+import { commands } from '../commands/registry'
+import subwooferImageUrl from './assets/subwoofer/subwoofer.webp?url'
+import subwooferAudioUrl from './assets/subwoofer/bass.mp3?url'
 
 const AIRPORT_LABEL_PRIORITY: Record<AirportTier, number> = { military: 0, major: 1, minor: 2 }
 const RADAR_LABEL_PRIORITY = 3
@@ -41,7 +45,8 @@ export class MainScene extends Phaser.Scene {
   private toolbar!: Toolbar
   private infoWindows!: InfoWindowManager
   private consoleWindow!: ConsoleWindow
-  /** Whether the developer console is open; toggled by the toolbar and the "." key. */
+  private subwoofer!: Subwoofer
+  /** Whether the developer console is open; toggled by the toolbar and the "/" key. */
   private consoleOpen = false
   private uiCamera!: Phaser.Cameras.Scene2D.Camera
 
@@ -78,6 +83,10 @@ export class MainScene extends Phaser.Scene {
     this.load.json(CITIES_ASSET.cacheKey, CITIES_ASSET.url)
     this.load.json(AIRPORTS_ASSET.cacheKey, AIRPORTS_ASSET.url)
     this.load.json(RADARS_ASSET.cacheKey, RADARS_ASSET.url)
+
+    // The `/subwoofer` easter-egg photo + sound (see `Subwoofer`).
+    this.load.image(SUBWOOFER_IMAGE_KEY, subwooferImageUrl)
+    this.load.audio(SUBWOOFER_AUDIO_KEY, subwooferAudioUrl)
   }
 
   create() {
@@ -132,13 +141,23 @@ export class MainScene extends Phaser.Scene {
     // one to the other.
     this.infoWindows = new InfoWindowManager(this, this.cameras.main)
     const radarLayer = new RadarLayer(this, radarMarkers, (index) => {
-      log.debug(`Radar site selected: ${radars[index].name}`)
       this.infoWindows.toggle(`radar:${index}`, this.radarWindowContent(radars[index]))
     })
     // The developer console: a HUD panel that surfaces the shared logger's output.
     // Created here (before `setupCameras`) so its objects join the UI-camera list
     // below. Closing it via its own button flips the toolbar's developer glyph back.
     this.consoleWindow = new ConsoleWindow(this, () => this.setConsoleOpen(false))
+    // Easter-egg command wired here (not in the pure registry) because it needs the
+    // scene to play audio and draw the overlay; it captures `subwoofer` by closure.
+    this.subwoofer = new Subwoofer(this)
+    commands.register({
+      name: 'subwoofer',
+      description: 'Drop the bass.',
+      run: () => {
+        this.subwoofer.trigger()
+        return 'BWAAAAH'
+      },
+    })
     this.radarSweepLayer = new RadarSweepLayer(
       this,
       this.buildRadarSweepMarkers(radars, projected.project),
@@ -173,7 +192,6 @@ export class MainScene extends Phaser.Scene {
         initialActive: citiesVisible,
         onToggle: (active) => {
           cityLayer.setVisible(active)
-          log.debug(`Cities layer ${active ? 'shown' : 'hidden'}`)
         },
       },
       {
@@ -183,7 +201,6 @@ export class MainScene extends Phaser.Scene {
           airportsVisible = active
           airportLayer.setVisible(active)
           applyColocationLabels()
-          log.debug(`Airfields layer ${active ? 'shown' : 'hidden'}`)
         },
       },
       {
@@ -194,7 +211,6 @@ export class MainScene extends Phaser.Scene {
           radarLayer.setVisible(active)
           this.radarSweepLayer.setVisible(active)
           applyColocationLabels()
-          log.debug(`Radar layer ${active ? 'shown' : 'hidden'}`)
         },
       },
       {
@@ -204,11 +220,18 @@ export class MainScene extends Phaser.Scene {
       },
     ])
 
-    // "/" also toggles the console. Keyboard must exist (CameraController asserts
-    // the same), so fail loudly rather than silently drop the shortcut.
+    // "/" opens the console. Keyboard must exist (CameraController asserts the
+    // same), so fail loudly rather than silently drop the shortcut. Only opens: once
+    // the console is open the "/" is a command prefix the console's input captures,
+    // so it must not toggle the panel shut. Close it with its × button, the toolbar
+    // developer glyph, or Escape (handled by `ConsoleWindow`).
     const keyboard = this.input.keyboard
     if (!keyboard) throw new Error('[MainScene] keyboard input unavailable')
-    keyboard.on('keydown-FORWARD_SLASH', () => this.setConsoleOpen(!this.consoleOpen))
+    keyboard.on('keydown-FORWARD_SLASH', (event: KeyboardEvent) => {
+      if (this.consoleOpen) return
+      event.preventDefault()
+      this.setConsoleOpen(true)
+    })
 
     const onZoomChanged = (zoom: number) => {
       coastline.onZoomChanged(zoom)
@@ -232,7 +255,12 @@ export class MainScene extends Phaser.Scene {
         ...airportLayer.objects,
         ...radarLayer.objects,
       ],
-      [...this.debugHud.objects, ...this.toolbar.objects, ...this.consoleWindow.objects],
+      [
+        ...this.debugHud.objects,
+        ...this.toolbar.objects,
+        ...this.consoleWindow.objects,
+        ...this.subwoofer.objects,
+      ],
     )
 
     // Draw the grid once now that the camera is framed on the country; thereafter
@@ -249,15 +277,17 @@ export class MainScene extends Phaser.Scene {
 
   /**
    * Single path for opening/closing the console, so the window, the toolbar glyph,
-   * and the "." key never drift. `Toolbar.setActive` is a no-op when the glyph is
+   * and the "/" key never drift. `Toolbar.setActive` is a no-op when the glyph is
    * already in the target state, so routing a toolbar press back through here is safe.
+   * While the console is open its input row captures typing, so the camera's WASD/arrow
+   * pan is suspended — otherwise typing a command would also drive the map.
    */
   private setConsoleOpen(open: boolean): void {
     if (open === this.consoleOpen) return
     this.consoleOpen = open
     this.consoleWindow.setVisible(open)
     this.toolbar.setActive('developer', open)
-    log.debug(`Developer console ${open ? 'opened' : 'closed'}`)
+    this.cameraController.setKeyboardPanEnabled(!open)
   }
 
   private buildColocationInputs(
@@ -364,6 +394,7 @@ export class MainScene extends Phaser.Scene {
     this.toolbar.reposition()
     this.infoWindows.reposition()
     this.consoleWindow.reposition()
+    this.subwoofer.reposition()
     // A resize changes the main camera's size without moving scroll/zoom, so the
     // per-frame dirty check won't catch it. The changed width/height also shifts
     // the look-at centre (`scroll + size/2`), so re-clamp the camera back inside

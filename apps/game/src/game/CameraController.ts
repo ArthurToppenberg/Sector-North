@@ -2,7 +2,6 @@ import Phaser from 'phaser'
 import { KEY_PAN_SPEED, ZOOM } from './config'
 import { screenPxToWorld } from './units'
 import { cameraWorldView } from './camera'
-import { log } from '../log/logger'
 
 export interface CenterBounds {
   minX: number
@@ -83,6 +82,13 @@ export class CameraController {
    */
   private draggingObject = false
 
+  /**
+   * Keyboard pan is suspended while the developer console is open, so typing a
+   * command doesn't also drive the map (the Key objects still register `isDown`
+   * regardless of who consumed the keystroke, so gating here is the reliable fix).
+   */
+  private keyboardPanEnabled = true
+
   constructor(scene: Phaser.Scene, options: CameraControllerOptions) {
     assertValidCenterBounds(options.centerBounds)
     assertValidInitialCenter(options.initialCenter, options.centerBounds)
@@ -100,7 +106,11 @@ export class CameraController {
     // let the zoom-reactive layers render at the initial zoom set above.
     this.clampCamera()
     this.onZoomChanged(this.cam.zoom)
-    log.debug(`[CameraController] framed initial view at zoom ${this.cam.zoom.toFixed(2)}`)
+  }
+
+  /** Enable/disable WASD/arrow panning (suspended while the console captures typing). */
+  setKeyboardPanEnabled(enabled: boolean): void {
+    this.keyboardPanEnabled = enabled
   }
 
   private frameInitialView(): void {
@@ -134,10 +144,6 @@ export class CameraController {
     const factor = Math.pow(ZOOM.step, -deltaY / ZOOM.deltaPerStep)
     const newZoom = Phaser.Math.Clamp(oldZoom * factor, ZOOM.min, ZOOM.max)
     if (newZoom === oldZoom) return
-    // The guard above means this fires once, when a limit is first reached — not every notch.
-    if (newZoom === ZOOM.min || newZoom === ZOOM.max) {
-      log.debug(`[CameraController] zoom reached ${newZoom === ZOOM.min ? 'min' : 'max'} limit`)
-    }
     const anchorScale = 1 / oldZoom - 1 / newZoom
     cam.setZoom(newZoom)
     cam.scrollX += (pointer.x - cam.width / 2) * anchorScale
@@ -205,6 +211,7 @@ export class CameraController {
   }
 
   private readPanDirection(): { dx: number; dy: number } {
+    if (!this.keyboardPanEnabled) return { dx: 0, dy: 0 }
     const keys = this.moveKeys
     const isDown = (group: Phaser.Input.Keyboard.Key[]) => group.some((k) => k.isDown)
     return {

@@ -17,7 +17,7 @@ fall back to the wrong typeface. A boot failure is surfaced into the mount's `te
 and then re-thrown, rather than left as a silent black screen. The loader teardown is
 registered as a listener for `APP_READY_EVENT` *before* Phaser's async `create()` can run,
 and is only torn down once that event fires (world projected; toolbar + city SVG glyphs,
-radar photos, and world-data JSON all loaded) — never on a timer or guess.
+city + radar photos, and world-data JSON all loaded) — never on a timer or guess.
 
 ## Module layout — keep the boundary
 
@@ -33,12 +33,14 @@ radar photos, and world-data JSON all loaded) — never on a timer or guess.
   GeoJSON or re-derives the projection. Within it, keep the small pure-helper modules
   separate so each has one reason to change: `math.ts` (generic, domain-agnostic math —
   no Phaser/projection/game knowledge), `units.ts` (screen↔world pixel scaling), and
-  `camera.ts` (camera → world-view geometry). `radarImages.ts` holds the
-  radar-name → photo-asset join — the seam between world data and the bundled photos.
-  Keeping it here deliberately leaves `src/map/radars.ts` pure world data with no asset
-  URLs. The map is intentionally partial (only sites with a licensed photo have an entry),
-  so `radarImageAsset` returns `null` rather than throwing for a radar with no photo — a
-  genuinely image-less case, not a missing asset; keep that fail-fast-exception note inline.
+  `camera.ts` (camera → world-view geometry). `radarImages.ts` and `cityImages.ts` hold the
+  name → photo-asset join for radars and cities respectively — the seam between world data
+  and the bundled photos. Keeping them here deliberately leaves `src/map/radars.ts` and
+  `src/map/cities.ts` pure world data with no asset URLs. Both maps are allowed to be partial:
+  `radarImageAsset`/`cityImageAsset` return `null` rather than throwing for an entry with no
+  photo — a genuinely image-less case, not a missing asset; keep that fail-fast-exception
+  note inline. (The radar map is partial today — only some sites have a licensed photo; every
+  current city has one, but the same null contract still holds for a future photo-less city.)
 - `src/data/` — bundled data assets. Coordinates are lon/lat (WGS84); prefer simplified
   geometry (fewer points = faster to draw). Every dataset is imported the same way — via
   Vite `?url`, so each file is emitted to `dist/` and fetched at runtime (through Phaser's
@@ -53,6 +55,12 @@ radar photos, and world-data JSON all loaded) — never on a timer or guess.
   - `major-cities.json`, `airports.json` and `radars.json` — each exposes a
     `*_ASSET` ({ cacheKey, url }) from `cities.ts` / `airports.ts` / `radars.ts`, which
     also parse and validate the fetched JSON.
+    - A city record carries **researched flavour metadata** (`region`, `founded`, `notes`)
+      alongside its `population`. These are surfaced in the city detail/info window that
+      opens on click (with the city's landmark photo from `cityImages.ts`); kept strictly
+      validated and in sync with `major-cities.json`. `founded` is free text (a year or a
+      century, e.g. `"1868"` / `"11th century"`) since Danish cities' origins are dated at
+      very different precisions.
     - An airport's `tier` (`major` / `minor` / `military`) is a coarse importance tier
       **carried directly as a field on each entry in the bundled `airports.json`**; the
       render layer reads it to decide what shows at which zoom (majors + airbases always,
@@ -97,11 +105,20 @@ input go in `src/game/`.
   without threading an instance through. It holds a bounded newest-500 ring of entries,
   broadcasts them via `subscribe`/`snapshot`, throws on an empty message, and mirrors every
   entry to the matching browser-console method (`CONSOLE_METHOD`) as a deliberate second
-  sink. It also exports `LOG_LEVELS` (levels in ascending severity) as the single source of
-  truth for level ordering — the console's min-level filter uses it for both comparison and
-  cycling. It knows nothing about how entries are drawn. `src/game/ConsoleWindow.ts` is the
-  sole *in-game* consumer and owns all timestamp/level formatting; the on-screen log is
-  monochrome, with level shown as a text tag (`INFO`/`WARN`/…), not colour (see below).
+  sink. It knows nothing about how entries are drawn. `src/game/ConsoleWindow.ts` is the sole
+  *in-game* consumer and owns all timestamp/level formatting; each line is coloured by level
+  (see the console bullet below). The four levels exist, but **`debug` has no callers** — the
+  routine per-event chatter was removed rather than filtered, so a `debug` call reappearing is
+  a deliberate choice, not leftover noise. Reserve `info` for one-time lifecycle milestones
+  (boot steps, world-data loaded, scene ready), `warn`/`error` for genuine problems.
+- `src/commands/` — **pure, framework-free command registry.** `registry.ts` exports a
+  `Command` interface and a process-wide `commands` singleton any module can import to
+  `register(...)` a slash-command, plus `parseCommandLine`. It knows nothing about Phaser: a
+  command needing game state (audio, a scene, layers) is registered from `src/game/` and
+  captures what it needs by closure — that is why `/subwoofer` lives in `MainScene`, not here.
+  `/help` ships with the registry (it just lists the live command set). `ConsoleWindow`'s input
+  row is the one caller that dispatches typed lines through it. Duplicate/invalid names throw
+  at registration (fail fast) rather than silently shadowing.
 
 ## The projection layer (`src/map/project.ts`)
 
@@ -198,29 +215,39 @@ lon/lat becomes pixels.
   renders on every camera. This is a concrete instance of the two-camera rule above.
   Window content (`InfoWindowContent`) is **entity-agnostic**: a record maps into the same
   title / fields / optional-image shape, so the window component never learns about entity
-  types. Today only the radar builder (`radarWindowContent`) is wired — towns and airfields
-  are not yet clickable; the entity-agnostic shape is what lets each get its own content
-  builder later without editing the window.
+  types. The city (`cityWindowContent`) and radar (`radarWindowContent`) builders are wired
+  — clicking a city or radar marker toggles its window; airfields are not yet clickable. Each
+  layer owns one invisible interactive hit `Zone` per marker (held at a constant on-screen
+  size, disabled when the layer is hidden) that distinguishes a click from a drag by pointer
+  travel, so a camera pan ending over a marker never opens a window. The entity-agnostic
+  shape is what lets each new type get its own content builder without editing the window.
 - **The developer console (`ConsoleWindow`) is a draggable HUD panel** on the fixed UI
-  camera (constant on-screen size), toggled by the toolbar's developer button *or the "/"
-  (forward-slash) key*. Both paths funnel through `MainScene.setConsoleOpen()` so the window, the
-  toolbar glyph, and the key never drift; it starts closed. It renders the shared
-  `src/log/logger.ts` buffer as a scrollable monochrome text log, docked bottom-left when
-  opened. Clipping is deliberately done by content, not a mask or crop: the
-  `Text` object only ever holds the wrapped lines that fit the viewport, because Phaser
-  `crop` lands in the wrong space for a DPR-scaled Text texture and geometry masks were
-  unreliable across the two-camera setup — both were tried and rejected. Scroll position is
-  an offset into the pre-wrapped lines with a draggable scrollbar reflecting it; the view
-  auto-follows the newest line until the user scrolls up, then holds until they return to
-  the bottom. A header control cycles a **min-level filter** (`debug`→`info`→`warn`→
-  `error`, wrapping); lines below the threshold are hidden from the view, never dropped
-  from the shared buffer. It defaults to `info` (`CONSOLE.filterDefaultLevel`) so the
-  routine `debug` chatter — layer show/hide toggles, zoom-limit hits, console/detail-window
-  open-close — is filtered out on open but one click away. The level ordering is the
-  logger's exported `LOG_LEVELS` (ascending severity), the single source of truth shared by
-  the filter's compare and its cycle. Consequently, keep genuinely routine per-interaction
-  events at `debug` (so the default filter catches them) and reserve `info` for one-time
-  lifecycle milestones (boot steps, world-data loaded, scene ready).
+  camera (constant on-screen size). The toolbar's developer button toggles it; the "/"
+  (forward-slash) key *opens* it (once open, "/" is a command prefix the input row captures,
+  so it must not toggle shut — close with the × button, the toolbar glyph, or Escape). The
+  open/close paths funnel through `MainScene.setConsoleOpen()` so the window, the toolbar
+  glyph, and the key never drift; it starts closed. It renders the shared `src/log/logger.ts`
+  buffer as a scrollable text log, docked bottom-left when opened. **Log lines are coloured
+  by level** (`CONSOLE.levelColors`) — the sanctioned exception to the white/black/green HUD
+  rule (see root CLAUDE.md), because the console is a debugging tool, not tactical chrome.
+  - **Clipping + colour via a fixed Text pool.** There is one `Text` object *per visible
+    viewport row* (the pool is sized once from the fixed panel height — the panel never
+    resizes, only its origin moves on drag), each carrying its own colour, since a single
+    `Text` is one colour. Clipping is by content, not a mask or crop: each pooled row only
+    holds the one wrapped line currently at its slot, because Phaser `crop` lands in the wrong
+    space for a DPR-scaled Text texture and geometry masks were unreliable across the
+    two-camera setup — both were tried and rejected. An off-screen `measure` Text does the
+    per-entry word-wrap. **The pool must be created before `setupCameras`** — a Text made
+    afterwards renders on both cameras.
+  - Scroll position is an offset into the wrapped lines with a draggable scrollbar reflecting
+    it; the view auto-follows the newest line until the user scrolls up, then holds until they
+    return to the bottom.
+  - **A command input row** is pinned below the log (prompt + typed text + blinking caret).
+    While the console is open it captures keystrokes (`ANY_KEY_DOWN`) and `MainScene` suspends
+    the camera's keyboard pan (`CameraController.setKeyboardPanEnabled`) so typing a command
+    doesn't also drive the map. Enter dispatches the line through the `src/commands/` registry
+    (echoed as `> …`, then the command's output logged, or a `warn` for an unknown name);
+    Backspace edits, Escape closes. The registry is the seam — see the `src/commands/` bullet.
 - **Constant on-screen sizes** (hairline strokes, marker dots, pan speed) are computed
   with `screenPxToWorld(screenPx, zoom)` from `src/game/units.ts` — the single source of
   truth for the screen↔world scaling trick. Don't hand-roll `x * DPR / zoom`.

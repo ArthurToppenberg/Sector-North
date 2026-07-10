@@ -1,7 +1,6 @@
 import Phaser from 'phaser'
 import { DPR, FONT_FAMILY, AIRPORT, DEPTH } from './config'
 import { screenPxToWorld } from './units'
-import { log } from '../log/logger'
 import type { AirportTier } from '../map/airports'
 import type { ColocationLabel } from '../map/colocate'
 
@@ -90,8 +89,6 @@ export class AirportLayer {
     )
 
     this.onZoomChanged(scene.cameras.main.zoom)
-
-    log.debug(`AirportLayer: ${this.markers.length} airfield markers`)
   }
 
   get objects(): Phaser.GameObjects.GameObject[] {
