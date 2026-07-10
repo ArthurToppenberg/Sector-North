@@ -23,7 +23,9 @@ import { DebugHud } from './DebugHud'
 import { Toolbar } from './Toolbar'
 import { type InfoWindowContent } from './InfoWindow'
 import { InfoWindowManager } from './InfoWindowManager'
+import { ConsoleWindow } from './ConsoleWindow'
 import { preloadRadarImages, radarImageAsset } from './radarImages'
+import { log } from '../log/logger'
 
 const AIRPORT_LABEL_PRIORITY: Record<AirportTier, number> = { military: 0, major: 1, minor: 2 }
 const RADAR_LABEL_PRIORITY = 3
@@ -40,6 +42,7 @@ export class MainScene extends Phaser.Scene {
   private debugHud!: DebugHud
   private toolbar!: Toolbar
   private infoWindows!: InfoWindowManager
+  private consoleWindow!: ConsoleWindow
   private uiCamera!: Phaser.Cameras.Scene2D.Camera
 
   // Camera state from the previous frame, so `update` can skip viewport-reactive
@@ -87,6 +90,7 @@ export class MainScene extends Phaser.Scene {
     const cities = loadMajorCities(this.cache.json.get(CITIES_ASSET.cacheKey))
     const airports = loadAirports(this.cache.json.get(AIRPORTS_ASSET.cacheKey))
     const radars = loadRadars(this.cache.json.get(RADARS_ASSET.cacheKey))
+    log.info(`World data loaded: ${cities.length} cities, ${airports.length} airfields, ${radars.length} radar sites`)
 
     const { width, height } = this.scale
     const projected = projectToPixels(
@@ -128,9 +132,14 @@ export class MainScene extends Phaser.Scene {
     // one to the other. The manager (not `setupCameras`) routes each new window's
     // objects to the UI camera, since windows are created on click, later.
     this.infoWindows = new InfoWindowManager(this, this.cameras.main)
-    const radarLayer = new RadarLayer(this, radarMarkers, (index) =>
-      this.infoWindows.toggle(`radar:${index}`, this.radarWindowContent(radars[index])),
-    )
+    const radarLayer = new RadarLayer(this, radarMarkers, (index) => {
+      log.info(`Radar site selected: ${radars[index].name}`)
+      this.infoWindows.toggle(`radar:${index}`, this.radarWindowContent(radars[index]))
+    })
+    // The developer console: a HUD panel that surfaces the shared logger's output.
+    // Created here (before `setupCameras`) so its objects join the UI-camera list
+    // below. Closing it via its own button flips the toolbar's developer glyph back.
+    this.consoleWindow = new ConsoleWindow(this, () => this.closeConsole())
     this.radarSweepLayer = new RadarSweepLayer(
       this,
       this.buildRadarSweepMarkers(radars, projected.project),
@@ -144,10 +153,14 @@ export class MainScene extends Phaser.Scene {
     const citiesVisible = true
     let airportsVisible = true
     let radarsVisible = true
+    // The developer console is open on load too; the same single-variable rule
+    // keeps its toolbar glyph and actual visibility in step.
+    const consoleVisible = true
     cityLayer.setVisible(citiesVisible)
     airportLayer.setVisible(airportsVisible)
     radarLayer.setVisible(radarsVisible)
     this.radarSweepLayer.setVisible(radarsVisible)
+    this.consoleWindow.setVisible(consoleVisible)
     this.debugHud = new DebugHud(this)
 
     const applyColocationLabels = () => {
@@ -161,7 +174,14 @@ export class MainScene extends Phaser.Scene {
     // on/off state and only hands us the new value — the scene wires that to the
     // layers, then re-resolves the shared labels for the new visibility.
     this.toolbar = new Toolbar(this, [
-      { id: 'cities', initialActive: citiesVisible, onToggle: (active) => cityLayer.setVisible(active) },
+      {
+        id: 'cities',
+        initialActive: citiesVisible,
+        onToggle: (active) => {
+          cityLayer.setVisible(active)
+          log.debug(`Cities layer ${active ? 'shown' : 'hidden'}`)
+        },
+      },
       {
         id: 'airports',
         initialActive: airportsVisible,
@@ -169,6 +189,7 @@ export class MainScene extends Phaser.Scene {
           airportsVisible = active
           airportLayer.setVisible(active)
           applyColocationLabels()
+          log.debug(`Airfields layer ${active ? 'shown' : 'hidden'}`)
         },
       },
       {
@@ -179,6 +200,15 @@ export class MainScene extends Phaser.Scene {
           radarLayer.setVisible(active)
           this.radarSweepLayer.setVisible(active)
           applyColocationLabels()
+          log.debug(`Radar layer ${active ? 'shown' : 'hidden'}`)
+        },
+      },
+      {
+        id: 'developer',
+        initialActive: consoleVisible,
+        onToggle: (active) => {
+          this.consoleWindow.setVisible(active)
+          log.debug(`Developer console ${active ? 'opened' : 'closed'}`)
         },
       },
     ])
@@ -205,7 +235,7 @@ export class MainScene extends Phaser.Scene {
         ...airportLayer.objects,
         ...radarLayer.objects,
       ],
-      [...this.debugHud.objects, ...this.toolbar.objects],
+      [...this.debugHud.objects, ...this.toolbar.objects, ...this.consoleWindow.objects],
     )
 
     // Draw the grid once now that the camera is framed on the country; thereafter
@@ -216,7 +246,14 @@ export class MainScene extends Phaser.Scene {
 
     // World is projected and every asset has loaded — signal boot completion so
     // `main.ts` can tear down the loading indicator.
+    log.info('Scene ready')
     this.game.events.emit(APP_READY_EVENT)
+  }
+
+  /** Close the console from its own button and flip the toolbar glyph back off. */
+  private closeConsole(): void {
+    this.consoleWindow.setVisible(false)
+    this.toolbar.setActive('developer', false)
   }
 
   private buildColocationInputs(
@@ -328,6 +365,7 @@ export class MainScene extends Phaser.Scene {
     this.debugHud.reposition()
     this.toolbar.reposition()
     this.infoWindows.reposition()
+    this.consoleWindow.reposition()
     // A resize changes the main camera's size without moving scroll/zoom, so the
     // per-frame dirty check won't catch it. The changed width/height also shifts
     // the look-at centre (`scroll + size/2`), so re-clamp the camera back inside

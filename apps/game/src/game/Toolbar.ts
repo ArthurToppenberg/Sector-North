@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import cityIconRaw from 'lucide-static/icons/building-2.svg?raw'
 import airportIconRaw from 'lucide-static/icons/plane.svg?raw'
 import radarIconRaw from 'lucide-static/icons/radar.svg?raw'
+import developerIconRaw from 'lucide-static/icons/terminal.svg?raw'
 import { DPR, TOOLBAR, DEPTH } from './config'
 import { iconDataUri } from './svgIcon'
 
@@ -13,6 +14,7 @@ const ICONS = {
   cities: { key: 'toolbar-cities', raw: cityIconRaw },
   airports: { key: 'toolbar-airports', raw: airportIconRaw },
   radars: { key: 'toolbar-radars', raw: radarIconRaw },
+  developer: { key: 'toolbar-developer', raw: developerIconRaw },
 } as const
 
 export type ToolbarButtonId = keyof typeof ICONS
@@ -24,6 +26,7 @@ export interface ToolbarButtonConfig {
 }
 
 interface ToolbarButton {
+  id: ToolbarButtonId
   button: Phaser.GameObjects.Rectangle
   icon: Phaser.GameObjects.Image
   active: boolean
@@ -94,7 +97,7 @@ export class Toolbar {
       .setOrigin(0.5, 0.5)
       .setDepth(DEPTH.toolbarIcon)
 
-    const entry: ToolbarButton = { button, icon, active: cfg.initialActive, onToggle: cfg.onToggle }
+    const entry: ToolbarButton = { id: cfg.id, button, icon, active: cfg.initialActive, onToggle: cfg.onToggle }
 
     // Click toggles the feature; hover just brightens the surface as an affordance.
     button.on(Phaser.Input.Events.POINTER_UP, () => this.toggle(entry))
@@ -129,6 +132,20 @@ export class Toolbar {
     entry.active = !entry.active
     this.refreshIcon(entry)
     entry.onToggle(entry.active)
+  }
+
+  /**
+   * Set a button's on/off state from outside (e.g. a console closing itself flips
+   * its toolbar glyph back). Reflects the new state in the glyph but deliberately
+   * does NOT invoke `onToggle` — this is an externally-driven sync, not a press,
+   * so firing the callback would loop back into whatever triggered it.
+   */
+  setActive(id: ToolbarButtonId, active: boolean): void {
+    const entry = this.buttons.find((b) => b.id === id)
+    if (!entry) throw new Error(`Toolbar.setActive received an unknown button id "${id}".`)
+    if (entry.active === active) return
+    entry.active = active
+    this.refreshIcon(entry)
   }
 
   /** Reflect on/off state via glyph opacity (no colour change — HUD rule). */

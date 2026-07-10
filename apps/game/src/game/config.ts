@@ -198,6 +198,11 @@ export const DEPTH = {
   // one step above its own button surface.
   toolbarButton: 110,
   toolbarIcon: 111,
+  // The developer console: a fixed bottom-left HUD panel that sits above the
+  // toolbar but below the detail windows, so a dragged window can be raised over
+  // it. Panel surface first, its text/controls one step above.
+  consolePanel: 115,
+  consoleContent: 116,
   // The site detail window (opened by clicking a marker) overlays everything,
   // including the toolbar: its panel surface first, then its text and controls
   // one step above so they read on top of the panel.
@@ -312,6 +317,55 @@ export const INFO_WINDOW = {
    */
   cascadeStepScreen: 28,
   cascadeCount: 8,
+} as const
+
+/**
+ * The developer console: a fixed HUD panel docked at the bottom-left that renders
+ * the shared logger's buffer (`src/log/logger.ts`) as a scrollable text log,
+ * toggled by the toolbar's developer button. All sizes are CSS pixels, converted
+ * with `DPR` at render time. Chrome stays white/black per the HUD rule; log level
+ * is conveyed by a text tag ("INFO", "WARN", …), never colour.
+ */
+export const CONSOLE = {
+  /** Panel size on screen (CSS pixels) — fixed; the log scrolls within it. */
+  widthScreen: 520,
+  heightScreen: 260,
+  /** Inset of the panel from the bottom-left corner (CSS pixels). */
+  marginScreen: 10,
+  /** Inner padding between the panel edge and its content (CSS pixels). */
+  paddingScreen: 12,
+  /** Panel surface fill — black, slightly translucent so the map reads behind it. */
+  panelColor: 0x000000,
+  panelAlpha: 0.85,
+  /** Panel + close-button borders (white), width (CSS pixels) and opacity. */
+  borderColor: 0xffffff,
+  borderScreenWidth: 1,
+  borderAlpha: 0.8,
+  /** Header title ("CONSOLE") font. */
+  title: 'CONSOLE',
+  titleColor: '#ffffff',
+  titleFontWeight: '600',
+  titleFontScreenSize: 13,
+  /** Gap between the header row and the top of the log viewport (CSS pixels). */
+  headerGapScreen: 8,
+  /** Log line font (small; the message body). */
+  logColor: '#ffffff',
+  logFontWeight: '400',
+  logFontScreenSize: 12,
+  /** Extra leading between log lines (CSS pixels). */
+  lineSpacingScreen: 3,
+  /** Close button square edge and its "×" glyph size (CSS pixels). */
+  closeButtonScreenSize: 20,
+  closeGlyphFontScreenSize: 16,
+  /** Close-button hover: fills white, glyph flips black (see `InfoWindow`). */
+  closeButtonHoverFillAlpha: 1,
+  closeGlyphHoverColor: '#000000',
+  /**
+   * Wheel-scroll gain: device pixels the log scrolls per unit of wheel `deltaY`.
+   * A full notch (deltaY ≈ 100) moves it ~50·DPR px. Wheel events over the panel
+   * scroll the log and are swallowed so the map underneath doesn't also zoom.
+   */
+  wheelFactor: 0.5,
 } as const
 
 // ── Camera & input ─────────────────────────────────────────────────────────
