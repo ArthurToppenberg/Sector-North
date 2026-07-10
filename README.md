@@ -79,6 +79,9 @@ Sector-North/
 
 ## Contributing
 
+Contributions are welcome — see **[`CONTRIBUTING.md`](CONTRIBUTING.md)** for how to submit
+a change and for the Contributor License Agreement (opening a PR accepts it).
+
 Before writing code, read the two rule files — they are short and non-negotiable:
 
 - **`CLAUDE.md`** (repo root) — the core architectural principle (*GPS is the source of
@@ -89,3 +92,13 @@ Before writing code, read the two rule files — they are short and non-negotiab
   boundary, the projection layer's contract, and the scene/layer/camera conventions.
 
 They are written for Claude Code but apply equally to human contributors.
+
+## License
+
+Sector-North is **source-available, not open source**. It is licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE.md): you may use, modify, and share it for
+**noncommercial** purposes only — personal projects, study, hobby use, and non-profit or
+educational use are all fine. **Commercial use — including selling it or any part of it,
+or using it in a paid product or service — is not permitted.** See [`LICENSE.md`](LICENSE.md)
+for the full terms and [`CONTRIBUTING.md`](CONTRIBUTING.md) for how this applies to
+contributions.
