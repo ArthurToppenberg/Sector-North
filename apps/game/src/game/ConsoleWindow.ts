@@ -6,10 +6,6 @@ function fail(message: string): never {
   throw new Error(`[game/ConsoleWindow] ${message}`)
 }
 
-/**
- * One display line: elapsed seconds (right-aligned), a fixed-width level tag, then
- * the message. The tag is how level reads without colour — the HUD white/black rule.
- */
 function formatEntry(entry: LogEntry): string {
   const seconds = (entry.timeMs / 1000).toFixed(1).padStart(7)
   const level = entry.level.toUpperCase().padEnd(5)
@@ -23,11 +19,13 @@ function formatEntry(entry: LogEntry): string {
  * the fixed UI camera like the rest of the HUD, so it keeps a constant on-screen
  * size regardless of the map's zoom/pan.
  *
- * A single Text object holds the whole log; scrolling is done by cropping it to
- * the viewport (crop coordinates are in the text's own texture space, so they are
- * immune to camera transforms — no geometry mask needed). The view follows the
- * tail (newest line) until the user wheels up, then holds until they scroll back
- * to the bottom.
+ * The whole log is one Text object clipped by a geometry mask to the viewport, and
+ * scrolled by moving the text within it. (Crop was tried and abandoned: Text with
+ * `resolution` renders into a DPR-scaled texture, so crop coordinates land in the
+ * wrong texture space. A mask works in screen space and sidesteps that.) A scroll
+ * bar on the right reflects the position and can be dragged. The view follows the
+ * tail (newest line) until the user scrolls up, then holds until they return to the
+ * bottom.
  */
 export class ConsoleWindow {
   private readonly scene: Phaser.Scene
@@ -38,12 +36,21 @@ export class ConsoleWindow {
   private readonly closeButton: Phaser.GameObjects.Rectangle
   private readonly closeGlyph: Phaser.GameObjects.Text
   private readonly logText: Phaser.GameObjects.Text
+  /** Off-list graphics whose rect clips `logText` to the viewport. */
+  private readonly maskShape: Phaser.GameObjects.Graphics
+  private readonly scrollTrack: Phaser.GameObjects.Rectangle
+  /** Track hit area, resized in `layout` — a Rectangle's default hit area is
+   * captured once at `setInteractive` and would not follow `setSize`. */
+  private readonly scrollTrackHit: Phaser.Geom.Rectangle
+  private readonly scrollThumb: Phaser.GameObjects.Rectangle
   private readonly unsubscribe: () => void
 
-  /** Panel + inner content sizes in device pixels (fixed; only position moves). */
   private readonly panelWidth: number
   private readonly panelHeight: number
   private readonly innerWidth: number
+  /** Log text column width (inner width minus the scroll-bar gutter). */
+  private readonly textWidth: number
+  private readonly scrollbarWidth: number
 
   /** Panel top-left in device pixels — the single source of truth for its place. */
   private originX = 0
@@ -56,8 +63,8 @@ export class ConsoleWindow {
 
   /**
    * Pixels the log is scrolled down from its top. When `followTail` it is pinned
-   * to the bottom (newest visible) and re-pins as lines arrive; a wheel-up breaks
-   * the follow and holds the view until the user scrolls back to the bottom.
+   * to the bottom (newest visible) and re-pins as lines arrive; scrolling up breaks
+   * the follow and holds the view until the user returns to the bottom.
    */
   private scrollTop = 0
   private followTail = true
@@ -78,15 +85,18 @@ export class ConsoleWindow {
     const pad = CONSOLE.paddingScreen * DPR
     this.innerWidth = this.panelWidth - pad * 2
     if (this.innerWidth <= 0) fail(`console width ${CONSOLE.widthScreen} is too small for its padding`)
+    this.scrollbarWidth = CONSOLE.scrollbarWidthScreen * DPR
+    this.textWidth = this.innerWidth - this.scrollbarWidth - CONSOLE.scrollbarGapScreen * DPR
+    if (this.textWidth <= 0) fail(`console width ${CONSOLE.widthScreen} is too small for its scroll bar`)
 
     const border = CONSOLE.borderScreenWidth * DPR
     const contentDepth = DEPTH.consoleContent
 
     // Panel surface — interactive so it can swallow wheel events (see `attachWheel`)
     // and act as the drag handle. The (non-interactive) title/log text on top lets a
-    // drag start straight through it; the close button, its own interactive object,
-    // is excluded. Dragging a draggable object also stops the camera panning
-    // underneath (see `CameraController`).
+    // drag start straight through it; the close button and scroll bar, their own
+    // interactive objects, are excluded. Dragging a draggable object also stops the
+    // camera panning underneath (see `CameraController`).
     this.panel = scene.add
       .rectangle(0, 0, this.panelWidth, this.panelHeight, CONSOLE.panelColor, CONSOLE.panelAlpha)
       .setOrigin(0, 0)
@@ -145,8 +155,37 @@ export class ConsoleWindow {
         color: CONSOLE.logColor,
         resolution: DPR,
         lineSpacing: CONSOLE.lineSpacingScreen * DPR,
-        wordWrap: { width: this.innerWidth, useAdvancedWrap: true },
+        wordWrap: { width: this.textWidth, useAdvancedWrap: true },
       })
+      .setOrigin(0, 0)
+      .setDepth(contentDepth)
+
+    // Off the display list (so neither camera renders it), used only to stencil the
+    // log to the viewport. Its rect is (re)drawn in `layout`.
+    this.maskShape = scene.make.graphics({})
+    this.logText.setMask(this.maskShape.createGeometryMask())
+
+    // Track first, thumb second so the thumb draws on top. The track is the drag
+    // target (fixed size → stable hit area); the thumb is a visual indicator.
+    this.scrollTrack = scene.add
+      .rectangle(0, 0, this.scrollbarWidth, 1, CONSOLE.borderColor, CONSOLE.scrollbarTrackAlpha)
+      .setOrigin(0, 0)
+      .setDepth(contentDepth)
+    this.scrollTrackHit = new Phaser.Geom.Rectangle(0, 0, this.scrollbarWidth, 1)
+    this.scrollTrack.setInteractive(this.scrollTrackHit, Phaser.Geom.Rectangle.Contains)
+    this.attachWheel(this.scrollTrack)
+    scene.input.setDraggable(this.scrollTrack)
+    this.scrollTrack.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) => this.scrollToPointer(p))
+    this.scrollTrack.on(Phaser.Input.Events.DRAG, (p: Phaser.Input.Pointer) => this.scrollToPointer(p))
+    this.scrollTrack.on(Phaser.Input.Events.POINTER_OVER, () =>
+      this.scrollThumb.setFillStyle(CONSOLE.borderColor, CONSOLE.scrollbarThumbHoverAlpha),
+    )
+    this.scrollTrack.on(Phaser.Input.Events.POINTER_OUT, () =>
+      this.scrollThumb.setFillStyle(CONSOLE.borderColor, CONSOLE.scrollbarThumbAlpha),
+    )
+
+    this.scrollThumb = scene.add
+      .rectangle(0, 0, this.scrollbarWidth, 1, CONSOLE.borderColor, CONSOLE.scrollbarThumbAlpha)
       .setOrigin(0, 0)
       .setDepth(contentDepth)
 
@@ -184,7 +223,7 @@ export class ConsoleWindow {
 
   /** Every object the window owns, so the owner can route them to the UI camera. */
   get objects(): Phaser.GameObjects.GameObject[] {
-    return [this.panel, this.title, this.closeButton, this.closeGlyph, this.logText]
+    return [this.panel, this.title, this.closeButton, this.closeGlyph, this.logText, this.scrollTrack, this.scrollThumb]
   }
 
   setVisible(visible: boolean): void {
@@ -194,9 +233,12 @@ export class ConsoleWindow {
     this.closeButton.setVisible(visible)
     this.closeGlyph.setVisible(visible)
     this.logText.setVisible(visible)
+    this.scrollTrack.setVisible(visible)
+    this.scrollThumb.setVisible(visible)
     // A hidden panel must not eat clicks or wheel events meant for the map.
     if (this.panel.input) this.panel.input.enabled = visible
     if (this.closeButton.input) this.closeButton.input.enabled = visible
+    if (this.scrollTrack.input) this.scrollTrack.input.enabled = visible
     if (visible) this.renderIfDirty()
   }
 
@@ -210,6 +252,8 @@ export class ConsoleWindow {
 
   destroy(): void {
     this.unsubscribe()
+    this.logText.clearMask()
+    this.maskShape.destroy()
     for (const obj of this.objects) obj.destroy()
   }
 
@@ -222,11 +266,22 @@ export class ConsoleWindow {
     const maxScroll = this.maxScroll()
     if (maxScroll === 0) return
     // deltaY > 0 (wheel toward the user) scrolls toward newer lines (down = larger
-    // scrollTop); deltaY < 0 scrolls toward older. Re-follow the tail once the
-    // user scrolls back to the very bottom.
+    // scrollTop); deltaY < 0 scrolls toward older. Re-follow the tail once the user
+    // scrolls back to the very bottom.
     this.scrollTop = Phaser.Math.Clamp(this.scrollTop + deltaY * CONSOLE.wheelFactor * DPR, 0, maxScroll)
     this.followTail = this.scrollTop >= maxScroll
-    this.applyCrop()
+    this.applyScroll()
+  }
+
+  /** Drag/click on the scroll track: centre the thumb on the pointer. */
+  private scrollToPointer(pointer: Phaser.Input.Pointer): void {
+    const maxScroll = this.maxScroll()
+    const travel = this.viewHeight - this.thumbHeight()
+    if (maxScroll === 0 || travel <= 0) return
+    const t = Phaser.Math.Clamp((pointer.y - this.viewY - this.thumbHeight() / 2) / travel, 0, 1)
+    this.scrollTop = t * maxScroll
+    this.followTail = t >= 1
+    this.applyScroll()
   }
 
   private setCloseHovered(hovered: boolean): void {
@@ -250,7 +305,7 @@ export class ConsoleWindow {
       this.lastText = text
       this.logText.setText(text)
     }
-    this.applyCrop()
+    this.applyScroll()
   }
 
   /** Max pixels the log can scroll: content taller than the viewport, else 0. */
@@ -258,17 +313,25 @@ export class ConsoleWindow {
     return Math.max(0, this.logText.height - this.viewHeight)
   }
 
-  /**
-   * Show the viewport-height slice of the log starting at `scrollTop`. Phaser
-   * draws a cropped object offset by the crop's origin (render: `y = -originY +
-   * crop.y`), so the text is moved *up* by `scrollTop` to cancel that offset and
-   * keep the visible slice pinned at the fixed viewport position.
-   */
-  private applyCrop(): void {
+  /** Thumb height: viewport shrunk by the content overflow, floored so it stays grabbable. */
+  private thumbHeight(): number {
+    const contentHeight = this.logText.height
+    if (contentHeight <= this.viewHeight || contentHeight === 0) return this.viewHeight
+    const proportional = (this.viewHeight * this.viewHeight) / contentHeight
+    return Math.max(CONSOLE.scrollbarMinThumbScreen * DPR, proportional)
+  }
+
+  /** Position the log and the scroll thumb for the current `scrollTop`. */
+  private applyScroll(): void {
     const maxScroll = this.maxScroll()
     this.scrollTop = this.followTail ? maxScroll : Phaser.Math.Clamp(this.scrollTop, 0, maxScroll)
     this.logText.setPosition(this.viewX, this.viewY - this.scrollTop)
-    this.logText.setCrop(0, this.scrollTop, this.innerWidth, this.viewHeight)
+
+    const th = this.thumbHeight()
+    const travel = this.viewHeight - th
+    const t = maxScroll > 0 ? this.scrollTop / maxScroll : 0
+    this.scrollThumb.setSize(this.scrollbarWidth, th)
+    this.scrollThumb.setPosition(this.viewX + this.innerWidth - this.scrollbarWidth, this.viewY + travel * t)
   }
 
   /** Place the panel and its chrome from the current origin, then measure the log viewport. */
@@ -292,6 +355,15 @@ export class ConsoleWindow {
     this.viewHeight = ay + this.panelHeight - pad - this.viewY
     if (this.viewHeight <= 0) fail(`console height ${CONSOLE.heightScreen} is too small for its header + padding`)
 
-    this.applyCrop()
+    // Clip the log to the text column of the viewport.
+    this.maskShape.clear()
+    this.maskShape.fillStyle(0xffffff)
+    this.maskShape.fillRect(this.viewX, this.viewY, this.textWidth, this.viewHeight)
+
+    this.scrollTrack.setSize(this.scrollbarWidth, this.viewHeight)
+    this.scrollTrackHit.height = this.viewHeight
+    this.scrollTrack.setPosition(this.viewX + this.innerWidth - this.scrollbarWidth, this.viewY)
+
+    this.applyScroll()
   }
 }

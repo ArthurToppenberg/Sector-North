@@ -354,6 +354,14 @@ export const CONSOLE = {
   logFontScreenSize: 12,
   /** Extra leading between log lines (CSS pixels). */
   lineSpacingScreen: 3,
+  /** Scroll bar (right edge of the log viewport). White per the HUD rule; the
+   * track is faint, the draggable thumb brighter. */
+  scrollbarWidthScreen: 5,
+  scrollbarGapScreen: 6,
+  scrollbarMinThumbScreen: 24,
+  scrollbarTrackAlpha: 0.15,
+  scrollbarThumbAlpha: 0.55,
+  scrollbarThumbHoverAlpha: 0.85,
   /** Close button square edge and its "×" glyph size (CSS pixels). */
   closeButtonScreenSize: 20,
   closeGlyphFontScreenSize: 16,
