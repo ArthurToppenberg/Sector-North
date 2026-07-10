@@ -320,11 +320,11 @@ export const INFO_WINDOW = {
 } as const
 
 /**
- * The developer console: a fixed HUD panel docked at the bottom-left that renders
- * the shared logger's buffer (`src/log/logger.ts`) as a scrollable text log,
- * toggled by the toolbar's developer button. All sizes are CSS pixels, converted
- * with `DPR` at render time. Chrome stays white/black per the HUD rule; log level
- * is conveyed by a text tag ("INFO", "WARN", …), never colour.
+ * The developer console: a draggable HUD panel (opening docked at the bottom-left)
+ * that renders the shared logger's buffer (`src/log/logger.ts`) as a scrollable
+ * text log, toggled by the toolbar's developer button. All sizes are CSS pixels,
+ * converted with `DPR` at render time. Chrome stays white/black per the HUD rule;
+ * log level is conveyed by a text tag ("INFO", "WARN", …), never colour.
  */
 export const CONSOLE = {
   /** Panel size on screen (CSS pixels) — fixed; the log scrolls within it. */

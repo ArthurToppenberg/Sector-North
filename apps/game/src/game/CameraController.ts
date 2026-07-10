@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { KEY_PAN_SPEED, ZOOM } from './config'
 import { screenPxToWorld } from './units'
 import { cameraWorldView } from './camera'
+import { log } from '../log/logger'
 
 export interface CenterBounds {
   minX: number
@@ -99,6 +100,7 @@ export class CameraController {
     // let the zoom-reactive layers render at the initial zoom set above.
     this.clampCamera()
     this.onZoomChanged(this.cam.zoom)
+    log.debug(`[CameraController] framed initial view at zoom ${this.cam.zoom.toFixed(2)}`)
   }
 
   private frameInitialView(): void {
@@ -132,6 +134,10 @@ export class CameraController {
     const factor = Math.pow(ZOOM.step, -deltaY / ZOOM.deltaPerStep)
     const newZoom = Phaser.Math.Clamp(oldZoom * factor, ZOOM.min, ZOOM.max)
     if (newZoom === oldZoom) return
+    // The guard above means this fires once, when a limit is first reached — not every notch.
+    if (newZoom === ZOOM.min || newZoom === ZOOM.max) {
+      log.debug(`[CameraController] zoom reached ${newZoom === ZOOM.min ? 'min' : 'max'} limit`)
+    }
     const anchorScale = 1 / oldZoom - 1 / newZoom
     cam.setZoom(newZoom)
     cam.scrollX += (pointer.x - cam.width / 2) * anchorScale

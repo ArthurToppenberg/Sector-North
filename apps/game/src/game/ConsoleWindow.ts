@@ -17,10 +17,11 @@ function formatEntry(entry: LogEntry): string {
 }
 
 /**
- * Bottom-left developer console: a fixed HUD panel that renders the shared
- * logger's buffer as a scrollable, monochrome text log. Toggled by the toolbar's
- * developer button. Lives on the fixed UI camera like the rest of the HUD, so it
- * keeps a constant on-screen size regardless of the map's zoom/pan.
+ * Developer console: a draggable HUD panel that renders the shared logger's
+ * buffer as a scrollable, monochrome text log. It opens docked at the bottom-left
+ * and can be dragged anywhere. Toggled by the toolbar's developer button. Lives on
+ * the fixed UI camera like the rest of the HUD, so it keeps a constant on-screen
+ * size regardless of the map's zoom/pan.
  *
  * A single Text object holds the whole log; scrolling is done by cropping it to
  * the viewport (crop coordinates are in the text's own texture space, so they are
@@ -43,6 +44,10 @@ export class ConsoleWindow {
   private readonly panelWidth: number
   private readonly panelHeight: number
   private readonly innerWidth: number
+
+  /** Panel top-left in device pixels — the single source of truth for its place. */
+  private originX = 0
+  private originY = 0
 
   /** Log viewport rect in device pixels, recomputed in `layout`. */
   private viewX = 0
@@ -77,7 +82,11 @@ export class ConsoleWindow {
     const border = CONSOLE.borderScreenWidth * DPR
     const contentDepth = DEPTH.consoleContent
 
-    // Panel surface — interactive so it can swallow wheel events (see `attachWheel`).
+    // Panel surface — interactive so it can swallow wheel events (see `attachWheel`)
+    // and act as the drag handle. The (non-interactive) title/log text on top lets a
+    // drag start straight through it; the close button, its own interactive object,
+    // is excluded. Dragging a draggable object also stops the camera panning
+    // underneath (see `CameraController`).
     this.panel = scene.add
       .rectangle(0, 0, this.panelWidth, this.panelHeight, CONSOLE.panelColor, CONSOLE.panelAlpha)
       .setOrigin(0, 0)
@@ -85,6 +94,12 @@ export class ConsoleWindow {
       .setDepth(DEPTH.consolePanel)
       .setInteractive()
     this.attachWheel(this.panel)
+    scene.input.setDraggable(this.panel)
+    this.panel.on(Phaser.Input.Events.DRAG, (_p: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+      this.originX = dragX
+      this.originY = dragY
+      this.layout()
+    })
 
     const closeSize = CONSOLE.closeButtonScreenSize * DPR
     this.closeButton = scene.add
@@ -139,6 +154,11 @@ export class ConsoleWindow {
     // `snapshot()` on each render, so no backlog replay is needed here.
     this.unsubscribe = log.subscribe(() => this.onLogEntry())
 
+    // Open docked at the bottom-left; the user can drag it anywhere from there.
+    // `scale.height` is already in device pixels (the canvas is sized at CSS×DPR).
+    const margin = CONSOLE.marginScreen * DPR
+    this.originX = margin
+    this.originY = Math.max(margin, this.scene.scale.height - margin - this.panelHeight)
     this.layout()
     this.setVisible(false)
   }
@@ -180,8 +200,11 @@ export class ConsoleWindow {
     if (visible) this.renderIfDirty()
   }
 
-  /** Re-pin the panel to the (new) bottom-left corner after a resize. */
+  /** Keep the (draggable) panel on screen after a resize; its origin is absolute. */
   reposition(): void {
+    const { width, height } = this.scene.scale
+    this.originX = Phaser.Math.Clamp(this.originX, 0, Math.max(0, width - this.panelWidth))
+    this.originY = Phaser.Math.Clamp(this.originY, 0, Math.max(0, height - this.panelHeight))
     this.layout()
   }
 
@@ -248,15 +271,11 @@ export class ConsoleWindow {
     this.logText.setCrop(0, this.scrollTop, this.innerWidth, this.viewHeight)
   }
 
-  /** Place the panel and its chrome, then measure out the log viewport. */
+  /** Place the panel and its chrome from the current origin, then measure the log viewport. */
   private layout(): void {
     const pad = CONSOLE.paddingScreen * DPR
-    // Panel width is fixed; only the vertical (bottom) anchor tracks the resize.
-    const screenHeight = this.scene.scale.height
-    const ax = CONSOLE.marginScreen * DPR
-    // Bottom-anchored: sit `margin` above the bottom edge. Clamp so a viewport
-    // shorter than the panel doesn't push it off the top.
-    const ay = Math.max(CONSOLE.marginScreen * DPR, screenHeight - CONSOLE.marginScreen * DPR - this.panelHeight)
+    const ax = this.originX
+    const ay = this.originY
 
     this.panel.setPosition(ax, ay)
 

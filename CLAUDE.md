@@ -91,6 +91,31 @@ all costs.
 - If a dependency, file, or environment value is missing, stop and report it — never
   degrade to a partial or fake result.
 
+## Comments earn their place by explaining WHY, not narrating WHAT
+
+A comment must add information the code cannot. Write comments that explain **why** — the
+rationale for a choice, a non-obvious constraint, an invariant that must hold, a gotcha, a
+subtle ordering dependency. Never write a comment that narrates *what* the code plainly
+already says.
+
+- If a comment merely paraphrases the line(s) beneath it, **delete it** — it is noise that
+  rots out of sync with the code and buries the comments that matter.
+- Do **not** strip the codebase's existing rationale comments. This repo deliberately
+  documents the tricky bits (the latitude correction, projection edge cases, radar-sweep
+  ordering); those "why" comments are valued and must stay. The rule bans redundant "what"
+  comments — it does not mandate a comment-free codebase.
+- When in doubt, ask: "would a competent reader learn anything from this that the code
+  doesn't already tell them?" If no, cut it.
+
+```ts
+// Bad — restates the code, adds nothing:
+// increment i by one
+i += 1;
+
+// Good — explains a non-obvious constraint:
+// project() throws on out-of-bounds lon/lat, so clamp to the view before calling it
+```
+
 ## Moving/deleting files — never pair `rm -rf` with an unverified move
 
 When relocating files, do the destructive step **only after** the move has provably

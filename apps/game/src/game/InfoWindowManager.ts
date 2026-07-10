@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { DPR, INFO_WINDOW, TOOLBAR, DEPTH } from './config'
 import { InfoWindow, type InfoWindowContent } from './InfoWindow'
+import { log } from '../log/logger'
 
 export class InfoWindowManager {
   private readonly scene: Phaser.Scene
@@ -26,8 +27,10 @@ export class InfoWindowManager {
     if (existing) {
       this.windows.delete(key)
       existing.destroy()
+      log.debug(`Detail window closed (${key})`)
       return
     }
+    log.info(`Detail window opened: ${content.title}`)
     const window = new InfoWindow(this.scene, content, {
       origin: this.nextOrigin(),
       depthBase: this.allocDepth(),
@@ -54,6 +57,7 @@ export class InfoWindowManager {
       if (open === window) {
         this.windows.delete(key)
         window.destroy()
+        log.debug(`Detail window closed (${key})`)
         return
       }
     }

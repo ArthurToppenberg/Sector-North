@@ -3,6 +3,7 @@ import cityIconRaw from 'lucide-static/icons/building-2.svg?raw'
 import { DPR, FONT_FAMILY, CITY, DEPTH } from './config'
 import { screenPxToWorld } from './units'
 import { iconDataUri } from './svgIcon'
+import { log } from '../log/logger'
 
 const CITY_ICON_TEXTURE = 'city-icon'
 
@@ -115,6 +116,8 @@ export class CityLayer {
 
     // Draw once at the current zoom so the layer is correct before any input.
     this.onZoomChanged(scene.cameras.main.zoom)
+
+    log.debug(`CityLayer: ${this.markers.length} city markers`)
   }
 
   /**

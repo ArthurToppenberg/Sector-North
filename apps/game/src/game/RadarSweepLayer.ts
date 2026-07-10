@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { RADAR, DEPTH } from './config'
 import { screenPxToWorld } from './units'
+import { log } from '../log/logger'
 
 export interface RadarSweepMarker {
   name: string
@@ -66,6 +67,8 @@ export class RadarSweepLayer {
     // Stagger the starting angles so the sites don't sweep in visual lockstep.
     this.angle = markers.map((_, i) => (i / markers.length) * TAU)
     this.gfx = scene.add.graphics().setDepth(DEPTH.radarSweep)
+
+    log.debug(`RadarSweepLayer: ${this.markers.length} sweep sites`)
   }
 
   get objects(): Phaser.GameObjects.GameObject[] {
