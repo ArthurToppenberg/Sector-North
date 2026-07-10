@@ -31,7 +31,7 @@ const DEG2RAD = Math.PI / 180
 // Length of one degree of latitude on a spherical Earth (mean radius 6371 km):
 // (π/180) · 6371 ≈ 111.195 km. Constant to well within a country-scale map's
 // accuracy needs.
-const KM_PER_DEG_LAT = 111.195
+export const KM_PER_DEG_LAT = 111.195
 
 /** lon/lat axis-aligned bounding box, in degrees. */
 interface LonLatBounds {

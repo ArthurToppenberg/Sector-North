@@ -11,13 +11,15 @@ import {
   type ColocationLabel,
 } from '../map/colocate'
 import { projectToPixels, type Projector } from '../map/project'
-import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER } from './config'
+import { AircraftSim } from '../map/aircraft'
+import { DPR, MAP, PLANE, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER } from './config'
 import { GridLayer } from './GridLayer'
 import { CoastlineLayer } from './CoastlineLayer'
 import { CityLayer, type CityMarker } from './CityLayer'
 import { AirportLayer, type AirportMarker } from './AirportLayer'
 import { RadarLayer, type RadarMarker } from './RadarLayer'
 import { RadarSweepLayer, type RadarSweepMarker } from './RadarSweepLayer'
+import { PlaneLayer } from './PlaneLayer'
 import { CameraController, type CenterBounds } from './CameraController'
 import { cameraWorldView } from './camera'
 import { DebugHud } from './DebugHud'
@@ -41,6 +43,12 @@ export class MainScene extends Phaser.Scene {
   // Held as a field (unlike the city/airport/radar marker layers, which stay
   // locals in `create`) because it animates on the update tick — see `update`.
   private radarSweepLayer!: RadarSweepLayer
+  // Aircraft simulation + its contact-blip renderer. Held as fields (like the
+  // radar sweep) because both advance on the update tick; the projector is kept
+  // to turn each aircraft's live lon/lat into world pixels every frame.
+  private sim!: AircraftSim
+  private planeLayer!: PlaneLayer
+  private project!: Projector
   private cameraController!: CameraController
   private debugHud!: DebugHud
   private toolbar!: Toolbar
@@ -157,6 +165,36 @@ export class MainScene extends Phaser.Scene {
       this.buildRadarSweepMarkers(radars, projected.project),
       projected.pixelsPerKm,
     )
+    // Air traffic: the sim flies aircraft in the background whether or not they
+    // are seen; the plane layer only ever draws the contact blips the radar
+    // sweep reveals. The projector turns each aircraft's lon/lat into world
+    // pixels every frame (GPS is the source of truth — see `update`).
+    this.project = projected.project
+    this.sim = new AircraftSim()
+    this.planeLayer = new PlaneLayer(this)
+    commands.register({
+      name: 'spawn-planes',
+      description: 'Spawn N test aircraft flying outward from the map centre (default 8).',
+      run: (args) => {
+        const raw = args.trim()
+        const count = raw === '' ? PLANE.defaultSpawnCount : Number.parseInt(raw, 10)
+        if (!Number.isInteger(count) || count <= 0) return `Usage: /spawn-planes [positive integer]`
+        for (let i = 0; i < count; i++) {
+          this.sim.spawn({
+            lon: CAMERA_INITIAL_CENTER.lon,
+            lat: CAMERA_INITIAL_CENTER.lat,
+            headingDeg: Math.random() * 360,
+            speedKmh: PLANE.spawnSpeedKmh,
+          })
+        }
+        return `Spawned ${count} aircraft (${this.sim.count} in the air).`
+      },
+    })
+    commands.register({
+      name: 'clear-planes',
+      description: 'Remove all simulated aircraft.',
+      run: () => `Removed ${this.sim.clear()} aircraft.`,
+    })
     // Cities, airports and radars are shown by default; the toolbar toggles hide
     // them. One variable per layer feeds both the layer's start visibility and the
     // toolbar's initial state so the glyph and the actual visibility can't drift.
@@ -169,6 +207,10 @@ export class MainScene extends Phaser.Scene {
     airportLayer.setVisible(airportsVisible)
     radarLayer.setVisible(radarsVisible)
     this.radarSweepLayer.setVisible(radarsVisible)
+    // Blips are radar returns, so they belong to the radar picture — toggled
+    // with it. With the radars off the sweep freezes, so no new contacts appear
+    // regardless; hiding the layer also drops any still-fading blips at once.
+    this.planeLayer.setVisible(radarsVisible)
     // The console starts closed (constructor already hid it); it is opened by the
     // developer toolbar button or the "/" key, both routed through `setConsoleOpen`.
     this.debugHud = new DebugHud(this)
@@ -204,6 +246,7 @@ export class MainScene extends Phaser.Scene {
           radarsVisible = active
           radarLayer.setVisible(active)
           this.radarSweepLayer.setVisible(active)
+          this.planeLayer.setVisible(active)
           applyColocationLabels()
         },
       },
@@ -245,6 +288,7 @@ export class MainScene extends Phaser.Scene {
         ...this.gridLayer.objects,
         ...coastline.objects,
         ...this.radarSweepLayer.objects,
+        ...this.planeLayer.objects,
         ...cityLayer.objects,
         ...airportLayer.objects,
         ...radarLayer.objects,
@@ -409,9 +453,27 @@ export class MainScene extends Phaser.Scene {
     this.debugHud.render(this.cameras.main)
   }
 
+  /**
+   * Advance the background air traffic and refresh its contact blips. Must run
+   * after `radarSweepLayer.update` each frame: the sweep advances its angles
+   * there, and detection reads the arc swept this frame. Aircraft are projected
+   * from their live lon/lat here (GPS is the source of truth), so a blip is
+   * painted at the plane's true ground position at the moment the sweep hit it.
+   */
+  private updateAircraft(deltaSec: number, zoom: number) {
+    this.sim.step(deltaSec)
+    const targets = this.sim.all.map((a) => {
+      const [x, y] = this.project(a.lon, a.lat)
+      return { x, y }
+    })
+    this.planeLayer.addContacts(this.radarSweepLayer.detectSweptTargets(targets))
+    this.planeLayer.update(deltaSec, zoom)
+  }
+
   update(_time: number, deltaMs: number) {
+    const deltaSec = deltaMs / 1000
     // Apply any held-key panning first, then react to the resulting camera state.
-    this.cameraController.update(deltaMs / 1000)
+    this.cameraController.update(deltaSec)
 
     const cam = this.cameras.main
 
@@ -421,7 +483,8 @@ export class MainScene extends Phaser.Scene {
     // cam.worldView) picks the single radar to sweep — the one whose coverage the
     // centre is under (see RadarSweepLayer.selectSweepIndex).
     const view = cameraWorldView(cam)
-    this.radarSweepLayer.update(deltaMs / 1000, cam.zoom, view.centerX, view.centerY)
+    this.radarSweepLayer.update(deltaSec, cam.zoom, view.centerX, view.centerY)
+    this.updateAircraft(deltaSec, cam.zoom)
 
     if (cam.scrollX === this.lastScrollX && cam.scrollY === this.lastScrollY && cam.zoom === this.lastZoom) {
       // Camera hasn't moved this frame — the grid slice and HUD readout are still

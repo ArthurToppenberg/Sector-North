@@ -14,6 +14,11 @@ export interface RadarSweepMarker {
 
 const TAU = Math.PI * 2
 
+/** Wrap an angle (radians) into `[0, TAU)`. */
+function norm(angle: number): number {
+  return ((angle % TAU) + TAU) % TAU
+}
+
 function fail(message: string): never {
   throw new Error(`[game/RadarSweepLayer] ${message}`)
 }
@@ -56,6 +61,10 @@ export class RadarSweepLayer {
   private readonly rangePx: number[]
   /** Current sweep angle per site (radians), advanced by real elapsed time. */
   private readonly angle: number[]
+  /** Each site's sweep angle at the start of the current frame, before `update`
+   * advanced it — the trailing edge of the arc swept this frame, used by
+   * `detectSweptTargets` to find contacts the hand crossed. */
+  private readonly prevAngle: number[]
   private layerVisible = true
 
   constructor(scene: Phaser.Scene, markers: readonly RadarSweepMarker[], pixelsPerKm: number) {
@@ -64,6 +73,7 @@ export class RadarSweepLayer {
     this.markers = markers
     this.rangePx = markers.map((m) => m.rangeKm * pixelsPerKm)
     this.angle = markers.map((_, i) => (i / markers.length) * TAU)
+    this.prevAngle = this.angle.slice()
     this.gfx = scene.add.graphics().setDepth(DEPTH.radarSweep)
   }
 
@@ -97,7 +107,9 @@ export class RadarSweepLayer {
 
     for (let i = 0; i < this.markers.length; i++) {
       // Screen Y grows downward, so an increasing angle sweeps clockwise — the
-      // radar convention. Wrap to keep the accumulated value bounded.
+      // radar convention. Wrap to keep the accumulated value bounded. Every site
+      // advances (not just the drawn one), so detection can run for all radars.
+      this.prevAngle[i] = this.angle[i]
       this.angle[i] = (this.angle[i] + (TAU * deltaSec) / this.markers[i].updateIntervalSec) % TAU
     }
 
@@ -117,6 +129,43 @@ export class RadarSweepLayer {
     this.gfx.lineStyle(lineWidth, RADAR.sweep.color, RADAR.sweep.lineAlpha)
     const a = this.angle[selected]
     this.gfx.lineBetween(m.x, m.y, m.x + Math.cos(a) * r, m.y + Math.sin(a) * r)
+  }
+
+  /**
+   * Report which `targets` (world-pixel points) any radar's sweep hand crossed
+   * during the arc advanced by the most recent `update` — i.e. the contacts to
+   * paint this frame. A target counts for a site when it lies within that site's
+   * range ring AND its bearing from the site falls inside `(prevAngle, angle]`.
+   *
+   * Every site is tested, not just the one drawn (`update` advances all angles),
+   * so a target is detected by whichever coverage it is under. Returns each
+   * target's own position so the blip is painted where the aircraft was when
+   * scanned. Empty while the layer is hidden — a switched-off radar sees nothing.
+   *
+   * Bearings use the same convention as the drawn hand (`atan2` in world-pixel
+   * space, clockwise because screen Y grows down), so a painted blip lines up
+   * exactly with where the visible sweep points.
+   */
+  detectSweptTargets(targets: ReadonlyArray<{ x: number; y: number }>): { x: number; y: number }[] {
+    if (!this.layerVisible) return []
+    const contacts: { x: number; y: number }[] = []
+    for (let i = 0; i < this.markers.length; i++) {
+      const swept = norm(this.angle[i] - this.prevAngle[i])
+      if (swept === 0) continue
+      const m = this.markers[i]
+      const rangeSq = this.rangePx[i] * this.rangePx[i]
+      for (const t of targets) {
+        const dx = t.x - m.x
+        const dy = t.y - m.y
+        if (dx * dx + dy * dy > rangeSq) continue
+        // Half-open arc (prevAngle, angle]: the closing edge counts, the opening
+        // edge does not, so a bearing on a frame boundary is detected exactly once
+        // (this frame's closing edge is next frame's excluded opening edge).
+        const offset = norm(Math.atan2(dy, dx) - this.prevAngle[i])
+        if (offset > 0 && offset <= swept) contacts.push({ x: t.x, y: t.y })
+      }
+    }
+    return contacts
   }
 
   private selectSweepIndex(centerX: number, centerY: number): number {

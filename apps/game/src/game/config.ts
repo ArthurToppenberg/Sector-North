@@ -146,6 +146,32 @@ export const RADAR = {
   },
 } as const
 
+/**
+ * Simulated air traffic. Aircraft fly in the background at all times (their
+ * real lon/lat is the source of truth — see `src/map/aircraft.ts`); the player
+ * only ever sees a **contact blip** painted where a radar sweep last passed over
+ * one, which then fades. So a fast target's blip visibly lags its true position,
+ * and re-brightens on the next sweep — the classic radar return.
+ *
+ * Blips are drawn in phosphor green (`MAP.strokeColor`) so they read as part of
+ * the tactical radar picture — the sanctioned HUD-colour exception (see the root
+ * `CLAUDE.md`), the same green as the coverage sweep that reveals them.
+ */
+export const PLANE = {
+  /** Contact-blip radius on screen (CSS pixels), held constant across zoom. */
+  blipScreenRadius: 3,
+  /** Blip colour — phosphor green, matching the radar sweep (see above). */
+  blipColor: MAP.strokeColor,
+  /** Opacity of a freshly painted contact, faded linearly to 0 over `blipFadeSec`. */
+  blipMaxAlpha: 0.9,
+  /** Seconds a contact takes to fade out after a sweep paints it. */
+  blipFadeSec: 6,
+  /** Cruise speed (km/h) given to test aircraft spawned via `/spawn-planes`. */
+  spawnSpeedKmh: 800,
+  /** How many aircraft `/spawn-planes` creates when no count is given. */
+  defaultSpawnCount: 8,
+} as const
+
 // Faint real-world reference grid drawn beneath the map.
 export const GRID = {
   /** Cell size on the ground, in kilometres (square). */
@@ -184,6 +210,9 @@ export const DEPTH = {
   // layer: the large, faint rings and rotating hands wash behind the city/airport/
   // radar glyphs so those stay legible on top.
   radarSweep: 15,
+  // Radar contact blips sit just above the coverage sweep that paints them, but
+  // beneath the marker glyphs so the (sparse) infrastructure icons stay legible.
+  planeBlips: 16,
   cityDots: 20,
   cityLabels: 30,
   // Airports sit just above the city labels so their markers/labels aren't
