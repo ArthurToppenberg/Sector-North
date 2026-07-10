@@ -2,12 +2,15 @@ import Phaser from 'phaser'
 import { PLANE, DEPTH } from './config'
 import { screenPxToWorld } from './units'
 
-/** A radar return painted at a world-pixel point, fading out over `PLANE.blipFadeSec`. */
-interface Blip {
+const DEG2RAD = Math.PI / 180
+
+/** A radar contact: a world-pixel point plus the plane's velocity when the sweep last saw it. */
+export interface Contact {
   x: number
   y: number
-  /** Seconds since the sweep painted this contact. */
-  age: number
+  /** Compass heading in degrees: 0 = north, 90 = east. */
+  headingDeg: number
+  speedKmh: number
 }
 
 function fail(message: string): never {
@@ -15,18 +18,19 @@ function fail(message: string): never {
 }
 
 /**
- * Draws radar contact blips. Aircraft themselves live in the world model and are
- * never drawn directly here — the player only sees a blip where a radar sweep
- * crossed one (fed in via `addContacts`), which then fades. This is the
- * every-frame / animated reaction pattern (like `RadarSweepLayer`): it redraws
- * each tick because its content is intrinsically time-varying, and its geometry
- * is world-space so blips stay glued to the ground as the camera pans/zooms —
- * only the on-screen dot size is re-derived per frame to stay constant.
+ * Draws radar contacts. Aircraft themselves live in the world model and are never
+ * drawn directly here — the player only sees a contact where a radar sweep crossed
+ * one. A contact holds its position at full brightness (no fade); it is expired by
+ * `removeWhere` the moment the sweep revisits its bearing, and re-added by
+ * `addContacts` only if a plane is still there — so a contact jumps forward one
+ * step per revolution and vanishes once its plane has moved on. Every-frame /
+ * animated layer (like `RadarSweepLayer`): its geometry is world-space so contacts
+ * stay glued to the ground as the camera pans/zooms, with only the on-screen icon
+ * size re-derived per frame to stay constant.
  */
 export class PlaneLayer {
   private readonly gfx: Phaser.GameObjects.Graphics
-  private readonly blips: Blip[] = []
-  private layerVisible = true
+  private contacts: Contact[] = []
 
   constructor(scene: Phaser.Scene) {
     this.gfx = scene.add.graphics().setDepth(DEPTH.planeBlips)
@@ -37,43 +41,71 @@ export class PlaneLayer {
   }
 
   setVisible(visible: boolean): void {
-    this.layerVisible = visible
     this.gfx.setVisible(visible)
   }
 
-  /** Paint fresh contacts (world-pixel points) reported by the radar sweep this frame. */
-  addContacts(contacts: ReadonlyArray<{ x: number; y: number }>): void {
+  /** Add contacts reported by the radar sweep this frame. */
+  addContacts(contacts: ReadonlyArray<Contact>): void {
     for (const c of contacts) {
       if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) {
         fail(`contact has a non-finite position (${c.x}, ${c.y})`)
       }
-      this.blips.push({ x: c.x, y: c.y, age: 0 })
+      if (!Number.isFinite(c.headingDeg)) fail(`contact has a non-finite heading: ${c.headingDeg}`)
+      if (!Number.isFinite(c.speedKmh) || c.speedKmh < 0) fail(`contact has an invalid speed: ${c.speedKmh}`)
+      this.contacts.push({ x: c.x, y: c.y, headingDeg: c.headingDeg, speedKmh: c.speedKmh })
     }
   }
 
-  /**
-   * Age every blip by `deltaSec`, drop the fully faded ones, and redraw the rest
-   * with opacity falling off by age. Ageing/pruning run even while hidden so the
-   * set stays bounded; drawing is skipped when the layer is off.
-   */
-  update(deltaSec: number, zoom: number): void {
-    if (!Number.isFinite(deltaSec) || deltaSec < 0) fail(`deltaSec must be finite and >= 0, got ${deltaSec}`)
-
+  /** Drop every contact matching `predicate` — used to expire the slice the sweep just passed. */
+  removeWhere(predicate: (contact: Contact) => boolean): void {
     let kept = 0
-    for (const blip of this.blips) {
-      blip.age += deltaSec
-      if (blip.age < PLANE.blipFadeSec) this.blips[kept++] = blip
+    for (const contact of this.contacts) {
+      if (!predicate(contact)) this.contacts[kept++] = contact
     }
-    this.blips.length = kept
+    this.contacts.length = kept
+  }
 
-    if (!this.layerVisible) return
+  /** Remove all contacts (e.g. when the aircraft are cleared). */
+  clear(): void {
+    this.contacts.length = 0
+  }
 
-    const radius = screenPxToWorld(PLANE.blipScreenRadius, zoom)
+  /** Redraw every contact as a heading-aligned diamond plus a speed-proportional velocity line. */
+  draw(zoom: number): void {
+    // Clamp the zoom used for sizing: at/above the lock the icon is constant on
+    // screen; below it the icon is world-anchored and scales with the terrain.
+    const sizeZoom = Math.max(zoom, PLANE.sizeLockZoom)
+    const halfLength = screenPxToWorld(PLANE.iconHalfLengthScreen, sizeZoom)
+    const halfWidth = screenPxToWorld(PLANE.iconHalfWidthScreen, sizeZoom)
+    const lineWidth = screenPxToWorld(PLANE.vectorLineScreenWidth, sizeZoom)
+
     this.gfx.clear()
-    for (const blip of this.blips) {
-      const alpha = (1 - blip.age / PLANE.blipFadeSec) * PLANE.blipMaxAlpha
-      this.gfx.fillStyle(PLANE.blipColor, alpha)
-      this.gfx.fillCircle(blip.x, blip.y, radius)
+    for (const contact of this.contacts) {
+      // Heading → pixel direction: north (0°) is up (−y, screen Y grows down),
+      // east (90°) is +x. Exact at the projection's mean latitude and within a
+      // few percent across this map's span, so no projector is needed here.
+      const headingRad = contact.headingDeg * DEG2RAD
+      const forwardX = Math.sin(headingRad)
+      const forwardY = -Math.cos(headingRad)
+      // Right-hand perpendicular to the heading — the diamond's across axis.
+      const rightX = -forwardY
+      const rightY = forwardX
+
+      const length = screenPxToWorld(PLANE.vectorScreenPxPerKmh * contact.speedKmh, sizeZoom)
+      this.gfx.lineStyle(lineWidth, PLANE.blipColor, PLANE.blipAlpha)
+      this.gfx.lineBetween(contact.x, contact.y, contact.x + forwardX * length, contact.y + forwardY * length)
+
+      // Diamond: nose (fore) → starboard → tail (aft) → port, wound in order.
+      this.gfx.fillStyle(PLANE.blipColor, PLANE.blipAlpha)
+      this.gfx.fillPoints(
+        [
+          new Phaser.Math.Vector2(contact.x + forwardX * halfLength, contact.y + forwardY * halfLength),
+          new Phaser.Math.Vector2(contact.x + rightX * halfWidth, contact.y + rightY * halfWidth),
+          new Phaser.Math.Vector2(contact.x - forwardX * halfLength, contact.y - forwardY * halfLength),
+          new Phaser.Math.Vector2(contact.x - rightX * halfWidth, contact.y - rightY * halfWidth),
+        ],
+        true,
+      )
     }
   }
 }

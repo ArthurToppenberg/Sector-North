@@ -193,7 +193,11 @@ export class MainScene extends Phaser.Scene {
     commands.register({
       name: 'clear-planes',
       description: 'Remove all simulated aircraft.',
-      run: () => `Removed ${this.sim.clear()} aircraft.`,
+      run: () => {
+        const removed = this.sim.clear()
+        this.planeLayer.clear()
+        return `Removed ${removed} aircraft.`
+      },
     })
     // Cities, airports and radars are shown by default; the toolbar toggles hide
     // them. One variable per layer feeds both the layer's start visibility and the
@@ -464,10 +468,15 @@ export class MainScene extends Phaser.Scene {
     this.sim.step(deltaSec)
     const targets = this.sim.all.map((a) => {
       const [x, y] = this.project(a.lon, a.lat)
-      return { x, y }
+      return { x, y, headingDeg: a.headingDeg, speedKmh: a.speedKmh }
     })
+    // A sweep either refreshes a contact (plane still there) or clears it (moved
+    // on / gone): expire the slice the hand just passed, then re-add whatever it
+    // detects there. Order matters — a detected target sits in the swept slice, so
+    // it must be re-added after the expiry, not before.
+    this.planeLayer.removeWhere((c) => this.radarSweepLayer.isSwept(c.x, c.y))
     this.planeLayer.addContacts(this.radarSweepLayer.detectSweptTargets(targets))
-    this.planeLayer.update(deltaSec, zoom)
+    this.planeLayer.draw(zoom)
   }
 
   update(_time: number, deltaMs: number) {

@@ -132,40 +132,62 @@ export class RadarSweepLayer {
   }
 
   /**
-   * Report which `targets` (world-pixel points) any radar's sweep hand crossed
-   * during the arc advanced by the most recent `update` — i.e. the contacts to
-   * paint this frame. A target counts for a site when it lies within that site's
-   * range ring AND its bearing from the site falls inside `(prevAngle, angle]`.
+   * Is world-pixel point `(x, y)` inside site `i`'s range ring AND the angular
+   * slice its hand swept during the most recent `update`? Bearings use the same
+   * convention as the drawn hand (`atan2` in world-pixel space, clockwise because
+   * screen Y grows down), so this exactly tracks where the visible sweep points.
    *
-   * Every site is tested, not just the one drawn (`update` advances all angles),
-   * so a target is detected by whichever coverage it is under. Returns each
-   * target's own position so the blip is painted where the aircraft was when
-   * scanned. Empty while the layer is hidden — a switched-off radar sees nothing.
-   *
-   * Bearings use the same convention as the drawn hand (`atan2` in world-pixel
-   * space, clockwise because screen Y grows down), so a painted blip lines up
-   * exactly with where the visible sweep points.
+   * Half-open arc (prevAngle, angle]: the closing edge counts, the opening edge
+   * does not, so a bearing on a frame boundary is swept exactly once (this frame's
+   * closing edge is next frame's excluded opening edge).
    */
-  detectSweptTargets(targets: ReadonlyArray<{ x: number; y: number }>): { x: number; y: number }[] {
+  private sweptBySite(i: number, x: number, y: number): boolean {
+    const swept = norm(this.angle[i] - this.prevAngle[i])
+    if (swept === 0) return false
+    const m = this.markers[i]
+    const dx = x - m.x
+    const dy = y - m.y
+    if (dx * dx + dy * dy > this.rangePx[i] * this.rangePx[i]) return false
+    const offset = norm(Math.atan2(dy, dx) - this.prevAngle[i])
+    return offset > 0 && offset <= swept
+  }
+
+  /**
+   * Report which `targets` (world-pixel points) any radar's sweep hand crossed
+   * this frame — the contacts to (re)paint. Every site is tested, not just the
+   * one drawn (`update` advances all angles), so a target is detected by whichever
+   * coverage it is under; a target under two hands at once is still returned once.
+   * Empty while the layer is hidden — a switched-off radar sees nothing.
+   *
+   * Generic in the target type: only `x`/`y` are read, and the matched targets
+   * are returned as-is, so any extra payload (heading, speed) rides through to
+   * the caller unchanged.
+   */
+  detectSweptTargets<T extends { x: number; y: number }>(targets: readonly T[]): T[] {
     if (!this.layerVisible) return []
-    const contacts: { x: number; y: number }[] = []
-    for (let i = 0; i < this.markers.length; i++) {
-      const swept = norm(this.angle[i] - this.prevAngle[i])
-      if (swept === 0) continue
-      const m = this.markers[i]
-      const rangeSq = this.rangePx[i] * this.rangePx[i]
-      for (const t of targets) {
-        const dx = t.x - m.x
-        const dy = t.y - m.y
-        if (dx * dx + dy * dy > rangeSq) continue
-        // Half-open arc (prevAngle, angle]: the closing edge counts, the opening
-        // edge does not, so a bearing on a frame boundary is detected exactly once
-        // (this frame's closing edge is next frame's excluded opening edge).
-        const offset = norm(Math.atan2(dy, dx) - this.prevAngle[i])
-        if (offset > 0 && offset <= swept) contacts.push({ x: t.x, y: t.y })
+    const contacts: T[] = []
+    for (const t of targets) {
+      for (let i = 0; i < this.markers.length; i++) {
+        if (this.sweptBySite(i, t.x, t.y)) {
+          contacts.push(t)
+          break
+        }
       }
     }
     return contacts
+  }
+
+  /**
+   * Whether any site's hand swept over world-pixel point `(x, y)` this frame —
+   * used to expire an existing contact the moment the sweep revisits its position
+   * (it is then repainted only if a plane is still there). False while hidden.
+   */
+  isSwept(x: number, y: number): boolean {
+    if (!this.layerVisible) return false
+    for (let i = 0; i < this.markers.length; i++) {
+      if (this.sweptBySite(i, x, y)) return true
+    }
+    return false
   }
 
   private selectSweepIndex(centerX: number, centerY: number): number {
