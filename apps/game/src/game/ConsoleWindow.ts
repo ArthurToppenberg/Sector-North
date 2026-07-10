@@ -19,13 +19,13 @@ function formatEntry(entry: LogEntry): string {
  * the fixed UI camera like the rest of the HUD, so it keeps a constant on-screen
  * size regardless of the map's zoom/pan.
  *
- * The whole log is one Text object clipped by a geometry mask to the viewport, and
- * scrolled by moving the text within it. (Crop was tried and abandoned: Text with
- * `resolution` renders into a DPR-scaled texture, so crop coordinates land in the
- * wrong texture space. A mask works in screen space and sidesteps that.) A scroll
- * bar on the right reflects the position and can be dragged. The view follows the
- * tail (newest line) until the user scrolls up, then holds until they return to the
- * bottom.
+ * Clipping is done by CONTENT, not a mask or crop: the Text only ever holds the
+ * wrapped lines that fit the viewport, so nothing can render outside it. (Crop
+ * lands in the wrong space for a DPR-scaled Text texture, and geometry masks are
+ * unreliable across the two-camera setup — both were tried.) Scroll position is an
+ * offset into the wrapped lines; a scroll bar on the right reflects it and can be
+ * dragged. The view follows the newest line until the user scrolls up, then holds
+ * until they return to the bottom.
  */
 export class ConsoleWindow {
   private readonly scene: Phaser.Scene
@@ -36,8 +36,6 @@ export class ConsoleWindow {
   private readonly closeButton: Phaser.GameObjects.Rectangle
   private readonly closeGlyph: Phaser.GameObjects.Text
   private readonly logText: Phaser.GameObjects.Text
-  /** Off-list graphics whose rect clips `logText` to the viewport. */
-  private readonly maskShape: Phaser.GameObjects.Graphics
   private readonly scrollTrack: Phaser.GameObjects.Rectangle
   /** Track hit area, resized in `layout` — a Rectangle's default hit area is
    * captured once at `setInteractive` and would not follow `setSize`. */
@@ -51,6 +49,9 @@ export class ConsoleWindow {
   /** Log text column width (inner width minus the scroll-bar gutter). */
   private readonly textWidth: number
   private readonly scrollbarWidth: number
+  /** Rendered height of the first log line, and the added height per extra line. */
+  private readonly firstLineHeight: number
+  private readonly lineHeight: number
 
   /** Panel top-left in device pixels — the single source of truth for its place. */
   private originX = 0
@@ -61,20 +62,18 @@ export class ConsoleWindow {
   private viewY = 0
   private viewHeight = 0
 
-  /**
-   * Pixels the log is scrolled down from its top. When `followTail` it is pinned
-   * to the bottom (newest visible) and re-pins as lines arrive; scrolling up breaks
-   * the follow and holds the view until the user returns to the bottom.
-   */
-  private scrollTop = 0
+  /** Every wrapped line of the current buffer, and the topmost one shown. */
+  private allLines: string[] = []
+  private scrollLine = 0
   private followTail = true
 
   /** Log content changed while hidden; re-rendered lazily on the next show. */
   private dirty = true
   private isVisible = false
 
-  /** Last string pushed to `logText`, so an unchanged buffer skips re-rastering. */
-  private lastText = ''
+  /** Cache guards so an unchanged buffer/slice skips re-wrapping and re-rastering. */
+  private lastFullText = ''
+  private shownText = ''
 
   constructor(scene: Phaser.Scene, onCloseRequested: () => void) {
     this.scene = scene
@@ -160,10 +159,14 @@ export class ConsoleWindow {
       .setOrigin(0, 0)
       .setDepth(contentDepth)
 
-    // Off the display list (so neither camera renders it), used only to stencil the
-    // log to the viewport. Its rect is (re)drawn in `layout`.
-    this.maskShape = scene.make.graphics({})
-    this.logText.setMask(this.maskShape.createGeometryMask())
+    // Measure the log font's line box so the viewport can be sized in whole lines.
+    // A one-line render gives the first line's height; a two-line render adds one
+    // full line advance (glyph height + lineSpacing).
+    this.logText.setText('M')
+    this.firstLineHeight = this.logText.height
+    this.logText.setText('M\nM')
+    this.lineHeight = Math.max(1, this.logText.height - this.firstLineHeight)
+    this.logText.setText('')
 
     // Track first, thumb second so the thumb draws on top. The track is the drag
     // target (fixed size → stable hit area); the thumb is a visual indicator.
@@ -252,8 +255,6 @@ export class ConsoleWindow {
 
   destroy(): void {
     this.unsubscribe()
-    this.logText.clearMask()
-    this.maskShape.destroy()
     for (const obj of this.objects) obj.destroy()
   }
 
@@ -263,24 +264,22 @@ export class ConsoleWindow {
   }
 
   private onWheel(deltaY: number): void {
-    const maxScroll = this.maxScroll()
-    if (maxScroll === 0) return
-    // deltaY > 0 (wheel toward the user) scrolls toward newer lines (down = larger
-    // scrollTop); deltaY < 0 scrolls toward older. Re-follow the tail once the user
-    // scrolls back to the very bottom.
-    this.scrollTop = Phaser.Math.Clamp(this.scrollTop + deltaY * CONSOLE.wheelFactor * DPR, 0, maxScroll)
-    this.followTail = this.scrollTop >= maxScroll
+    const maxOffset = this.maxOffset()
+    if (maxOffset === 0) return
+    const step = Math.max(1, Math.round((Math.abs(deltaY) / 100) * CONSOLE.wheelLinesPerNotch))
+    this.scrollLine = Phaser.Math.Clamp(this.scrollLine + Math.sign(deltaY) * step, 0, maxOffset)
+    this.followTail = this.scrollLine >= maxOffset
     this.applyScroll()
   }
 
   /** Drag/click on the scroll track: centre the thumb on the pointer. */
   private scrollToPointer(pointer: Phaser.Input.Pointer): void {
-    const maxScroll = this.maxScroll()
+    const maxOffset = this.maxOffset()
     const travel = this.viewHeight - this.thumbHeight()
-    if (maxScroll === 0 || travel <= 0) return
+    if (maxOffset === 0 || travel <= 0) return
     const t = Phaser.Math.Clamp((pointer.y - this.viewY - this.thumbHeight() / 2) / travel, 0, 1)
-    this.scrollTop = t * maxScroll
-    this.followTail = t >= 1
+    this.scrollLine = Math.round(t * maxOffset)
+    this.followTail = this.scrollLine >= maxOffset
     this.applyScroll()
   }
 
@@ -297,39 +296,53 @@ export class ConsoleWindow {
   private renderIfDirty(): void {
     if (!this.dirty) return
     this.dirty = false
-    const text = log
+    const full = log
       .snapshot()
       .map(formatEntry)
       .join('\n')
-    if (text !== this.lastText) {
-      this.lastText = text
-      this.logText.setText(text)
+    if (full !== this.lastFullText) {
+      this.lastFullText = full
+      // Wrap once against the text column so scrolling counts real visual lines.
+      this.allLines = full === '' ? [] : this.logText.getWrappedText(full)
     }
     this.applyScroll()
   }
 
-  /** Max pixels the log can scroll: content taller than the viewport, else 0. */
-  private maxScroll(): number {
-    return Math.max(0, this.logText.height - this.viewHeight)
+  /** How many whole lines fit the viewport (first line plus as many advances as fit). */
+  private visibleLineCount(): number {
+    if (this.viewHeight < this.firstLineHeight) return 0
+    return 1 + Math.floor((this.viewHeight - this.firstLineHeight) / this.lineHeight)
   }
 
-  /** Thumb height: viewport shrunk by the content overflow, floored so it stays grabbable. */
+  /** Topmost line index the log can be scrolled to (content lines beyond the viewport). */
+  private maxOffset(): number {
+    return Math.max(0, this.allLines.length - this.visibleLineCount())
+  }
+
+  /** Scroll-thumb height: track shrunk by the fraction of lines off-screen, floored. */
   private thumbHeight(): number {
-    const contentHeight = this.logText.height
-    if (contentHeight <= this.viewHeight || contentHeight === 0) return this.viewHeight
-    const proportional = (this.viewHeight * this.viewHeight) / contentHeight
-    return Math.max(CONSOLE.scrollbarMinThumbScreen * DPR, proportional)
+    const total = this.allLines.length
+    const visible = this.visibleLineCount()
+    if (total <= visible || total === 0) return this.viewHeight
+    return Math.max(CONSOLE.scrollbarMinThumbScreen * DPR, (this.viewHeight * visible) / total)
   }
 
-  /** Position the log and the scroll thumb for the current `scrollTop`. */
+  /** Show the line slice at the current offset and place the scroll thumb. */
   private applyScroll(): void {
-    const maxScroll = this.maxScroll()
-    this.scrollTop = this.followTail ? maxScroll : Phaser.Math.Clamp(this.scrollTop, 0, maxScroll)
-    this.logText.setPosition(this.viewX, this.viewY - this.scrollTop)
+    const maxOffset = this.maxOffset()
+    this.scrollLine = this.followTail ? maxOffset : Phaser.Math.Clamp(this.scrollLine, 0, maxOffset)
+
+    const visible = this.visibleLineCount()
+    const slice = this.allLines.slice(this.scrollLine, this.scrollLine + visible).join('\n')
+    if (slice !== this.shownText) {
+      this.shownText = slice
+      this.logText.setText(slice)
+    }
+    this.logText.setPosition(this.viewX, this.viewY)
 
     const th = this.thumbHeight()
     const travel = this.viewHeight - th
-    const t = maxScroll > 0 ? this.scrollTop / maxScroll : 0
+    const t = maxOffset > 0 ? this.scrollLine / maxOffset : 0
     this.scrollThumb.setSize(this.scrollbarWidth, th)
     this.scrollThumb.setPosition(this.viewX + this.innerWidth - this.scrollbarWidth, this.viewY + travel * t)
   }
@@ -354,11 +367,6 @@ export class ConsoleWindow {
     this.viewY = ay + pad + headerHeight + headerGap
     this.viewHeight = ay + this.panelHeight - pad - this.viewY
     if (this.viewHeight <= 0) fail(`console height ${CONSOLE.heightScreen} is too small for its header + padding`)
-
-    // Clip the log to the text column of the viewport.
-    this.maskShape.clear()
-    this.maskShape.fillStyle(0xffffff)
-    this.maskShape.fillRect(this.viewX, this.viewY, this.textWidth, this.viewHeight)
 
     this.scrollTrack.setSize(this.scrollbarWidth, this.viewHeight)
     this.scrollTrackHit.height = this.viewHeight

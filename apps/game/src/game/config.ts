@@ -369,11 +369,11 @@ export const CONSOLE = {
   closeButtonHoverFillAlpha: 1,
   closeGlyphHoverColor: '#000000',
   /**
-   * Wheel-scroll gain: device pixels the log scrolls per unit of wheel `deltaY`.
-   * A full notch (deltaY ≈ 100) moves it ~50·DPR px. Wheel events over the panel
-   * scroll the log and are swallowed so the map underneath doesn't also zoom.
+   * Log lines scrolled per full wheel notch (deltaY ≈ 100); scaled by the actual
+   * delta, floored at one line. Wheel events over the panel scroll the log and are
+   * swallowed so the map underneath doesn't also zoom.
    */
-  wheelFactor: 0.5,
+  wheelLinesPerNotch: 3,
 } as const
 
 // ── Camera & input ─────────────────────────────────────────────────────────
