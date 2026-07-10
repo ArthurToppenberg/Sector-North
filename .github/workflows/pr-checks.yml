@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  typecheck:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -27,3 +27,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm typecheck
+
+      - run: pnpm build
