@@ -138,12 +138,16 @@ lon/lat becomes pixels.
     every zoom, so — unlike the static marker layers — it needs no zoom handler / `onZoomChanged`
     wiring: only the stroke widths are re-derived per frame (via `screenPxToWorld`) to hold a
     constant on-screen thickness. **Clutter reduction:** every site's sweep angle still advances
-    every frame while visible, but only the single site nearest the camera's current view centre
-    actually draws its range ring and sweep hand each frame — the rest advance silently
-    off-screen. Angles are never reset when a site gains or loses "nearest" status, so whichever
-    site becomes nearest is already at its correct, continuous phase rather than snapping to
-    zero; the starting angles are staggered at construction (one full turn spread evenly across
-    the sites) for the same reason on the very first frame.
+    every frame while visible, but only a single site actually draws its range ring and sweep
+    hand each frame — the rest advance silently off-screen. The drawn site is coverage-first
+    (`RadarSweepLayer.selectSweepIndex`): a radar whose range ring *contains* the view centre
+    beats one that doesn't (so a nearer but smaller-range radar loses to a farther radar you're
+    actually inside), and the physically nearest breaks ties within a containment tier; if the
+    centre is inside no ring, the nearest overall is drawn so a sweep always shows. Angles are
+    never reset when a site gains or loses the "drawn" status, so whichever site becomes the
+    drawn one is already at its correct, continuous phase rather than snapping to zero; the
+    starting angles are staggered at construction (one full turn spread evenly across the sites)
+    for the same reason on the very first frame.
 - **Two cameras:** the main camera draws only world layers; a fixed UI camera (zoom 1, no
   scroll) draws only the HUD, so HUD elements keep a constant on-screen size. Each camera
   `ignore()`s the other's objects. Register any new object with the correct camera.
@@ -178,9 +182,8 @@ lon/lat becomes pixels.
   (its own `DEPTH.radarSweep`, toggled together with the radar markers): a faint world-space
   range ring plus an animated rotating sweep hand, sized by the site's real `rangeKm` — the
   one HUD element in phosphor green (`MAP.strokeColor`), the sanctioned colour exception (see
-  the root `CLAUDE.md` HUD rule and `RADAR.sweep`). Only the site nearest the current view
-  centre draws its coverage each frame — see the clutter-reduction rule in the "Every-frame /
-  animated" bullet above.
+  the root `CLAUDE.md` HUD rule and `RADAR.sweep`). Only one site draws its coverage each frame
+  — see the coverage-first selection rule in the "Every-frame / animated" bullet above.
 - **The coastline is drawn as world-space vectors, not a baked texture** — so the outline
   stays a crisp hairline at any zoom and the camera transform makes pan/zoom free (no
   per-frame re-tessellation). Its world-space line width is recompensated on zoom to hold a

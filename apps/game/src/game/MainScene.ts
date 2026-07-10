@@ -335,7 +335,8 @@ export class MainScene extends Phaser.Scene {
     // Radar sweeps animate on real elapsed time, so they must advance every frame —
     // including while the camera is idle. Run before the camera-dirty early-out below.
     // The view centre (from the canonical live-scroll helper, not the render-lagged
-    // cam.worldView) picks the single nearest radar to sweep.
+    // cam.worldView) picks the single radar to sweep — the one whose coverage the
+    // centre is under (see RadarSweepLayer.selectSweepIndex).
     const view = cameraWorldView(cam)
     this.radarSweepLayer.update(deltaMs / 1000, cam.zoom, view.centerX, view.centerY)
 
