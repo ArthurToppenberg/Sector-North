@@ -146,6 +146,53 @@ export const RADAR = {
   },
 } as const
 
+/**
+ * Simulated air traffic. Aircraft fly in the background at all times (their
+ * real lon/lat is the source of truth — see `src/map/aircraft.ts`); the player
+ * only ever sees a **contact** painted where a radar sweep last passed over one.
+ * There is no fade: a contact stays put at full brightness until the hand comes
+ * back around to its bearing, which either repaints it at the plane's new
+ * position (still there) or clears it (moved on / gone). So a contact jumps
+ * forward one step per revolution and holds its last-seen spot in between.
+ *
+ * Contacts are drawn in white (the HUD default), distinct from the phosphor-green
+ * coverage sweep that reveals them.
+ */
+export const PLANE = {
+  /**
+   * Contact icon: a diamond pointing along the plane's heading. Half-extents on
+   * screen (CSS pixels), held constant across zoom — the along-heading half is
+   * longer than the across half so the diamond clearly points which way the
+   * plane is flying.
+   */
+  iconHalfLengthScreen: 9,
+  iconHalfWidthScreen: 5,
+  /**
+   * Zoom at/above which the contact icon holds a constant on-screen size (fixed
+   * when zoomed in). Below it the icon is world-anchored, so it scales on screen
+   * with the terrain as you zoom out. Implemented by clamping the zoom fed to
+   * `screenPxToWorld` to at least this value — continuous at the threshold. Sits
+   * inside the reachable range (`ZOOM.min`..`ZOOM.max` = 6.5..40).
+   */
+  sizeLockZoom: 30,
+  /**
+   * Velocity vector drawn from each blip in the plane's heading, its on-screen
+   * length proportional to speed at this many CSS pixels per km/h (so 800 km/h ≈
+   * 24 px). Held constant on screen like the circle, not scaled with the world.
+   */
+  vectorScreenPxPerKmh: 0.03,
+  /** Velocity-vector line width on screen (CSS pixels). */
+  vectorLineScreenWidth: 1.25,
+  /** Contact colour — white (HUD default). */
+  blipColor: 0xffffff,
+  /** Contact opacity — constant (no fade); a contact is either shown or cleared. */
+  blipAlpha: 0.9,
+  /** Cruise speed (km/h) given to test aircraft spawned via `/spawn-planes`. */
+  spawnSpeedKmh: 800,
+  /** How many aircraft `/spawn-planes` creates when no count is given. */
+  defaultSpawnCount: 8,
+} as const
+
 // Faint real-world reference grid drawn beneath the map.
 export const GRID = {
   /** Cell size on the ground, in kilometres (square). */
@@ -184,6 +231,9 @@ export const DEPTH = {
   // layer: the large, faint rings and rotating hands wash behind the city/airport/
   // radar glyphs so those stay legible on top.
   radarSweep: 15,
+  // Radar contact blips sit just above the coverage sweep that paints them, but
+  // beneath the marker glyphs so the (sparse) infrastructure icons stay legible.
+  planeBlips: 16,
   cityDots: 20,
   cityLabels: 30,
   // Airports sit just above the city labels so their markers/labels aren't
@@ -380,6 +430,14 @@ export const CONSOLE = {
   inputGapScreen: 6,
   caretWidthScreen: 7,
   caretBlinkMs: 530,
+  /**
+   * Autocomplete ghost: the best prefix-matching command's remaining letters,
+   * shown inline after the typed text and completed on Tab. Dimmed via alpha on
+   * white (not a grey hue) so it stays within the white/black HUD rule for
+   * console chrome — the level-colour exception covers only the log lines, not
+   * the input row.
+   */
+  suggestionAlpha: 0.4,
   /** Extra leading between log lines (CSS pixels). */
   lineSpacingScreen: 3,
   /** Scroll bar (right edge of the log viewport). White per the HUD rule; the
@@ -430,7 +488,7 @@ export const SUBWOOFER = {
  * (rather than a fixed step per event) keeps a trackpad — which fires a rapid stream of
  * small-delta events — from compounding into runaway zoom.
  */
-export const ZOOM = { min: 6.5, max: 40, step: 1.12, deltaPerStep: 100 } as const
+export const ZOOM = { min: 6.5, max: 60, step: 1.12, deltaPerStep: 100 } as const
 
 /**
  * Max pointer travel (CSS pixels, press → release) still treated as a click

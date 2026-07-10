@@ -43,6 +43,8 @@ export class ConsoleWindow {
   /** Off-screen Text used only to wrap each entry against the column width. */
   private readonly measure: Phaser.GameObjects.Text
   private readonly inputText: Phaser.GameObjects.Text
+  /** Dimmed inline autocomplete continuation drawn after the typed text. */
+  private readonly ghostText: Phaser.GameObjects.Text
   private readonly caret: Phaser.GameObjects.Rectangle
   private readonly scrollTrack: Phaser.GameObjects.Rectangle
   /** Track hit area, resized in `layout` — a Rectangle's default hit area is
@@ -211,6 +213,14 @@ export class ConsoleWindow {
       .text(0, 0, CONSOLE.inputPrompt, { ...logStyle, color: CONSOLE.inputColor })
       .setOrigin(0, 0)
       .setDepth(contentDepth)
+    // Ghost autocomplete continuation, dimmed via alpha so it reads as a hint
+    // behind the live input. Positioned flush after `inputText` in `refreshInput`.
+    this.ghostText = scene.add
+      .text(0, 0, '', { ...logStyle, color: CONSOLE.inputColor })
+      .setOrigin(0, 0)
+      .setAlpha(CONSOLE.suggestionAlpha)
+      .setDepth(contentDepth)
+      .setVisible(false)
     this.caret = scene.add
       .rectangle(0, 0, CONSOLE.caretWidthScreen * DPR, this.firstLineHeight, CONSOLE.borderColor, 1)
       .setOrigin(0, 0)
@@ -296,6 +306,7 @@ export class ConsoleWindow {
       this.measure,
       ...this.lineTexts,
       this.inputText,
+      this.ghostText,
       this.caret,
       this.scrollTrack,
       this.scrollThumb,
@@ -316,11 +327,16 @@ export class ConsoleWindow {
     // immediately visible rather than possibly mid-off-phase.
     this.caretOn = true
     this.caret.setVisible(visible)
+    if (!visible) this.ghostText.setVisible(false)
     // A hidden panel must not eat clicks or wheel events meant for the map.
     if (this.panel.input) this.panel.input.enabled = visible
     if (this.closeButton.input) this.closeButton.input.enabled = visible
     if (this.scrollTrack.input) this.scrollTrack.input.enabled = visible
-    if (visible) this.renderIfDirty()
+    if (visible) {
+      this.renderIfDirty()
+      // The buffer persists across open/close, so recompute the ghost on show.
+      this.refreshInput()
+    }
   }
 
   /** Keep the (draggable) panel on screen after a resize; its origin is absolute. */
@@ -356,6 +372,8 @@ export class ConsoleWindow {
     const { key } = event
     if (key === 'Enter') {
       this.submit()
+    } else if (key === 'Tab') {
+      this.applySuggestion()
     } else if (key === 'Backspace') {
       this.inputBuffer = this.inputBuffer.slice(0, -1)
       this.refreshInput()
@@ -408,7 +426,47 @@ export class ConsoleWindow {
 
   private refreshInput(): void {
     this.inputText.setText(CONSOLE.inputPrompt + this.inputBuffer)
-    this.caret.setPosition(this.inputText.x + this.inputText.width, this.inputText.y)
+    const caretX = this.inputText.x + this.inputText.width
+    this.caret.setPosition(caretX, this.inputText.y)
+    this.refreshGhost(caretX)
+  }
+
+  /**
+   * The best command-name completion for the current buffer, or null when none
+   * applies. Only the command-name token is completed — an argument separator
+   * (space) in the buffer means the name is settled, so no suggestion. A leading
+   * "/" is tolerated (and preserved by `applySuggestion`). Hidden commands are
+   * never suggested — they are meant to be discovered, like `/help` omits them.
+   * The registry lists names alphabetically, so the first prefix match wins.
+   */
+  private currentSuggestion(): string | null {
+    const buffer = this.inputBuffer
+    if (buffer === '' || /\s/.test(buffer)) return null
+    const typed = (buffer.startsWith('/') ? buffer.slice(1) : buffer).toLowerCase()
+    if (typed === '') return null
+    const match = commands.list().find((c) => !c.hidden && c.name !== typed && c.name.startsWith(typed))
+    return match ? match.name : null
+  }
+
+  /** Draw the suggestion's trailing letters flush after the typed text, or hide it. */
+  private refreshGhost(caretX: number): void {
+    const suggestion = this.currentSuggestion()
+    if (suggestion === null || !this.isVisible) {
+      this.ghostText.setVisible(false)
+      return
+    }
+    const typedLength = (this.inputBuffer.startsWith('/') ? this.inputBuffer.length - 1 : this.inputBuffer.length)
+    this.ghostText.setText(suggestion.slice(typedLength))
+    this.ghostText.setPosition(caretX, this.inputText.y)
+    this.ghostText.setVisible(true)
+  }
+
+  /** Complete the command name to the current suggestion, preserving a leading "/". */
+  private applySuggestion(): void {
+    const suggestion = this.currentSuggestion()
+    if (suggestion === null) return
+    this.inputBuffer = (this.inputBuffer.startsWith('/') ? '/' : '') + suggestion
+    this.refreshInput()
   }
 
   private readonly blinkCaret = (): void => {
