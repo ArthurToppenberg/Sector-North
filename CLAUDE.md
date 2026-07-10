@@ -5,6 +5,10 @@
 Committing directly to `main` is **never allowed**. All changes must land on `main`
 through a pull request.
 
+- **Always ask the developer for explicit permission before running `git commit`,
+  `git push`, or opening a pull request.** Never commit, push, or create a PR on your own
+  initiative — stage the work, show what you're about to do, and wait for a clear go-ahead
+  each time. Prior approval for one commit/push/PR does not carry over to the next.
 - Never `git commit` (or push) onto the `main` branch.
 - **Before starting work**, get onto the right branch: either create a new branch whose
   name reflects the work you're about to do, or switch to an existing branch that already
