@@ -3,6 +3,8 @@
 A browser game set on a real map of Denmark, built with [Phaser 4](https://phaser.io/),
 [Vite](https://vitejs.dev/), and TypeScript.
 
+🌐 **Play it live: [sectornorth.arthurtoppenberg.dk](https://sectornorth.arthurtoppenberg.dk)**
+
 ![Sector-North — the Danish coastline with city markers](docs/screenshot.png)
 
 ## Vision
