@@ -5,13 +5,6 @@ import odenseUrl from './assets/city/odense-hc-andersen-house.jpg?url'
 import aalborgUrl from './assets/city/aalborg-utzon-center.jpg?url'
 import esbjergUrl from './assets/city/esbjerg-men-at-sea.jpg?url'
 
-/**
- * A city's info-window photograph: the Phaser texture key it loads under, the
- * emitted asset URL to load it from, and the on-screen attribution caption the
- * source licence requires (see `assets/city/CREDITS.md`). Mirrors the radar photo
- * join in `radarImages.ts` — the seam between pure world data (`src/map/cities.ts`)
- * and the bundled photos, kept out of the map layer on purpose.
- */
 export interface CityImageAsset {
   readonly textureKey: string
   readonly url: string

@@ -76,13 +76,9 @@ export class MainScene extends Phaser.Scene {
     preloadCityImages(this)
     preloadRadarImages(this)
 
-    // Fetch the country boundaries. Phaser's loader parses each into the JSON
-    // cache before `create` runs; we read + validate them there.
     for (const { name, url } of BOUNDARY_ASSETS) {
       this.load.json(this.boundaryCacheKey(name), url)
     }
-    // The city/airport/radar datasets ship the same way — standalone `?url`
-    // files fetched into the JSON cache here, validated in `create`.
     this.load.json(CITIES_ASSET.cacheKey, CITIES_ASSET.url)
     this.load.json(AIRPORTS_ASSET.cacheKey, AIRPORTS_ASSET.url)
     this.load.json(RADARS_ASSET.cacheKey, RADARS_ASSET.url)
@@ -93,11 +89,8 @@ export class MainScene extends Phaser.Scene {
   }
 
   create() {
-    // Load + validate the world data (each throws loudly on anything unexpected).
     const getJson = (name: string) => this.cache.json.get(this.boundaryCacheKey(name))
     const geometry = loadBoundaries(getJson)
-    // The projection/zoom is pinned to a fixed frame (the original Denmark-centred
-    // set), so boundaries added purely for context don't rescale the map.
     const frame = loadBoundaries(getJson, PROJECTION_FRAME_ASSETS)
     const cities = loadMajorCities(this.cache.json.get(CITIES_ASSET.cacheKey))
     const airports = loadAirports(this.cache.json.get(AIRPORTS_ASSET.cacheKey))
@@ -117,7 +110,6 @@ export class MainScene extends Phaser.Scene {
 
     const poiInputs = this.buildColocationInputs(airports, radars)
     const poiClusters = clusterByProximity(poiInputs, COLOCATION_RADIUS_KM)
-    // Initial labels: everything visible.
     const initialLabels = resolveColocationLabels(poiInputs, poiClusters, poiInputs.map(() => true))
 
     const cityMarkers = this.buildCityMarkers(cities, projected.project)
@@ -148,9 +140,6 @@ export class MainScene extends Phaser.Scene {
     const radarLayer = new RadarLayer(this, radarMarkers, (index) => {
       this.infoWindows.toggle(`radar:${index}`, this.radarWindowContent(radars[index]))
     })
-    // The developer console: a HUD panel that surfaces the shared logger's output.
-    // Created here (before `setupCameras`) so its objects join the UI-camera list
-    // below. Closing it via its own button flips the toolbar's developer glyph back.
     this.consoleWindow = new ConsoleWindow(this, () => this.setConsoleOpen(false))
     // Easter-egg command wired here (not in the pure registry) because it needs the
     // scene to play audio and draw the overlay; it captures `subwoofer` by closure.
@@ -280,13 +269,6 @@ export class MainScene extends Phaser.Scene {
     this.game.events.emit(APP_READY_EVENT)
   }
 
-  /**
-   * Single path for opening/closing the console, so the window, the toolbar glyph,
-   * and the "/" key never drift. `Toolbar.setActive` is a no-op when the glyph is
-   * already in the target state, so routing a toolbar press back through here is safe.
-   * While the console is open its input row captures typing, so the camera's WASD/arrow
-   * pan is suspended — otherwise typing a command would also drive the map.
-   */
   private setConsoleOpen(open: boolean): void {
     if (open === this.consoleOpen) return
     this.consoleOpen = open
