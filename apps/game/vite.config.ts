@@ -103,7 +103,6 @@ function renderTable(title: string, columns: Column[], groups: RowGroup[], total
   const dash = (n: number) => '─'.repeat(n)
   const aligns = columns.map((col) => col.align)
 
-  // Column widths: widest of header, every body/subtotal row, and the total row.
   const allRows = [...groups.flatMap((g) => (g.subtotal ? [...g.rows, g.subtotal] : g.rows)), total]
   const widths = columns.map((col, i) =>
     Math.max(col.header.length, ...allRows.map((row) => row[i].length)),
@@ -132,7 +131,6 @@ function renderTable(title: string, columns: Column[], groups: RowGroup[], total
   return out.join('\n')
 }
 
-/** One boundary asset's before/after minification measurement. */
 interface MinifyResult {
   name: string
   before: number
@@ -141,7 +139,6 @@ interface MinifyResult {
   gzip: number
 }
 
-/** Render the JSON minification measurements as a shared-style table. */
 function renderReport(results: MinifyResult[]): string {
   const c = makeColors()
   const pct = (before: number, after: number) =>

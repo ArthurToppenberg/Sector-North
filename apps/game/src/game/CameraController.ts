@@ -102,8 +102,6 @@ export class CameraController {
     this.installDragPan(scene)
     this.moveKeys = this.installKeyboardPan(scene)
 
-    // Frame is already centred; make sure it starts inside the clamp range, then
-    // let the zoom-reactive layers render at the initial zoom set above.
     this.clampCamera()
     this.onZoomChanged(this.cam.zoom)
   }

@@ -17,7 +17,6 @@ function formatReadout(cam: Phaser.Cameras.Scene2D.Camera, view: WorldView): str
   )
 }
 
-/** Top-right debug readout (camera centre + zoom). */
 export class DebugHud {
   // Needed by `reposition()` to re-pin to the (new) top-right corner on resize.
   private readonly scene: Phaser.Scene

@@ -44,7 +44,6 @@ function assertMarkers(markers: readonly RadarMarker[]): void {
   })
 }
 
-/** Renders radar-site markers (hollow circles) and their name+model labels. */
 export class RadarLayer {
   private readonly scene: Phaser.Scene
   private readonly markers: readonly RadarMarker[]
@@ -98,7 +97,6 @@ export class RadarLayer {
         align: 'center',
         resolution: DPR,
       })
-      // Anchor bottom-centre so the label sits above its marker, centred on it.
       .setOrigin(0.5, 1)
       .setDepth(DEPTH.radarLabels)
   }
@@ -120,7 +118,6 @@ export class RadarLayer {
       if (visible) zone.setInteractive({ useHandCursor: true })
       else zone.disableInteractive()
     }
-    // Recompute labels for the new master state at the current zoom.
     this.onZoomChanged(this.currentZoom())
   }
 

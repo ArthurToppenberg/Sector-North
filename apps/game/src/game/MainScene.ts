@@ -83,7 +83,6 @@ export class MainScene extends Phaser.Scene {
     this.load.json(AIRPORTS_ASSET.cacheKey, AIRPORTS_ASSET.url)
     this.load.json(RADARS_ASSET.cacheKey, RADARS_ASSET.url)
 
-    // The `/subwoofer` easter-egg photo + sound (see `Subwoofer`).
     this.load.image(SUBWOOFER_IMAGE_KEY, subwooferImageUrl)
     this.load.audio(SUBWOOFER_AUDIO_KEY, subwooferAudioUrl)
   }
@@ -147,6 +146,7 @@ export class MainScene extends Phaser.Scene {
     commands.register({
       name: 'subwoofer',
       description: 'Drop the bass.',
+      hidden: true,
       run: () => {
         this.subwoofer.trigger()
         return 'BWAAAAH'
