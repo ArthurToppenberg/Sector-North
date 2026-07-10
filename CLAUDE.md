@@ -1,13 +1,32 @@
 # Project rules for Claude
 
-## Never commit to main — always open a PR
+## Never commit to main — always work on a branch with a PR
 
 Committing directly to `main` is **never allowed**. All changes must land on `main`
 through a pull request.
 
-- Never `git commit` (or push) onto the `main` branch. Do work on a feature branch.
-- Always create the PR using the **`pr` skill** — do not open PRs by hand with raw
-  `gh`/`git` commands. Invoke it via the Skill tool (`/pr`).
+- **Always ask the developer for explicit permission before running `git commit`,
+  `git push`, or opening a pull request.** Never commit, push, or create a PR on your own
+  initiative — stage the work, show what you're about to do, and wait for a clear go-ahead
+  each time. Prior approval for one commit/push/PR does not carry over to the next.
+- Never `git commit` (or push) onto the `main` branch.
+- **Before starting work**, get onto the right branch: either create a new branch whose
+  name reflects the work you're about to do, or switch to an existing branch that already
+  has an open PR for this line of work. Do all the work on that branch — never on `main`.
+- **When you're done working on something**, ship it: if the branch already has an open
+  PR, push the new commits to it; otherwise open a new PR from the branch.
+- **Both commit messages and PR titles MUST follow**
+  [Conventional Commits](https://www.conventionalcommits.org/) — no exceptions:
+  `<type>(<optional scope>): <imperative, lower-case summary>` — e.g. `feat(map): add radar sweep`.
+  - The message/title **must start with one of these `type` prefixes**, followed by
+    `:` (or `(scope):`): `feat`, `fix`, `refactor`, `chore`, `docs`, `perf`, `test`,
+    `build`, `ci`, `style`, `revert`. Pick the one that best describes the change.
+  - The scope is optional and names the area touched, e.g. `feat(map):`, `docs(readme):`.
+  - The summary is imperative and lower-case (`add radar sweep`, not `Added radar sweep`).
+  - A commit or PR title that doesn't parse under this convention is not acceptable — fix
+    it before committing or opening the PR.
+- Write PR descriptions grounded in the actual diff — never invent motivation or claim a
+  check you didn't run.
 
 ## Core architecture: GPS is the source of truth
 
