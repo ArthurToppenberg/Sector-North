@@ -19,6 +19,7 @@ import { AirportLayer, type AirportMarker } from './AirportLayer'
 import { RadarLayer, type RadarMarker } from './RadarLayer'
 import { RadarSweepLayer, type RadarSweepMarker } from './RadarSweepLayer'
 import { CameraController, type CenterBounds } from './CameraController'
+import { cameraWorldView } from './camera'
 import { DebugHud } from './DebugHud'
 import { Toolbar } from './Toolbar'
 import { type InfoWindowContent } from './InfoWindow'
@@ -28,9 +29,6 @@ import { preloadRadarImages, radarImageAsset } from './radarImages'
 const AIRPORT_LABEL_PRIORITY: Record<AirportTier, number> = { military: 0, major: 1, minor: 2 }
 const RADAR_LABEL_PRIORITY = 3
 
-/**
- * Composition root: loads & projects the world, wires layers/camera/HUD, forwards signals.
- */
 export class MainScene extends Phaser.Scene {
   private gridLayer!: GridLayer
   // Held as a field (unlike the city/airport/radar marker layers, which stay
@@ -125,8 +123,7 @@ export class MainScene extends Phaser.Scene {
     const airportLayer = new AirportLayer(this, airportMarkers)
     // Clicking a radar opens a fresh detail window. The layer reports the site
     // index; the scene owns the radar records and the window manager, so it maps
-    // one to the other. The manager (not `setupCameras`) routes each new window's
-    // objects to the UI camera, since windows are created on click, later.
+    // one to the other.
     this.infoWindows = new InfoWindowManager(this, this.cameras.main)
     const radarLayer = new RadarLayer(this, radarMarkers, (index) =>
       this.infoWindows.toggle(`radar:${index}`, this.radarWindowContent(radars[index])),
@@ -157,9 +154,6 @@ export class MainScene extends Phaser.Scene {
       radarLayer.setLabels(resolved.slice(airports.length))
     }
 
-    // Toolbar toggles the city, airport and radar markers. Each button owns its
-    // on/off state and only hands us the new value — the scene wires that to the
-    // layers, then re-resolves the shared labels for the new visibility.
     this.toolbar = new Toolbar(this, [
       { id: 'cities', initialActive: citiesVisible, onToggle: (active) => cityLayer.setVisible(active) },
       {
@@ -260,12 +254,6 @@ export class MainScene extends Phaser.Scene {
     })
   }
 
-  /**
-   * Map a radar record to the generic detail-window content. This is the radar's
-   * adapter to the type-agnostic `InfoWindow`; towns and airfields get their own
-   * such builder when they become clickable. Null altitude is shown as an honest
-   * "N/A" (a 2D radar publishes no ceiling) — not a masked zero.
-   */
   private radarWindowContent(radar: Radar): InfoWindowContent {
     // Only some sites have a usable photo; the rest fall back to the placeholder.
     const image = radarImageAsset(radar.name)
@@ -346,7 +334,10 @@ export class MainScene extends Phaser.Scene {
 
     // Radar sweeps animate on real elapsed time, so they must advance every frame —
     // including while the camera is idle. Run before the camera-dirty early-out below.
-    this.radarSweepLayer.update(deltaMs / 1000, cam.zoom)
+    // The view centre (from the canonical live-scroll helper, not the render-lagged
+    // cam.worldView) picks the single nearest radar to sweep.
+    const view = cameraWorldView(cam)
+    this.radarSweepLayer.update(deltaMs / 1000, cam.zoom, view.centerX, view.centerY)
 
     if (cam.scrollX === this.lastScrollX && cam.scrollY === this.lastScrollY && cam.zoom === this.lastZoom) {
       // Camera hasn't moved this frame — the grid slice and HUD readout are still

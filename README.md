@@ -41,7 +41,8 @@ pnpm dev
 
 Then open the URL Vite prints (typically `http://localhost:5173`). You should see the
 Danish coastline (with its neighbouring countries) plus city, airport, and radar-site
-markers, the radar sites showing animated coverage sweeps sized to their real range —
+markers, with the radar nearest the current view centre showing an animated coverage
+sweep and range ring sized to its real range —
 scroll to zoom (anchored under the cursor), and pan by click-dragging or with
 WASD / arrow keys. Click a radar-site marker to open a draggable detail window
 showing the site's name, a photo where available, and its specs.
