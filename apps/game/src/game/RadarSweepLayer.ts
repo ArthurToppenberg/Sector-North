@@ -63,7 +63,8 @@ export class RadarSweepLayer {
     assertPixelsPerKm(pixelsPerKm)
     this.markers = markers
     this.rangePx = markers.map((m) => m.rangeKm * pixelsPerKm)
-    // Stagger the starting angles so the sites don't sweep in visual lockstep.
+    // Stagger the starting angles so whichever site becomes nearest is already at
+    // a sensible phase rather than all starting at zero.
     this.angle = markers.map((_, i) => (i / markers.length) * TAU)
     this.gfx = scene.add.graphics().setDepth(DEPTH.radarSweep)
   }
@@ -81,33 +82,56 @@ export class RadarSweepLayer {
    * Advance every sweep by `deltaSec` real seconds and redraw. Rotation is one
    * full turn per site's `updateIntervalSec`; `zoom` holds the on-screen stroke
    * width constant. Does nothing while hidden.
+   *
+   * `(centerX, centerY)` is the camera's world-space view centre, used to pick
+   * the nearest site to actually draw (see the clutter-reduction rule in
+   * `apps/game/CLAUDE.md`'s rendering-conventions section).
    */
-  update(deltaSec: number, zoom: number): void {
+  update(deltaSec: number, zoom: number, centerX: number, centerY: number): void {
     if (!this.layerVisible) return
     if (!Number.isFinite(deltaSec) || deltaSec < 0) {
       fail(`deltaSec must be finite and >= 0, got ${deltaSec}`)
     }
+    if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) {
+      fail(`camera centre must be finite, got (${centerX}, ${centerY})`)
+    }
+
+    for (let i = 0; i < this.markers.length; i++) {
+      // Screen Y grows downward, so an increasing angle sweeps clockwise — the
+      // radar convention. Wrap to keep the accumulated value bounded.
+      this.angle[i] = (this.angle[i] + (TAU * deltaSec) / this.markers[i].updateIntervalSec) % TAU
+    }
+
+    const nearest = this.nearestMarkerIndex(centerX, centerY)
+    const m = this.markers[nearest]
+    const r = this.rangePx[nearest]
 
     const lineWidth = screenPxToWorld(RADAR.sweep.lineScreenWidth, zoom)
     const ringWidth = screenPxToWorld(RADAR.sweep.ringScreenWidth, zoom)
 
     this.gfx.clear()
 
-    // Faint range rings first, so the brighter sweep hands draw over them.
+    // Faint range ring first, so the brighter sweep hand draws over it.
     this.gfx.lineStyle(ringWidth, RADAR.sweep.color, RADAR.sweep.ringAlpha)
-    for (let i = 0; i < this.markers.length; i++) {
-      this.gfx.strokeCircle(this.markers[i].x, this.markers[i].y, this.rangePx[i])
-    }
+    this.gfx.strokeCircle(m.x, m.y, r)
 
     this.gfx.lineStyle(lineWidth, RADAR.sweep.color, RADAR.sweep.lineAlpha)
+    const a = this.angle[nearest]
+    this.gfx.lineBetween(m.x, m.y, m.x + Math.cos(a) * r, m.y + Math.sin(a) * r)
+  }
+
+  private nearestMarkerIndex(centerX: number, centerY: number): number {
+    let best = 0
+    let bestDistSq = Infinity
     for (let i = 0; i < this.markers.length; i++) {
-      const m = this.markers[i]
-      // Screen Y grows downward, so an increasing angle sweeps clockwise — the
-      // radar convention. Wrap to keep the accumulated value bounded.
-      this.angle[i] = (this.angle[i] + (TAU * deltaSec) / m.updateIntervalSec) % TAU
-      const a = this.angle[i]
-      const r = this.rangePx[i]
-      this.gfx.lineBetween(m.x, m.y, m.x + Math.cos(a) * r, m.y + Math.sin(a) * r)
+      const dx = this.markers[i].x - centerX
+      const dy = this.markers[i].y - centerY
+      const distSq = dx * dx + dy * dy
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq
+        best = i
+      }
     }
+    return best
   }
 }
