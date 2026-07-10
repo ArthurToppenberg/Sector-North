@@ -43,6 +43,8 @@ export class MainScene extends Phaser.Scene {
   private toolbar!: Toolbar
   private infoWindows!: InfoWindowManager
   private consoleWindow!: ConsoleWindow
+  /** Whether the developer console is open; toggled by the toolbar and the "." key. */
+  private consoleOpen = false
   private uiCamera!: Phaser.Cameras.Scene2D.Camera
 
   // Camera state from the previous frame, so `update` can skip viewport-reactive
@@ -139,7 +141,7 @@ export class MainScene extends Phaser.Scene {
     // The developer console: a HUD panel that surfaces the shared logger's output.
     // Created here (before `setupCameras`) so its objects join the UI-camera list
     // below. Closing it via its own button flips the toolbar's developer glyph back.
-    this.consoleWindow = new ConsoleWindow(this, () => this.closeConsole())
+    this.consoleWindow = new ConsoleWindow(this, () => this.setConsoleOpen(false))
     this.radarSweepLayer = new RadarSweepLayer(
       this,
       this.buildRadarSweepMarkers(radars, projected.project),
@@ -153,14 +155,12 @@ export class MainScene extends Phaser.Scene {
     const citiesVisible = true
     let airportsVisible = true
     let radarsVisible = true
-    // The developer console is open on load too; the same single-variable rule
-    // keeps its toolbar glyph and actual visibility in step.
-    const consoleVisible = true
     cityLayer.setVisible(citiesVisible)
     airportLayer.setVisible(airportsVisible)
     radarLayer.setVisible(radarsVisible)
     this.radarSweepLayer.setVisible(radarsVisible)
-    this.consoleWindow.setVisible(consoleVisible)
+    // The console starts closed (constructor already hid it); it is opened by the
+    // developer toolbar button or the "." key, both routed through `setConsoleOpen`.
     this.debugHud = new DebugHud(this)
 
     const applyColocationLabels = () => {
@@ -205,13 +205,16 @@ export class MainScene extends Phaser.Scene {
       },
       {
         id: 'developer',
-        initialActive: consoleVisible,
-        onToggle: (active) => {
-          this.consoleWindow.setVisible(active)
-          log.debug(`Developer console ${active ? 'opened' : 'closed'}`)
-        },
+        initialActive: this.consoleOpen,
+        onToggle: (active) => this.setConsoleOpen(active),
       },
     ])
+
+    // "." also toggles the console. Keyboard must exist (CameraController asserts
+    // the same), so fail loudly rather than silently drop the shortcut.
+    const keyboard = this.input.keyboard
+    if (!keyboard) throw new Error('[MainScene] keyboard input unavailable')
+    keyboard.on('keydown-PERIOD', () => this.setConsoleOpen(!this.consoleOpen))
 
     const onZoomChanged = (zoom: number) => {
       coastline.onZoomChanged(zoom)
@@ -250,10 +253,17 @@ export class MainScene extends Phaser.Scene {
     this.game.events.emit(APP_READY_EVENT)
   }
 
-  /** Close the console from its own button and flip the toolbar glyph back off. */
-  private closeConsole(): void {
-    this.consoleWindow.setVisible(false)
-    this.toolbar.setActive('developer', false)
+  /**
+   * Single path for opening/closing the console, so the window, the toolbar glyph,
+   * and the "." key never drift. `Toolbar.setActive` is a no-op when the glyph is
+   * already in the target state, so routing a toolbar press back through here is safe.
+   */
+  private setConsoleOpen(open: boolean): void {
+    if (open === this.consoleOpen) return
+    this.consoleOpen = open
+    this.consoleWindow.setVisible(open)
+    this.toolbar.setActive('developer', open)
+    log.debug(`Developer console ${open ? 'opened' : 'closed'}`)
   }
 
   private buildColocationInputs(
