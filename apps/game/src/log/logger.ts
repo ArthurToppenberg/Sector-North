@@ -1,5 +1,12 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
+/**
+ * The levels in ascending severity. This order is the single source of truth for
+ * both severity comparison and cycling a min-level filter (see `ConsoleWindow`);
+ * an entry passes a filter when its index here is >= the threshold's.
+ */
+export const LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error']
+
 export interface LogEntry {
   /** Monotonic id, assigned in arrival order — never reused, even after eviction. */
   readonly seq: number

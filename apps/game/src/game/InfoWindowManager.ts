@@ -30,7 +30,7 @@ export class InfoWindowManager {
       log.debug(`Detail window closed (${key})`)
       return
     }
-    log.info(`Detail window opened: ${content.title}`)
+    log.debug(`Detail window opened: ${content.title}`)
     const window = new InfoWindow(this.scene, content, {
       origin: this.nextOrigin(),
       depthBase: this.allocDepth(),
