@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
 import { DPR, FONT_FAMILY, CONSOLE, DEPTH } from './config'
-import { log, type LogEntry } from '../log/logger'
+import { log, LOG_LEVELS, type LogEntry, type LogLevel } from '../log/logger'
 
 function fail(message: string): never {
   throw new Error(`[game/ConsoleWindow] ${message}`)
@@ -12,12 +12,19 @@ function formatEntry(entry: LogEntry): string {
   return `${seconds}  ${level}  ${entry.message}`
 }
 
+/** Header label for the min-level filter — e.g. `INFO+` (this level and above). */
+function filterLabel(level: LogLevel): string {
+  return `${level.toUpperCase()}+`
+}
+
 export class ConsoleWindow {
   private readonly scene: Phaser.Scene
   private readonly onCloseRequested: () => void
 
   private readonly panel: Phaser.GameObjects.Rectangle
   private readonly title: Phaser.GameObjects.Text
+  /** Clickable header control that cycles the lowest log level shown. */
+  private readonly filterButton: Phaser.GameObjects.Text
   private readonly closeButton: Phaser.GameObjects.Rectangle
   private readonly closeGlyph: Phaser.GameObjects.Text
   private readonly logText: Phaser.GameObjects.Text
@@ -46,6 +53,9 @@ export class ConsoleWindow {
   private viewX = 0
   private viewY = 0
   private viewHeight = 0
+
+  /** Lowest level rendered; entries below it are hidden (not dropped). */
+  private minLevel: LogLevel = CONSOLE.filterDefaultLevel
 
   /** Every wrapped line of the current buffer, and the topmost one shown. */
   private allLines: string[] = []
@@ -131,6 +141,25 @@ export class ConsoleWindow {
       .setOrigin(0, 0)
       .setDepth(contentDepth)
 
+    // Right-aligned so it grows leftward from a fixed right edge as the label
+    // widens (WARN+ vs DEBUG+), keeping its gap to the close button constant.
+    this.filterButton = scene.add
+      .text(0, 0, filterLabel(this.minLevel), {
+        fontFamily: FONT_FAMILY,
+        fontStyle: CONSOLE.filterFontWeight,
+        fontSize: `${CONSOLE.filterFontScreenSize * DPR}px`,
+        color: CONSOLE.titleColor,
+        resolution: DPR,
+      })
+      .setOrigin(1, 0.5)
+      .setAlpha(CONSOLE.filterAlpha)
+      .setDepth(contentDepth)
+      .setInteractive({ useHandCursor: true })
+    this.filterButton.on(Phaser.Input.Events.POINTER_UP, () => this.cycleMinLevel())
+    this.filterButton.on(Phaser.Input.Events.POINTER_OVER, () => this.filterButton.setAlpha(CONSOLE.filterHoverAlpha))
+    this.filterButton.on(Phaser.Input.Events.POINTER_OUT, () => this.filterButton.setAlpha(CONSOLE.filterAlpha))
+    this.attachWheel(this.filterButton)
+
     this.logText = scene.add
       .text(0, 0, '', {
         fontFamily: FONT_FAMILY,
@@ -211,13 +240,23 @@ export class ConsoleWindow {
 
   /** Every object the window owns, so the owner can route them to the UI camera. */
   get objects(): Phaser.GameObjects.GameObject[] {
-    return [this.panel, this.title, this.closeButton, this.closeGlyph, this.logText, this.scrollTrack, this.scrollThumb]
+    return [
+      this.panel,
+      this.title,
+      this.filterButton,
+      this.closeButton,
+      this.closeGlyph,
+      this.logText,
+      this.scrollTrack,
+      this.scrollThumb,
+    ]
   }
 
   setVisible(visible: boolean): void {
     this.isVisible = visible
     this.panel.setVisible(visible)
     this.title.setVisible(visible)
+    this.filterButton.setVisible(visible)
     this.closeButton.setVisible(visible)
     this.closeGlyph.setVisible(visible)
     this.logText.setVisible(visible)
@@ -225,6 +264,7 @@ export class ConsoleWindow {
     this.scrollThumb.setVisible(visible)
     // A hidden panel must not eat clicks or wheel events meant for the map.
     if (this.panel.input) this.panel.input.enabled = visible
+    if (this.filterButton.input) this.filterButton.input.enabled = visible
     if (this.closeButton.input) this.closeButton.input.enabled = visible
     if (this.scrollTrack.input) this.scrollTrack.input.enabled = visible
     if (visible) this.renderIfDirty()
@@ -278,11 +318,23 @@ export class ConsoleWindow {
     }
   }
 
+  /** Advance the min-level filter one step (wrapping), then re-render. */
+  private cycleMinLevel(): void {
+    const next = (LOG_LEVELS.indexOf(this.minLevel) + 1) % LOG_LEVELS.length
+    this.minLevel = LOG_LEVELS[next]
+    this.filterButton.setText(filterLabel(this.minLevel))
+    // The filtered buffer changed even though no new entry arrived; force a rebuild.
+    this.dirty = true
+    if (this.isVisible) this.renderIfDirty()
+  }
+
   private renderIfDirty(): void {
     if (!this.dirty) return
     this.dirty = false
+    const threshold = LOG_LEVELS.indexOf(this.minLevel)
     const full = log
       .snapshot()
+      .filter((entry) => LOG_LEVELS.indexOf(entry.level) >= threshold)
       .map(formatEntry)
       .join('\n')
     if (full !== this.lastFullText) {
@@ -341,9 +393,14 @@ export class ConsoleWindow {
     this.panel.setPosition(ax, ay)
 
     const closeSize = CONSOLE.closeButtonScreenSize * DPR
-    // Header: title top-left, close button top-right, sharing the first row.
-    this.closeButton.setPosition(ax + this.panelWidth - pad - closeSize, ay + pad)
-    this.closeGlyph.setPosition(ax + this.panelWidth - pad - closeSize / 2, ay + pad + closeSize / 2)
+    // Header: title top-left, then the filter control, then the close button
+    // top-right — all sharing the first row. Filter and close are centred on the
+    // close-button's vertical mid-line so they line up regardless of glyph height.
+    const closeLeft = ax + this.panelWidth - pad - closeSize
+    const rowMidY = ay + pad + closeSize / 2
+    this.closeButton.setPosition(closeLeft, ay + pad)
+    this.closeGlyph.setPosition(closeLeft + closeSize / 2, rowMidY)
+    this.filterButton.setPosition(closeLeft - CONSOLE.filterGapScreen * DPR, rowMidY)
     this.title.setPosition(ax + pad, ay + pad)
 
     const headerHeight = Math.max(closeSize, this.title.height)

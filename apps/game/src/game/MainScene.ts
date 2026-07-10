@@ -132,7 +132,7 @@ export class MainScene extends Phaser.Scene {
     // one to the other.
     this.infoWindows = new InfoWindowManager(this, this.cameras.main)
     const radarLayer = new RadarLayer(this, radarMarkers, (index) => {
-      log.info(`Radar site selected: ${radars[index].name}`)
+      log.debug(`Radar site selected: ${radars[index].name}`)
       this.infoWindows.toggle(`radar:${index}`, this.radarWindowContent(radars[index]))
     })
     // The developer console: a HUD panel that surfaces the shared logger's output.
@@ -157,7 +157,7 @@ export class MainScene extends Phaser.Scene {
     radarLayer.setVisible(radarsVisible)
     this.radarSweepLayer.setVisible(radarsVisible)
     // The console starts closed (constructor already hid it); it is opened by the
-    // developer toolbar button or the "." key, both routed through `setConsoleOpen`.
+    // developer toolbar button or the "/" key, both routed through `setConsoleOpen`.
     this.debugHud = new DebugHud(this)
 
     const applyColocationLabels = () => {
@@ -204,11 +204,11 @@ export class MainScene extends Phaser.Scene {
       },
     ])
 
-    // "." also toggles the console. Keyboard must exist (CameraController asserts
+    // "/" also toggles the console. Keyboard must exist (CameraController asserts
     // the same), so fail loudly rather than silently drop the shortcut.
     const keyboard = this.input.keyboard
     if (!keyboard) throw new Error('[MainScene] keyboard input unavailable')
-    keyboard.on('keydown-PERIOD', () => this.setConsoleOpen(!this.consoleOpen))
+    keyboard.on('keydown-FORWARD_SLASH', () => this.setConsoleOpen(!this.consoleOpen))
 
     const onZoomChanged = (zoom: number) => {
       coastline.onZoomChanged(zoom)

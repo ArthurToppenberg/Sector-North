@@ -350,6 +350,20 @@ export const CONSOLE = {
   titleFontScreenSize: 13,
   /** Gap between the header row and the top of the log viewport (CSS pixels). */
   headerGapScreen: 8,
+  /**
+   * Header min-level filter control. Clicking it cycles the lowest level shown
+   * (debug→info→warn→error→debug); lines below it are hidden, not dropped. It
+   * defaults to `info` so the routine `debug` chatter (layer toggles, zoom-limit
+   * hits, console/window open-close) is filtered out on open but one click away.
+   * Dimmed until hovered so it reads as secondary chrome next to the title.
+   */
+  filterDefaultLevel: 'info',
+  filterFontScreenSize: 11,
+  filterFontWeight: '600',
+  filterAlpha: 0.55,
+  filterHoverAlpha: 1,
+  /** Gap between the filter control and the close button (CSS pixels). */
+  filterGapScreen: 10,
   /** Log line font (small; the message body). */
   logColor: '#ffffff',
   logFontWeight: '400',

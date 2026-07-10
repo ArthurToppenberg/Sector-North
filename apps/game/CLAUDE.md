@@ -97,7 +97,9 @@ input go in `src/game/`.
   without threading an instance through. It holds a bounded newest-500 ring of entries,
   broadcasts them via `subscribe`/`snapshot`, throws on an empty message, and mirrors every
   entry to the matching browser-console method (`CONSOLE_METHOD`) as a deliberate second
-  sink. It knows nothing about how entries are drawn. `src/game/ConsoleWindow.ts` is the
+  sink. It also exports `LOG_LEVELS` (levels in ascending severity) as the single source of
+  truth for level ordering — the console's min-level filter uses it for both comparison and
+  cycling. It knows nothing about how entries are drawn. `src/game/ConsoleWindow.ts` is the
   sole *in-game* consumer and owns all timestamp/level formatting; the on-screen log is
   monochrome, with level shown as a text tag (`INFO`/`WARN`/…), not colour (see below).
 
@@ -200,8 +202,8 @@ lon/lat becomes pixels.
   are not yet clickable; the entity-agnostic shape is what lets each get its own content
   builder later without editing the window.
 - **The developer console (`ConsoleWindow`) is a draggable HUD panel** on the fixed UI
-  camera (constant on-screen size), toggled by the toolbar's developer button *or the "."
-  (period) key*. Both paths funnel through `MainScene.setConsoleOpen()` so the window, the
+  camera (constant on-screen size), toggled by the toolbar's developer button *or the "/"
+  (forward-slash) key*. Both paths funnel through `MainScene.setConsoleOpen()` so the window, the
   toolbar glyph, and the key never drift; it starts closed. It renders the shared
   `src/log/logger.ts` buffer as a scrollable monochrome text log, docked bottom-left when
   opened. Clipping is deliberately done by content, not a mask or crop: the
@@ -210,7 +212,15 @@ lon/lat becomes pixels.
   unreliable across the two-camera setup — both were tried and rejected. Scroll position is
   an offset into the pre-wrapped lines with a draggable scrollbar reflecting it; the view
   auto-follows the newest line until the user scrolls up, then holds until they return to
-  the bottom.
+  the bottom. A header control cycles a **min-level filter** (`debug`→`info`→`warn`→
+  `error`, wrapping); lines below the threshold are hidden from the view, never dropped
+  from the shared buffer. It defaults to `info` (`CONSOLE.filterDefaultLevel`) so the
+  routine `debug` chatter — layer show/hide toggles, zoom-limit hits, console/detail-window
+  open-close — is filtered out on open but one click away. The level ordering is the
+  logger's exported `LOG_LEVELS` (ascending severity), the single source of truth shared by
+  the filter's compare and its cycle. Consequently, keep genuinely routine per-interaction
+  events at `debug` (so the default filter catches them) and reserve `info` for one-time
+  lifecycle milestones (boot steps, world-data loaded, scene ready).
 - **Constant on-screen sizes** (hairline strokes, marker dots, pan speed) are computed
   with `screenPxToWorld(screenPx, zoom)` from `src/game/units.ts` — the single source of
   truth for the screen↔world scaling trick. Don't hand-roll `x * DPR / zoom`.
