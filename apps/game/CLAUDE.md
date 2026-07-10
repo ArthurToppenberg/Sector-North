@@ -102,23 +102,30 @@ input go in `src/game/`.
 
 - `src/log/` — **pure, framework-free logging.** `logger.ts` is a process-wide `Logger`
   singleton with no Phaser/rendering knowledge; any module can call `log.info(...)` etc.
-  without threading an instance through. It holds a bounded newest-500 ring of entries,
-  broadcasts them via `subscribe`/`snapshot`, throws on an empty message, and mirrors every
-  entry to the matching browser-console method (`CONSOLE_METHOD`) as a deliberate second
-  sink. It knows nothing about how entries are drawn. `src/game/ConsoleWindow.ts` is the sole
-  *in-game* consumer and owns all timestamp/level formatting; each line is coloured by level
-  (see the console bullet below). The four levels exist, but **`debug` has no callers** — the
-  routine per-event chatter was removed rather than filtered, so a `debug` call reappearing is
-  a deliberate choice, not leftover noise. Reserve `info` for one-time lifecycle milestones
-  (boot steps, world-data loaded, scene ready), `warn`/`error` for genuine problems.
-- `src/commands/` — **pure, framework-free command registry.** `registry.ts` exports a
+  without threading an instance through. It holds a bounded newest-500 ring of entries
+  (`MAX_ENTRIES = 500`) — older lines are deliberately dropped once a session runs long,
+  rather than growing unbounded — broadcasts them via `subscribe`/`snapshot`, throws on an
+  empty message, and mirrors every entry to the matching browser-console method
+  (`CONSOLE_METHOD`) as a deliberate second sink, not a fallback: both are meant to show
+  the line, so lines show both in the in-game console and devtools. It knows nothing about
+  how entries are drawn. `src/game/ConsoleWindow.ts` is the sole *in-game* consumer and owns
+  all timestamp/level formatting; each line is coloured by level (see the console bullet
+  below). The four levels exist, but **`debug` has no callers** — the routine per-event
+  chatter was removed rather than filtered, so a `debug` call reappearing is a deliberate
+  choice, not leftover noise. Reserve `info` for one-time lifecycle milestones (boot steps,
+  world-data loaded, scene ready), `warn`/`error` for genuine problems.
+- `src/commands/` — **pure, framework-free command registry.** `registry.ts` is a
+  framework-free seam any part of the project can import to expose a slash-command in the
+  developer console, without knowing about Phaser or console rendering: it exports a
   `Command` interface and a process-wide `commands` singleton any module can import to
-  `register(...)` a slash-command, plus `parseCommandLine`. It knows nothing about Phaser: a
-  command needing game state (audio, a scene, layers) is registered from `src/game/` and
-  captures what it needs by closure — that is why `/subwoofer` lives in `MainScene`, not here.
-  `/help` ships with the registry (it just lists the live command set). `ConsoleWindow`'s input
-  row is the one caller that dispatches typed lines through it. Duplicate/invalid names throw
-  at registration (fail fast) rather than silently shadowing.
+  `register(...)` a slash-command, plus `parseCommandLine`. The console parses input, looks
+  it up, and runs it. A command needing game state (audio, a scene, layers) is registered
+  from `src/game/` and captures what it needs by closure at registration — that is why
+  `/subwoofer` lives in `MainScene`, not here, and why the registry module itself stays
+  pure/framework-free while the game-touching commands are registered from `src/game/`.
+  `/help` ships with the registry (it just lists the live command set). `ConsoleWindow`'s
+  input row is the one caller that dispatches typed lines through it. Duplicate/invalid
+  names throw at registration (fail fast) rather than silently shadowing.
 
 ## The projection layer (`src/map/project.ts`)
 
@@ -204,6 +211,15 @@ lon/lat becomes pixels.
 - **Two cameras:** the main camera draws only world layers; a fixed UI camera (zoom 1, no
   scroll) draws only the HUD, so HUD elements keep a constant on-screen size. Each camera
   `ignore()`s the other's objects. Register any new object with the correct camera.
+  **The `objects` getter is the routing seam for this:** every world render layer (GridLayer,
+  CoastlineLayer, CityLayer, AirportLayer, RadarLayer, RadarSweepLayer) exposes a bare
+  `objects` getter enumerating every Phaser GameObject it owns, so `MainScene`/`setupCameras`
+  can hand that layer's objects to the correct camera (e.g. tell the fixed UI camera to
+  `ignore()` the world layers). One-off HUD/overlay components that must stay a constant
+  on-screen size (not pan/zoom with the world) — e.g. the `/subwoofer` easter egg
+  (`src/game/subwoofer.ts`) — opt into the fixed UI camera the same way: expose an `objects`
+  getter that `MainScene` routes there. This is the documented pattern for any future one-off
+  overlay (photo flashes, popups, etc.) to join the fixed UI camera, not just the world layers.
 - **Detail/info windows are per-location HUD panels on the UI camera.** At most one window
   exists per location; clicking a location *toggles* it (open a fresh one, or close the
   existing one). New windows cascade so they don't stack exactly on top of each other, and

@@ -17,10 +17,6 @@ export class InfoWindowManager {
     this.worldCamera = worldCamera
   }
 
-  /**
-   * Toggle the window for `key` (a stable location id): close it if one is open,
-   * otherwise open a fresh window for `content`.
-   */
   toggle(key: string, content: InfoWindowContent): void {
     const existing = this.windows.get(key)
     if (existing) {

@@ -11,11 +11,6 @@ export interface LogEntry {
 
 export type LogListener = (entry: LogEntry) => void
 
-/**
- * Each level is mirrored to the matching browser-console method, so a line shows
- * both in the in-game console and the devtools console. This is not a fallback
- * masking a failure — it is an intentional second sink.
- */
 const CONSOLE_METHOD: Record<LogLevel, (...args: unknown[]) => void> = {
   debug: console.debug,
   info: console.info,
@@ -23,11 +18,6 @@ const CONSOLE_METHOD: Record<LogLevel, (...args: unknown[]) => void> = {
   error: console.error,
 }
 
-/**
- * Newest-N ring: the buffer is capped so a long session cannot grow it without
- * bound. Older lines scroll off the top — a genuine, intended drop, not a masked
- * error.
- */
 const MAX_ENTRIES = 500
 
 class Logger {

@@ -19,6 +19,12 @@ interface VisualLine {
   readonly color: string
 }
 
+/** Render a thrown/rejected value for the log. `Error.message` only exists on `Error` —
+ * a command that throws a string or plain object would otherwise log `undefined`. */
+function describeError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 export class ConsoleWindow {
   private readonly scene: Phaser.Scene
   private readonly onCloseRequested: () => void
@@ -390,9 +396,9 @@ export class ConsoleWindow {
       const output = command.run(parsed.args)
       Promise.resolve(output)
         .then((lines) => this.logOutput(lines))
-        .catch((err: unknown) => log.error(`/${parsed.name}: ${(err as Error).message}`))
+        .catch((err: unknown) => log.error(`/${parsed.name}: ${describeError(err)}`))
     } catch (err) {
-      log.error(`/${parsed.name}: ${(err as Error).message}`)
+      log.error(`/${parsed.name}: ${describeError(err)}`)
     }
   }
 

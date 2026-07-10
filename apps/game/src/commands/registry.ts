@@ -1,13 +1,3 @@
-/**
- * A framework-free command registry — the seam any part of the project can import
- * to expose a slash-command in the developer console, without knowing anything
- * about Phaser or how the console renders. A module defines a `Command` and calls
- * `commands.register(...)`; the console parses input, looks the command up here,
- * and runs it. Commands that need game state (a scene, audio, layers) capture it
- * by closure at registration — that is why this module stays pure and the
- * game-touching commands are registered from `src/game/`.
- */
-
 /** What a command may hand back to be echoed into the log: nothing, one line, or many. */
 export type CommandOutput = void | string | string[]
 
