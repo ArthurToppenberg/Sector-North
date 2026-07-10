@@ -63,8 +63,6 @@ export class RadarSweepLayer {
     assertPixelsPerKm(pixelsPerKm)
     this.markers = markers
     this.rangePx = markers.map((m) => m.rangeKm * pixelsPerKm)
-    // Stagger the starting angles so whichever site becomes nearest is already at
-    // a sensible phase rather than all starting at zero.
     this.angle = markers.map((_, i) => (i / markers.length) * TAU)
     this.gfx = scene.add.graphics().setDepth(DEPTH.radarSweep)
   }
@@ -84,8 +82,9 @@ export class RadarSweepLayer {
    * width constant. Does nothing while hidden.
    *
    * `(centerX, centerY)` is the camera's world-space view centre, used to pick
-   * the nearest site to actually draw (see the clutter-reduction rule in
-   * `apps/game/CLAUDE.md`'s rendering-conventions section).
+   * the single site to actually draw — the one whose coverage the centre is under
+   * (see `selectSweepIndex` and the clutter-reduction rule in `apps/game/CLAUDE.md`'s
+   * rendering-conventions section).
    */
   update(deltaSec: number, zoom: number, centerX: number, centerY: number): void {
     if (!this.layerVisible) return
@@ -102,9 +101,9 @@ export class RadarSweepLayer {
       this.angle[i] = (this.angle[i] + (TAU * deltaSec) / this.markers[i].updateIntervalSec) % TAU
     }
 
-    const nearest = this.nearestMarkerIndex(centerX, centerY)
-    const m = this.markers[nearest]
-    const r = this.rangePx[nearest]
+    const selected = this.selectSweepIndex(centerX, centerY)
+    const m = this.markers[selected]
+    const r = this.rangePx[selected]
 
     const lineWidth = screenPxToWorld(RADAR.sweep.lineScreenWidth, zoom)
     const ringWidth = screenPxToWorld(RADAR.sweep.ringScreenWidth, zoom)
@@ -116,20 +115,27 @@ export class RadarSweepLayer {
     this.gfx.strokeCircle(m.x, m.y, r)
 
     this.gfx.lineStyle(lineWidth, RADAR.sweep.color, RADAR.sweep.lineAlpha)
-    const a = this.angle[nearest]
+    const a = this.angle[selected]
     this.gfx.lineBetween(m.x, m.y, m.x + Math.cos(a) * r, m.y + Math.sin(a) * r)
   }
 
-  private nearestMarkerIndex(centerX: number, centerY: number): number {
+  private selectSweepIndex(centerX: number, centerY: number): number {
     let best = 0
     let bestDistSq = Infinity
+    let bestContains = false
     for (let i = 0; i < this.markers.length; i++) {
       const dx = this.markers[i].x - centerX
       const dy = this.markers[i].y - centerY
       const distSq = dx * dx + dy * dy
-      if (distSq < bestDistSq) {
-        bestDistSq = distSq
+      // Squared distance vs squared range radius avoids a sqrt. A site whose ring
+      // contains the centre outranks one that doesn't; within the same containment
+      // tier the nearer wins. (Centre inside no ring → all false → nearest overall.)
+      const contains = distSq <= this.rangePx[i] * this.rangePx[i]
+      const better = contains === bestContains ? distSq < bestDistSq : contains
+      if (better) {
         best = i
+        bestDistSq = distSq
+        bestContains = contains
       }
     }
     return best
