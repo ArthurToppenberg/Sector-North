@@ -10,6 +10,7 @@
     "preview": "pnpm --filter sector-north-game preview",
     "build:all": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter sector-north-game test",
     "clean": "pnpm --filter sector-north-game clean"
   },
   "devDependencies": {

@@ -100,6 +100,29 @@ radar ~10 km from Bornholm airport stays its own site).
 New code must respect this split: geographic reasoning goes in `src/map/`, drawing and
 input go in `src/game/`.
 
+## Testing (vitest)
+
+`pnpm --filter sector-north-game test` runs the vitest suite (`test:watch` for watch
+mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`, so
+`typecheck` covers them; `vite build` never sees them (nothing imports a test).
+
+- `vitest.config.ts` is **standalone on purpose** — `vite.config.ts` carries build-only
+  plugins (bundle-size report, JSON minification) that must not run under the test
+  runner. Being a Vite config, it still resolves the `?url` asset imports in `src/map/`.
+- Environment is plain `node` — the pure `src/map/` modules and the loaders need no DOM.
+  The one exception: `src/game/config.ts` reads `window.devicePixelRatio` at module
+  load, so any test touching a config-importing module (`units.test.ts`) must stub
+  `globalThis.window` **before a dynamic `import()`** of the module under test — a
+  static import would hoist above the stub and crash. Do not add jsdom for this.
+- What is covered: the projection (including the fit-pinning/locked-zoom invariant),
+  the aircraft sim, co-location clustering + label ownership, every data loader (each
+  also parses its real bundled dataset — geojson uses belgium, the smallest boundary,
+  because tsc cannot reasonably type a multi-MB JSON module), and the pure `game/`
+  helpers (`units`, `math`). Phaser layers/scenes are deliberately untested — verifying
+  them means running the game, which is the user's job (see root CLAUDE.md).
+- Tests assert error *substrings* (e.g. `/out-of-range longitude/`), not full messages,
+  so validator refactors that keep semantics don't churn the suite.
+
 - `src/log/` — **pure, framework-free logging.** `logger.ts` is a process-wide `Logger`
   singleton with no Phaser/rendering knowledge; any module can call `log.info(...)` etc.
   without threading an instance through. It holds a bounded newest-500 ring of entries

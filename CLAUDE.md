@@ -153,8 +153,11 @@ Never try to launch, serve, or drive the game to verify a change — no dev serv
 headless browser, no end-to-end/screenshot run. The user runs and visually checks the
 game themselves.
 
-- Verify your work with `pnpm --filter sector-north-game typecheck` (or `build`) instead;
-  that is the extent of automated checking expected here.
+- Verify your work with `pnpm --filter sector-north-game typecheck` and
+  `pnpm --filter sector-north-game test` (or `build`) instead; that is the extent of
+  automated checking expected here. The vitest suite covers the pure world-model modules
+  (projection, aircraft sim, co-location, loaders) — see the Testing section in
+  `apps/game/CLAUDE.md`.
 - Do not install or invoke browser-driving tooling (Playwright, Puppeteer, chromium, xvfb,
   etc.) for the game.
 - When a change needs a visual check, hand it back to the user to run rather than running
