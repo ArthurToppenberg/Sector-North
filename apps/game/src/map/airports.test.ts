@@ -38,7 +38,7 @@ describe('loadAirports', () => {
   })
 
   it('rejects an unknown tier', () => {
-    expect(() => loadAirports([{ ...valid, tier: 'huge' }])).toThrow(/invalid tier/)
-    expect(() => loadAirports([{ ...valid, tier: undefined }])).toThrow(/invalid tier/)
+    expect(() => loadAirports([{ ...valid, tier: 'huge' }])).toThrow(/tier is invalid/)
+    expect(() => loadAirports([{ ...valid, tier: undefined }])).toThrow(/tier is invalid/)
   })
 })

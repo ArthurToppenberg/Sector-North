@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { makeFail, type Fail } from './fail'
 import { DPR, FONT_FAMILY, RADAR, CLICK_MAX_TRAVEL_SCREEN, DEPTH } from './config'
 import { screenPxToWorld } from './units'
 import type { ColocationLabel } from '../map/colocate'
@@ -21,9 +22,7 @@ export interface RadarMarker {
  */
 export type RadarSelectHandler = (index: number) => void
 
-function fail(message: string): never {
-  throw new Error(`[game/RadarLayer] ${message}`)
-}
+const fail: Fail = makeFail('game/RadarLayer')
 
 function assertZoom(zoom: number): number {
   if (!Number.isFinite(zoom) || zoom <= 0) fail(`zoom must be finite and > 0, got ${zoom}`)

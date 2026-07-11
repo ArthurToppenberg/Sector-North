@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { makeFail, type Fail } from './fail'
 import { RADAR, DEPTH } from './config'
 import { screenPxToWorld } from './units'
 
@@ -19,9 +20,7 @@ function norm(angle: number): number {
   return ((angle % TAU) + TAU) % TAU
 }
 
-function fail(message: string): never {
-  throw new Error(`[game/RadarSweepLayer] ${message}`)
-}
+const fail: Fail = makeFail('game/RadarSweepLayer')
 
 /**
  * Pixels-per-km must be finite and positive: every range radius is derived from

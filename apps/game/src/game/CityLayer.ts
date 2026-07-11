@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { makeFail, type Fail } from './fail'
 import cityIconRaw from 'lucide-static/icons/building-2.svg?raw'
 import { DPR, FONT_FAMILY, CITY, CLICK_MAX_TRAVEL_SCREEN, DEPTH } from './config'
 import { screenPxToWorld } from './units'
@@ -6,9 +7,7 @@ import { iconDataUri } from './svgIcon'
 
 const CITY_ICON_TEXTURE = 'city-icon'
 
-function fail(message: string): never {
-  throw new Error(`[game/CityLayer] ${message}`)
-}
+const fail: Fail = makeFail('game/CityLayer')
 
 function assertZoom(zoom: number): number {
   if (!Number.isFinite(zoom) || zoom <= 0) fail(`zoom must be finite and > 0, got ${zoom}`)

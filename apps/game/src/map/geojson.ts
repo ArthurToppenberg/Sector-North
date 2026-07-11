@@ -12,6 +12,12 @@ import russiaUrl from '../data/borders/russia-boundary.json?url'
 import slovakiaUrl from '../data/borders/slovakia-boundary.json?url'
 import swedenUrl from '../data/borders/sweden-boundary.json?url'
 import unitedKingdomUrl from '../data/borders/united-kingdom-boundary.json?url'
+import { makeFail, requireLon, requireLat, type Fail } from './validate'
+
+// Declared before PROJECTION_FRAME_ASSETS, whose initializer calls it at
+// module load — a `const` has no hoisting to save us like the old function
+// declaration did.
+const fail: Fail = makeFail('map/geojson')
 
 export type LonLat = [number, number]
 
@@ -62,27 +68,8 @@ export const PROJECTION_FRAME_ASSETS: ReadonlyArray<BoundaryAsset> = PROJECTION_
   },
 )
 
-function fail(message: string): never {
-  throw new Error(`[map/geojson] ${message}`)
-}
-
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
-}
-
-const LON_MIN = -180
-const LON_MAX = 180
-const LAT_MIN = -90
-const LAT_MAX = 90
-
-function parseCoordinate(value: unknown, min: number, max: number, label: string, ctx: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    fail(`${ctx}: non-finite ${label}: ${JSON.stringify(value)}`)
-  }
-  if (value < min || value > max) {
-    fail(`${ctx}: ${label} out of range [${min}, ${max}]: ${JSON.stringify(value)}`)
-  }
-  return value
 }
 
 /**
@@ -92,9 +79,7 @@ function parsePosition(value: unknown, ctx: string): LonLat {
   if (!Array.isArray(value) || value.length < 2) {
     fail(`${ctx}: position is not a [lon, lat] pair: ${JSON.stringify(value)}`)
   }
-  const lon = parseCoordinate(value[0], LON_MIN, LON_MAX, 'longitude', ctx)
-  const lat = parseCoordinate(value[1], LAT_MIN, LAT_MAX, 'latitude', ctx)
-  return [lon, lat]
+  return [requireLon(value[0], fail, ctx), requireLat(value[1], fail, ctx)]
 }
 
 function parseRing(value: unknown, ctx: string): Ring {

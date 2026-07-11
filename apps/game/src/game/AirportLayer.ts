@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { makeFail, type Fail } from './fail'
 import { DPR, FONT_FAMILY, AIRPORT, DEPTH } from './config'
 import { screenPxToWorld } from './units'
 import type { AirportTier } from '../map/airports'
@@ -35,9 +36,7 @@ function triangleVertices(x: number, y: number, r: number): readonly [Point, Poi
   ]
 }
 
-function fail(message: string): never {
-  throw new Error(`[game/AirportLayer] ${message}`)
-}
+const fail: Fail = makeFail('game/AirportLayer')
 
 function assertZoom(zoom: number): number {
   if (!Number.isFinite(zoom) || zoom <= 0) fail(`zoom must be finite and > 0, got ${zoom}`)

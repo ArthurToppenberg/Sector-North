@@ -1,4 +1,5 @@
 import Phaser from 'phaser'
+import { makeFail, type Fail } from './fail'
 import { PLANE, DEPTH } from './config'
 import { screenPxToWorld } from './units'
 
@@ -13,9 +14,7 @@ export interface Contact {
   speedKmh: number
 }
 
-function fail(message: string): never {
-  throw new Error(`[game/PlaneLayer] ${message}`)
-}
+const fail: Fail = makeFail('game/PlaneLayer')
 
 /**
  * Draws radar contacts. Aircraft themselves live in the world model and are never

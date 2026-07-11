@@ -1,10 +1,9 @@
 import Phaser from 'phaser'
+import { makeFail, type Fail } from './fail'
 import { DEPTH, MAP } from './config'
 import { screenPxToWorld } from './units'
 
-function fail(message: string): never {
-  throw new Error(`[game/CoastlineLayer] ${message}`)
-}
+const fail: Fail = makeFail('game/CoastlineLayer')
 
 // Rings are interleaved x/y pairs — an even count is structural, at least 4 values needed to stroke a segment.
 function assertValidRings(rings: readonly Float32Array[]): void {

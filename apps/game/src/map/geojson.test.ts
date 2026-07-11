@@ -81,14 +81,14 @@ describe('loadBoundaries', () => {
       loadBoundaries(() => featureCollection({ type: 'Polygon', coordinates: [badLon] }), [
         { name: 'x', url: '' },
       ]),
-    ).toThrow(/longitude out of range/)
+    ).toThrow(/out-of-range longitude/)
 
     const stringLat = [[10, '55'], [11, 55], [11, 56], [10, '55']]
     expect(() =>
       loadBoundaries(() => featureCollection({ type: 'Polygon', coordinates: [stringLat] }), [
         { name: 'x', url: '' },
       ]),
-    ).toThrow(/non-finite latitude/)
+    ).toThrow(/out-of-range latitude/)
   })
 })
 

@@ -1,11 +1,10 @@
 import Phaser from 'phaser'
+import { makeFail, type Fail } from './fail'
 import { DPR, FONT_FAMILY, CONSOLE, DEPTH } from './config'
 import { log, type LogEntry } from '../log/logger'
 import { commands, parseCommandLine, type CommandOutput } from '../commands/registry'
 
-function fail(message: string): never {
-  throw new Error(`[game/ConsoleWindow] ${message}`)
-}
+const fail: Fail = makeFail('game/ConsoleWindow')
 
 function formatEntry(entry: LogEntry): string {
   const seconds = (entry.timeMs / 1000).toFixed(1).padStart(7)

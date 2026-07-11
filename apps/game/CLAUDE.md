@@ -28,6 +28,13 @@ city + radar photos, and world-data JSON all loaded) — never on a timer or gue
     not just structural: every lon/lat is range-checked against WGS84 bounds
     (lon −180..180, lat −90..90) and rejected if non-finite, so a swapped or corrupt
     coordinate fails fast at load rather than projecting to a wrong pixel.
+  - `validate.ts` — the shared strict-validation vocabulary those four loaders compose
+    (`makeFail`, `requireLon`/`requireLat`, `requireNonEmptyString`, `requireOneOf`, …).
+    The WGS84 bounds live here **once**; a loader must never restate them. Helpers take
+    the caller's `fail` so messages keep their per-module `[map/<x>]` tag, and the caller
+    composes the subject text. Must stay Phaser- and config-free like the rest of
+    `src/map/`. (`src/game/fail.ts` is a deliberate 3-line twin of `makeFail` for the
+    render side, rather than coupling `game/` error plumbing into the world layer.)
   - `project.ts` — the projection layer (see below).
 - `src/game/` — **Phaser rendering + input.** Consumes projected output; never parses
   GeoJSON or re-derives the projection. Within it, keep the small pure-helper modules

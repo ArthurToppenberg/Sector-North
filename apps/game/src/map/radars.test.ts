@@ -37,8 +37,8 @@ describe('loadRadars', () => {
 
   it('accepts null as an explicit "no altitude ceiling" but rejects zero and junk', () => {
     expect(loadRadars([{ ...valid, altitudeCeilingKm: null }])[0].altitudeCeilingKm).toBeNull()
-    expect(() => loadRadars([{ ...valid, altitudeCeilingKm: 0 }])).toThrow(/non-positive altitudeCeilingKm/)
-    expect(() => loadRadars([{ ...valid, altitudeCeilingKm: 'high' }])).toThrow(/non-positive altitudeCeilingKm/)
+    expect(() => loadRadars([{ ...valid, altitudeCeilingKm: 0 }])).toThrow(/altitudeCeilingKm is non-positive/)
+    expect(() => loadRadars([{ ...valid, altitudeCeilingKm: 'high' }])).toThrow(/altitudeCeilingKm is non-positive/)
   })
 
   it('rejects a non-array or empty payload', () => {
@@ -52,17 +52,17 @@ describe('loadRadars', () => {
   })
 
   it('rejects non-positive range and update interval', () => {
-    expect(() => loadRadars([{ ...valid, rangeKm: 0 }])).toThrow(/non-positive rangeKm/)
-    expect(() => loadRadars([{ ...valid, updateIntervalSec: -5 }])).toThrow(/non-positive updateIntervalSec/)
+    expect(() => loadRadars([{ ...valid, rangeKm: 0 }])).toThrow(/rangeKm is non-positive/)
+    expect(() => loadRadars([{ ...valid, updateIntervalSec: -5 }])).toThrow(/updateIntervalSec is non-positive/)
   })
 
   it('rejects an unknown dimensionality', () => {
-    expect(() => loadRadars([{ ...valid, dimensionality: '4D' }])).toThrow(/invalid dimensionality/)
+    expect(() => loadRadars([{ ...valid, dimensionality: '4D' }])).toThrow(/dimensionality is invalid/)
   })
 
   it('rejects missing spec/flavour strings', () => {
     for (const field of ['model', 'manufacturer', 'origin', 'type', 'band', 'notes']) {
-      expect(() => loadRadars([{ ...valid, [field]: '' }])).toThrow(new RegExp(`has no ${field}`))
+      expect(() => loadRadars([{ ...valid, [field]: '' }])).toThrow(new RegExp(`${field} is missing or empty`))
     }
   })
 })

@@ -43,7 +43,7 @@ describe('loadMajorCities', () => {
 
   it('rejects a non-object entry and a missing name', () => {
     expect(() => loadMajorCities([null])).toThrow(/not an object/)
-    expect(() => loadMajorCities([{ ...valid, city: '' }])).toThrow(/has no name/)
+    expect(() => loadMajorCities([{ ...valid, city: '' }])).toThrow(/name is missing or empty/)
   })
 
   it('rejects out-of-range or non-numeric coordinates', () => {
@@ -60,8 +60,8 @@ describe('loadMajorCities', () => {
   })
 
   it('rejects missing flavour metadata', () => {
-    expect(() => loadMajorCities([{ ...valid, region: '' }])).toThrow(/has no region/)
-    expect(() => loadMajorCities([{ ...valid, founded: undefined }])).toThrow(/has no founded/)
-    expect(() => loadMajorCities([{ ...valid, notes: 42 }])).toThrow(/has no notes/)
+    expect(() => loadMajorCities([{ ...valid, region: '' }])).toThrow(/region is missing or empty/)
+    expect(() => loadMajorCities([{ ...valid, founded: undefined }])).toThrow(/founded is missing or empty/)
+    expect(() => loadMajorCities([{ ...valid, notes: 42 }])).toThrow(/notes is missing or empty/)
   })
 })
