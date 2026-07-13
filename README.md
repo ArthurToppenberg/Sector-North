@@ -50,10 +50,17 @@ Danish coastline (with its neighbouring countries) plus city, airport, and radar
 markers, with a single radar — normally the one whose coverage the current view
 centre falls within — showing an animated coverage sweep and range ring sized to its real range —
 scroll to zoom (anchored under the cursor), and pan by click-dragging or with
-WASD / arrow keys. Click a radar-site marker to open a draggable detail window
-showing the site's name, a photo where available, and its specs. The top-left
+WASD / arrow keys. Click a city or radar-site marker to open a draggable detail
+window — cities show their region, founding date, and notes with a landmark
+photo; radar sites show their specs and a photo where available. The top-left
 toolbar toggles the city, airport, and radar layers; the terminal icon (or the
-`.` key) opens a draggable developer console that streams the game's log.
+`/` key) opens a draggable developer console that streams the game's log.
+
+The console accepts slash commands — `/help` lists them. Try `/spawn-intruder`:
+it sends an Il-20M down a Baltic probing route past Bornholm, visible only where
+a radar sweep paints it. On localhost a second dev-toolbar row appears with a
+waypoints toggle that overlays the planned routes of such aircraft; elsewhere,
+reveal it with `/dev-tools true`.
 
 ### Other useful commands
 
@@ -75,6 +82,7 @@ Sector-North/
 │     ├─ src/map/          # World data loading + the projection layer (no Phaser)
 │     ├─ src/game/         # Phaser scenes, layers, camera, HUD
 │     ├─ src/log/          # Pure, framework-free logging (the shared Logger singleton)
+│     ├─ src/commands/     # Pure, framework-free slash-command registry for the dev console
 │     ├─ src/data/         # Bundled map data (country boundaries, cities, airports, radars)
 │     └─ CLAUDE.md         # App-level architecture rules
 ├─ docs/                   # Repo documentation assets (screenshots, etc.)

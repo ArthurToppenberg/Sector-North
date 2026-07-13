@@ -28,8 +28,11 @@ city + radar photos, and world-data JSON all loaded) — never on a timer or gue
     not just structural: every lon/lat is range-checked against WGS84 bounds
     (lon −180..180, lat −90..90) and rejected if non-finite, so a swapped or corrupt
     coordinate fails fast at load rather than projecting to a wrong pixel.
-  - `validate.ts` — the shared strict-validation vocabulary those four loaders compose
-    (`makeFail`, `requireLon`/`requireLat`, `requireNonEmptyString`, `requireOneOf`, …).
+  - `validate.ts` — the shared strict-validation vocabulary of the whole world layer
+    (`makeFail`, `requireLon`/`requireLat`, `requireNonEmptyString`, `requireOneOf`, …):
+    composed by the four data loaders above and equally by the aircraft world model —
+    `AircraftSim.spawn`, `RouteBrain`'s constructor, and the authored-TS module-load
+    checks in `aircraftTypes.ts` and `routes.ts`.
     The WGS84 bounds live here **once**; a loader must never restate them. Helpers take
     the caller's `fail` so messages keep their per-module `[map/<x>]` tag, and the caller
     composes the subject text. Must stay Phaser- and config-free like the rest of
@@ -40,7 +43,10 @@ city + radar photos, and world-data JSON all loaded) — never on a timer or gue
     reckoning) and `AircraftSim`, whose `advance()` banks real frame deltas and steps
     the world only in whole `SIM_TICK_SEC` ticks — the determinism core principle
     (root CLAUDE.md): replay/fast-forward is "run the elapsed ticks", bit-stable, and
-    the whole module runs headless. Every aircraft carries an `AircraftTypeId`;
+    the whole module runs headless. `SIM_TICK_SEC` is `0.125`: exactly representable
+    in binary floating point, so whole-second durations quantize into an exact tick
+    count with zero remainder, and 8 Hz is ample for km-scale movement (800 km/h ≈
+    28 m per tick). Every aircraft carries an `AircraftTypeId`;
     `spawn` derives its speed from the type's profile (a spawn never states a speed),
     and optionally attaches a `Brain`. Brains are held in a sim-owned `Map` keyed by
     aircraft id — not on the `Aircraft` struct — so world state stays plain,
@@ -49,6 +55,11 @@ city + radar photos, and world-data JSON all loaded) — never on a timer or gue
     discriminant (the `AirportTier` pattern) and per-type `AircraftTypeProfile`s in
     real units (cruise km/h, turn-rate deg/s). Currently one type, the Il-20M "Coot"
     Baltic recon turboprop; Danish interceptors (F-16/F-35) extend this union later.
+    **Authored-TS sanity check:** because this registry is a literal authored in TS,
+    not data loaded and validated at runtime, it runs a cheap module-load pass that
+    calls the `validate.ts` helpers directly on the literal — a typo'd number throws
+    at import time instead of surfacing later as silently wrong movement. `routes.ts`
+    (below) follows the same convention for its own literal.
   - `brain.ts` — per-tick steering. The `Brain` interface is called by
     `AircraftSim.advance` *inside* the whole-tick loop, immediately before the
     position step, so behavior is tick-quantized and bit-deterministic by
@@ -57,9 +68,17 @@ city + radar photos, and world-data JSON all loaded) — never on a timer or gue
     last waypoint it holds heading (despawn is future work). Its `bearingDeg`/
     distance use the same lat-corrected equirectangular metric as `stepAircraft` —
     deliberately not `colocate.ts`'s haversine — so the brain judges geometry
-    exactly the way the aircraft flies it.
-  - `routes.ts` — hardcoded route data (lon/lat waypoints). `INTRUDER_PROBE_ROUTE`
-    is the Kaliningrad-style Baltic probing leg `/spawn-intruder` flies; route
+    exactly the way the aircraft flies it. The interface's optional read-only
+    `waypoints` exposes the intended route for debug rendering only (the
+    `WaypointLayer` overlay) — presentation, never steering; `tick` is the sole
+    steering path.
+  - `routes.ts` — hardcoded route data. An `IntruderRoute` is a distinct `spawn`
+    point plus the `waypoints` legs (all lon/lat): `/spawn-intruder` spawns at
+    `spawn` with its initial heading derived down the first leg (`bearingDeg`), so
+    the intruder enters clean rather than opening with a swerve. `INTRUDER_PROBE_ROUTE`
+    is the Kaliningrad-style Baltic probing leg `/spawn-intruder` flies; runs the
+    same authored-TS sanity check as `aircraftTypes.ts` above, so a typo'd
+    coordinate throws at import rather than on the first `/spawn-intruder`. Route
     randomization must go through a seeded PRNG in `src/map/` when it arrives.
 - `src/game/` — **Phaser rendering + input.** Consumes projected output; never parses
   GeoJSON or re-derives the projection. Folder layout within it:
@@ -68,9 +87,12 @@ city + radar photos, and world-data JSON all loaded) — never on a timer or gue
     `WaypointLayer` is debug chrome, not tactical picture: it draws every brained
     aircraft's planned route (polyline + hollow circle per waypoint, phosphor green)
     and is toggled from the dev toolbar (itself hidden by default off localhost —
-    see the dev-toolbar bullet under rendering). It is fed every
-    frame from `MainScene.updateAircraft` but skips the actual redraw unless the
-    route set or zoom changed (the dirty-check discipline, keyed on content).
+    see the dev-toolbar bullet under rendering). It is fed from
+    `MainScene.updateAircraft` only while the overlay is visible, behind a two-level
+    dirty check: the scene reprojects routes only when the set of brained aircraft
+    ids changes (routes are immutable per aircraft), and the layer itself skips the
+    redraw unless zoom or the projected point content changed — deliberately keyed
+    on coordinates, not ids, so a future brain that moves its waypoints still repaints.
   - `hud/` — fixed-UI-camera chrome: Toolbar, DebugHud, InfoWindow(+Manager),
     ConsoleWindow, and the `/subwoofer` overlay.
   - `camera/` — `CameraController.ts` (pan/zoom/clamp input) and `worldView.ts`
@@ -167,7 +189,10 @@ mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`
   dynamic `import()`** of the module under test — a static import would hoist above the
   stub and crash. Do not add jsdom for this.
 - What is covered: the projection (including the fit-pinning/locked-zoom invariant),
-  the aircraft sim, co-location clustering + label ownership, every data loader (each
+  the aircraft sim, the steering brain (bearing/shortest-arc turn geometry, `RouteBrain`
+  waypoint capture in order, rate-limited turns, and bit-determinism across irregular
+  frame slices), the aircraft type registry (id/profile consistency), co-location
+  clustering + label ownership, every data loader (each
   also parses its real bundled dataset — geojson uses belgium, the smallest boundary,
   because tsc cannot reasonably type a multi-MB JSON module), and the pure `game/`
   helpers (`units`, `math`). Phaser layers/scenes are deliberately untested — verifying
@@ -308,6 +333,14 @@ lon/lat becomes pixels.
     drawn one is already at its correct, continuous phase rather than snapping to zero; the
     starting angles are staggered at construction (one full turn spread evenly across the sites)
     for the same reason on the very first frame.
+  - **Contacts (`PlaneLayer`) are revealed only by the sweep, not drawn continuously.** Aircraft
+    fly in the background at all times — their real lon/lat is the source of truth (`src/map/
+    aircraft.ts`) — but the player only ever sees a contact painted where a radar sweep last
+    passed over one. There is no fade: a contact stays at full brightness until the sweep hand
+    comes back around to its bearing, which either repaints it at the plane's new position
+    (still there) or clears it (moved on/gone). So a contact jumps forward once per revolution
+    and holds its last-seen spot in between. Contacts are drawn in white (the HUD default),
+    distinct from the phosphor-green coverage sweep that reveals them.
 - **Two cameras:** the main camera draws only world layers; a fixed UI camera (zoom 1, no
   scroll) draws only the HUD, so HUD elements keep a constant on-screen size. Each camera
   `ignore()`s the other's objects. Register any new object with the correct camera.
