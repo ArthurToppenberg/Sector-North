@@ -34,6 +34,46 @@ export const TOOLBAR = {
 } as const
 
 /**
+ * Bottom-right simulation speed control: a radio row of text buttons (PAUSE /
+ * 1x / 2x / 3x). Exactly one option is active at a time; its multiplier scales
+ * the real frame delta before it reaches the world simulation (0 = paused).
+ * Active state is shown through label alpha like the toolbar's glyphs — never
+ * a colour change (HUD white/black rule).
+ */
+export const SPEED_CONTROL = {
+  options: [
+    { label: 'PAUSE', multiplier: 0 },
+    { label: '1x', multiplier: 1 },
+    { label: '2x', multiplier: 2 },
+    { label: '3x', multiplier: 3 },
+  ],
+  /** Multiplier active at boot — must match one of `options`. */
+  initialMultiplier: 1,
+  /** Button size on screen (CSS pixels); uniform so the row reads as one control. */
+  buttonWidthScreen: 46,
+  buttonHeightScreen: 30,
+  /** Inset of the row from the bottom-right corner (CSS pixels). */
+  marginScreen: 10,
+  /** Gap between adjacent buttons (CSS pixels). */
+  gapScreen: 6,
+  /** Label font (small, uppercase-style like the toolbar chrome). */
+  fontScreenSize: 11,
+  fontWeight: '600',
+  labelColor: '#ffffff',
+  /** Label opacity when the option is selected vs not (mirrors the toolbar). */
+  labelActiveAlpha: 1,
+  labelInactiveAlpha: 0.3,
+  /** Button surface fill (black) and its resting / hover opacity. */
+  buttonColor: 0x000000,
+  buttonAlpha: 0.35,
+  buttonHoverAlpha: 0.6,
+  /** Button border (white), its width (CSS pixels) and opacity. */
+  borderColor: 0xffffff,
+  borderScreenWidth: 1,
+  borderAlpha: 0.7,
+} as const
+
+/**
  * The site detail window: a HUD panel that opens when the player clicks a marker
  * (currently radar sites; designed to serve towns and airfields too). All sizes
  * are CSS pixels, converted with `DPR` at render time. Chrome stays white/black

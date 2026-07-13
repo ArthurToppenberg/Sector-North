@@ -6,7 +6,7 @@ import { loadRadars, RADARS_ASSET } from '../map/radars'
 import { clusterByProximity, resolveColocationLabels, COLOCATION_RADIUS_KM } from '../map/colocate'
 import { projectToPixels, type Projector } from '../map/project'
 import { AircraftSim } from '../map/aircraft'
-import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER, IS_LOCALHOST } from './config'
+import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER, IS_LOCALHOST, SPEED_CONTROL } from './config'
 import { GridLayer } from './layers/GridLayer'
 import { CoastlineLayer } from './layers/CoastlineLayer'
 import { CityLayer } from './layers/CityLayer'
@@ -18,6 +18,7 @@ import { WaypointLayer, type WaypointRoute } from './layers/WaypointLayer'
 import { CameraController, type CenterBounds } from './camera/CameraController'
 import { cameraWorldView } from './camera/worldView'
 import { DebugHud } from './hud/DebugHud'
+import { SpeedControl } from './hud/SpeedControl'
 import { Toolbar } from './hud/Toolbar'
 import { InfoWindowManager } from './hud/InfoWindowManager'
 import { ConsoleWindow } from './hud/ConsoleWindow'
@@ -67,6 +68,13 @@ export class MainScene extends Phaser.Scene {
   private project!: Projector
   private cameraController!: CameraController
   private debugHud!: DebugHud
+  private speedControl!: SpeedControl
+  // The active time-compression multiplier the speed control selects. It scales
+  // the real frame delta before the delta reaches anything that simulates the
+  // world (aircraft sim, radar sweeps) — 0 pauses, 2/3 fast-forward. Determinism
+  // is untouched: the sim still consumes whole fixed ticks, just more or fewer
+  // of them per real second.
+  private simSpeed: number = SPEED_CONTROL.initialMultiplier
   private toolbar!: Toolbar
   private infoWindows!: InfoWindowManager
   private consoleWindow!: ConsoleWindow
@@ -199,6 +207,9 @@ export class MainScene extends Phaser.Scene {
     // The console starts closed (constructor already hid it); it is opened by the
     // developer toolbar button or the "/" key, both routed through `setConsoleOpen`.
     this.debugHud = new DebugHud(this)
+    this.speedControl = new SpeedControl(this, (multiplier) => {
+      this.simSpeed = multiplier
+    })
 
     const applyColocationLabels = () => {
       const visible = [...airports.map(() => airportsVisible), ...radars.map(() => radarsVisible)]
@@ -296,6 +307,7 @@ export class MainScene extends Phaser.Scene {
       ],
       [
         ...this.debugHud.objects,
+        ...this.speedControl.objects,
         ...this.toolbar.objects,
         ...this.devToolbar.objects,
         ...this.consoleWindow.objects,
@@ -375,6 +387,7 @@ export class MainScene extends Phaser.Scene {
   private onResize() {
     this.uiCamera.setSize(this.scale.width, this.scale.height)
     this.debugHud.reposition()
+    this.speedControl.reposition()
     this.toolbar.reposition()
     this.devToolbar.reposition()
     this.infoWindows.reposition()
@@ -398,9 +411,6 @@ export class MainScene extends Phaser.Scene {
    * painted at the plane's true ground position at the moment the sweep hit it.
    */
   private updateAircraft(deltaSec: number, zoom: number): number {
-    // Fixed-tick stepping (the determinism principle): the sim banks the frame
-    // delta and consumes it in whole SIM_TICK_SEC ticks, so world state never
-    // depends on how the render loop slices time.
     const ticks = this.sim.advance(deltaSec)
     const targets = this.sim.all.map((a) => {
       const [x, y] = this.project(a.lon, a.lat)
@@ -446,16 +456,24 @@ export class MainScene extends Phaser.Scene {
 
     const cam = this.cameras.main
 
-    // Radar sweeps animate on real elapsed time, so they must advance every frame —
-    // including while the camera is idle. Run before the camera-dirty early-out below.
-    // The view centre (from the canonical live-scroll helper, not the render-lagged
-    // cam.worldView) picks the single radar to sweep — the one whose coverage the
-    // centre is under (see RadarSweepLayer.selectSweepIndex).
+    // Time compression scales everything that simulates the world — the aircraft
+    // sim AND the radar sweeps, whose rotation is a simulated antenna, not chrome:
+    // scaling both keeps the detection cadence in step with aircraft motion (and
+    // pause genuinely freezes the whole picture). The camera above stays on the
+    // real delta — input is not part of the world.
+    const simDeltaSec = deltaSec * this.simSpeed
+
+    // Radar sweeps must advance every frame — including while the camera is idle —
+    // so run before the camera-dirty early-out below. The view centre (from the
+    // canonical live-scroll helper, not the render-lagged cam.worldView) picks the
+    // single radar to sweep — the one whose coverage the centre is under (see
+    // RadarSweepLayer.selectSweepIndex).
     const view = cameraWorldView(cam)
-    this.radarSweepLayer.update(deltaSec, cam.zoom, view.centerX, view.centerY)
+    this.radarSweepLayer.update(simDeltaSec, cam.zoom, view.centerX, view.centerY)
     // The tps sample must also run every frame — it measures real ticks per real
-    // second, so it cannot sit behind the camera-dirty early-out below.
-    this.debugHud.sampleTicks(deltaSec, this.updateAircraft(deltaSec, cam.zoom))
+    // second, so it cannot sit behind the camera-dirty early-out below. It is fed
+    // the REAL delta on purpose: at 2x the readout honestly shows ~16 tps.
+    this.debugHud.sampleTicks(deltaSec, this.updateAircraft(simDeltaSec, cam.zoom))
 
     if (cam.scrollX === this.lastScrollX && cam.scrollY === this.lastScrollY && cam.zoom === this.lastZoom) {
       // Camera hasn't moved this frame — the grid slice and HUD readout are still
