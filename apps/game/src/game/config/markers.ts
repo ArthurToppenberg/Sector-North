@@ -126,13 +126,12 @@ export const RADAR = {
  */
 export const PLANE = {
   /**
-   * Contact icon: a diamond pointing along the plane's heading. Half-extents on
-   * screen (CSS pixels), held constant across zoom — the along-heading half is
-   * longer than the across half so the diamond clearly points which way the
-   * plane is flying.
+   * Contact icon: a hollow circle centred on the contact — heading is conveyed
+   * by the velocity vector alone. Radius and stroke width on screen (CSS
+   * pixels), held constant across zoom.
    */
-  iconHalfLengthScreen: 9,
-  iconHalfWidthScreen: 5,
+  iconRadiusScreen: 6,
+  iconLineScreenWidth: 1.25,
   /**
    * Zoom at/above which the contact icon holds a constant on-screen size (fixed
    * when zoomed in). Below it the icon is world-anchored, so it scales on screen
