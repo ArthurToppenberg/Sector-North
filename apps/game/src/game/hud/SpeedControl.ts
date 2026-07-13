@@ -32,7 +32,7 @@ function assertOptions(): void {
 }
 
 /**
- * Bottom-right radio row of simulation-speed buttons (PAUSE / 1x / 2x / 3x).
+ * Bottom-right radio row of simulation-speed buttons (PAUSE / 1x / 5x / 10x).
  * Exactly one option is active; pressing another reports its multiplier through
  * `onSelect`. Like the toolbar, the control never touches the sim itself — the
  * scene owns that wiring — and pressing the already-active option is a no-op,

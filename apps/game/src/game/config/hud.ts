@@ -35,7 +35,7 @@ export const TOOLBAR = {
 
 /**
  * Bottom-right simulation speed control: a radio row of text buttons (PAUSE /
- * 1x / 2x / 3x). Exactly one option is active at a time; its multiplier scales
+ * 1x / 5x / 10x). Exactly one option is active at a time; its multiplier scales
  * the real frame delta before it reaches the world simulation (0 = paused).
  * Active state is shown through label alpha like the toolbar's glyphs — never
  * a colour change (HUD white/black rule).
@@ -44,8 +44,8 @@ export const SPEED_CONTROL = {
   options: [
     { label: 'PAUSE', multiplier: 0 },
     { label: '1x', multiplier: 1 },
-    { label: '2x', multiplier: 2 },
-    { label: '3x', multiplier: 3 },
+    { label: '5x', multiplier: 5 },
+    { label: '10x', multiplier: 10 },
   ],
   /** Multiplier active at boot — must match one of `options`. */
   initialMultiplier: 1,

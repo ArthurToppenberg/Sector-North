@@ -71,7 +71,7 @@ export class MainScene extends Phaser.Scene {
   private speedControl!: SpeedControl
   // The active time-compression multiplier the speed control selects. It scales
   // the real frame delta before the delta reaches anything that simulates the
-  // world (aircraft sim, radar sweeps) — 0 pauses, 2/3 fast-forward. Determinism
+  // world (aircraft sim, radar sweeps) — 0 pauses, >1 fast-forwards. Determinism
   // is untouched: the sim still consumes whole fixed ticks, just more or fewer
   // of them per real second.
   private simSpeed: number = SPEED_CONTROL.initialMultiplier
