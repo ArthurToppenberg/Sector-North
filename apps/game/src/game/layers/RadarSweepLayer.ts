@@ -16,7 +16,6 @@ export interface RadarSweepMarker {
 
 const TAU = Math.PI * 2
 
-/** Wrap an angle (radians) into `[0, TAU)`. */
 function norm(angle: number): number {
   return ((angle % TAU) + TAU) % TAU
 }
@@ -65,6 +64,11 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
    * advanced it — the trailing edge of the arc swept this frame, used by
    * `detectSweptTargets` to find contacts the hand crossed. */
   private readonly prevAngle: number[]
+  /** Whether the hand completed at least one full revolution this frame (a
+   * fast-forward after a hidden tab). The wrapped `prevAngle → angle` arc only
+   * carries the fractional turn, so whole revolutions must be flagged
+   * explicitly or a catch-up frame would sweep just a sliver. */
+  private readonly sweptFullTurn: boolean[]
   private layerVisible = true
 
   constructor(scene: Phaser.Scene, markers: readonly RadarSweepMarker[], pixelsPerKm: number) {
@@ -74,6 +78,7 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
     this.rangePx = markers.map((m) => m.rangeKm * pixelsPerKm)
     this.angle = markers.map((_, i) => (i / markers.length) * TAU)
     this.prevAngle = this.angle.slice()
+    this.sweptFullTurn = markers.map(() => false)
     this.gfx = scene.add.graphics().setDepth(DEPTH.radarSweep)
   }
 
@@ -116,6 +121,7 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
       // advances (not just the drawn one), so detection can run for all radars.
       this.prevAngle[i] = this.angle[i]
       this.angle[i] = (this.angle[i] + (TAU * deltaSec) / this.markers[i].updateIntervalSec) % TAU
+      this.sweptFullTurn[i] = deltaSec >= this.markers[i].updateIntervalSec
     }
 
     if (!this.layerVisible) return
@@ -138,6 +144,13 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
     this.gfx.lineBetween(m.x, m.y, m.x + Math.cos(a) * r, m.y + Math.sin(a) * r)
   }
 
+  /** Whether world-pixel point `(x, y)`, offset `(dx, dy)` from site `i`'s
+   * origin, falls inside that site's range ring — the squared-radius
+   * comparison shared by `sweptBySite` and `selectSweepIndex`. */
+  private withinRangeSq(i: number, dx: number, dy: number): boolean {
+    return dx * dx + dy * dy <= this.rangePx[i] * this.rangePx[i]
+  }
+
   /**
    * Is world-pixel point `(x, y)` inside site `i`'s range ring AND the angular
    * slice its hand swept during the most recent `update`? Bearings use the same
@@ -149,12 +162,13 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
    * closing edge is next frame's excluded opening edge).
    */
   private sweptBySite(i: number, x: number, y: number): boolean {
-    const swept = norm(this.angle[i] - this.prevAngle[i])
-    if (swept === 0) return false
     const m = this.markers[i]
     const dx = x - m.x
     const dy = y - m.y
-    if (dx * dx + dy * dy > this.rangePx[i] * this.rangePx[i]) return false
+    if (!this.withinRangeSq(i, dx, dy)) return false
+    if (this.sweptFullTurn[i]) return true
+    const swept = norm(this.angle[i] - this.prevAngle[i])
+    if (swept === 0) return false
     const offset = norm(Math.atan2(dy, dx) - this.prevAngle[i])
     return offset > 0 && offset <= swept
   }
@@ -208,7 +222,7 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
       // Squared distance vs squared range radius avoids a sqrt. A site whose ring
       // contains the centre outranks one that doesn't; within the same containment
       // tier the nearer wins. (Centre inside no ring → all false → nearest overall.)
-      const contains = distSq <= this.rangePx[i] * this.rangePx[i]
+      const contains = this.withinRangeSq(i, dx, dy)
       const better = contains === bestContains ? distSq < bestDistSq : contains
       if (better) {
         best = i
