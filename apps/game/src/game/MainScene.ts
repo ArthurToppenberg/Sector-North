@@ -202,7 +202,7 @@ export class MainScene extends Phaser.Scene {
     this.radarSweepLayer.setVisible(radarsVisible)
     // Blips are radar returns, so they belong to the radar picture — toggled
     // with it. With the radars off the sweep freezes, so no new contacts appear
-    // regardless; hiding the layer also drops any still-fading blips at once.
+    // regardless; hiding the layer also drops any still-painted blips at once.
     this.planeLayer.setVisible(radarsVisible)
     // The console starts closed (constructor already hid it); it is opened by the
     // developer toolbar button or the "/" key, both routed through `setConsoleOpen`.
@@ -447,9 +447,10 @@ export class MainScene extends Phaser.Scene {
   }
 
   update(timeMs: number, _smoothedDeltaMs: number) {
-    // Use the raw rAF timestamp (see FrameClock's doc for why), not Phaser's
-    // smoothed delta. A hidden tab resurfacing as one large delta is drained by
-    // the sim as whole ticks — the mandated fast-forward, not an approximation.
+    // Use the raw rAF timestamp (see apps/game/CLAUDE.md § Frame timing for why),
+    // not Phaser's smoothed delta. A hidden tab resurfacing as one large delta is
+    // drained by the sim as whole ticks — the mandated fast-forward, not an
+    // approximation.
     const deltaSec = this.frameClock.sample(timeMs)
     // Apply any held-key panning first, then react to the resulting camera state.
     this.cameraController.update(deltaSec)
