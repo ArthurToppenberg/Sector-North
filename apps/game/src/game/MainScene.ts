@@ -33,6 +33,7 @@ import {
 } from './markerBuilders'
 import { cityWindowContent, radarWindowContent } from './windowContent'
 import { registerSceneCommands } from './sceneCommands'
+import { FrameClock } from './frameClock'
 import { log } from '../log/logger'
 import subwooferImageUrl from './assets/subwoofer/subwoofer.webp?url'
 import subwooferAudioUrl from './assets/subwoofer/bass.mp3?url'
@@ -73,6 +74,8 @@ export class MainScene extends Phaser.Scene {
   /** Whether the developer console is open; toggled by the toolbar and the "/" key. */
   private consoleOpen = false
   private uiCamera!: Phaser.Cameras.Scene2D.Camera
+
+  private readonly frameClock = new FrameClock()
 
   // Camera state from the previous frame, so `update` can skip viewport-reactive
   // work while the camera is idle (the common case). NaN forces a first-frame draw.
@@ -433,8 +436,11 @@ export class MainScene extends Phaser.Scene {
     return ticks
   }
 
-  update(_time: number, deltaMs: number) {
-    const deltaSec = deltaMs / 1000
+  update(timeMs: number, _smoothedDeltaMs: number) {
+    // Use the raw rAF timestamp (see FrameClock's doc for why), not Phaser's
+    // smoothed delta. A hidden tab resurfacing as one large delta is drained by
+    // the sim as whole ticks — the mandated fast-forward, not an approximation.
+    const deltaSec = this.frameClock.sample(timeMs)
     // Apply any held-key panning first, then react to the resulting camera state.
     this.cameraController.update(deltaSec)
 
