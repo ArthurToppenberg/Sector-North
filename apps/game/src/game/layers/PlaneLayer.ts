@@ -2,7 +2,7 @@ import Phaser from 'phaser'
 import { makeFail, type Fail } from '../fail'
 import { PLANE, DEPTH } from '../config'
 import { screenPxToWorld } from '../units'
-import type { WorldLayer, ToggleableLayer } from './helpers'
+import type { WorldLayer } from './helpers'
 
 const DEG2RAD = Math.PI / 180
 
@@ -28,7 +28,7 @@ const fail: Fail = makeFail('game/PlaneLayer')
  * stay glued to the ground as the camera pans/zooms, with only the on-screen icon
  * size re-derived per frame to stay constant.
  */
-export class PlaneLayer implements WorldLayer, ToggleableLayer {
+export class PlaneLayer implements WorldLayer {
   private readonly gfx: Phaser.GameObjects.Graphics
   private contacts: Contact[] = []
 
@@ -38,10 +38,6 @@ export class PlaneLayer implements WorldLayer, ToggleableLayer {
 
   get objects(): Phaser.GameObjects.GameObject[] {
     return [this.gfx]
-  }
-
-  setVisible(visible: boolean): void {
-    this.gfx.setVisible(visible)
   }
 
   /** Add contacts reported by the radar sweep this frame. */

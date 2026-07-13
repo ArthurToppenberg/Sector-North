@@ -314,16 +314,19 @@ lon/lat becomes pixels.
   - *Viewport-reactive* (grid slice, HUD readout): runs in `update`, guarded by the
     camera-moved dirty check so idle frames do no work. Remember that a window resize
     changes the viewport without moving the camera — handle it in `onResize`.
-  - *Every-frame / animated* (`RadarSweepLayer`): redraws every frame *while visible* off the
-    scene's `update` tick — gated only by its own visibility (the radar toolbar toggle), not by
-    the camera-moved dirty check — because its content is intrinsically time-varying. This
-    is cheap here only because there are a handful of sites; reach for it just for genuinely
+  - *Every-frame / animated* (`RadarSweepLayer`): runs every frame off the scene's `update`
+    tick — not behind the camera-moved dirty check — because its content is intrinsically
+    time-varying. The layer's visibility (the radar toolbar toggle) gates only the *drawing*:
+    the antenna simulation — every site's angle advance plus `detectSweptTargets`/`isSwept` —
+    runs unconditionally, because hiding the sweeps is decluttering the display, not switching
+    the sensors off (see the contacts bullet below). This every-frame work is cheap here only
+    because there are a handful of sites; reach for it just for genuinely
     animated content, not to dodge the dirty-check discipline above. Because all its geometry
     is world-space (km → pixels via `pixelsPerKm`), a sweep covers the same patch of ground at
     every zoom, so — unlike the static marker layers — it needs no zoom handler / `onZoomChanged`
     wiring: only the stroke widths are re-derived per frame (via `screenPxToWorld`) to hold a
-    constant on-screen thickness. **Clutter reduction:** every site's sweep angle still advances
-    every frame while visible, but only a single site actually draws its range ring and sweep
+    constant on-screen thickness. **Clutter reduction:** every site's sweep angle advances
+    every frame, but only a single site actually draws its range ring and sweep
     hand each frame — the rest advance silently off-screen. The drawn site is coverage-first
     (`RadarSweepLayer.selectSweepIndex`): a radar whose range ring *contains* the view centre
     beats one that doesn't (so a nearer but smaller-range radar loses to a farther radar you're
@@ -340,7 +343,10 @@ lon/lat becomes pixels.
     comes back around to its bearing, which either repaints it at the plane's new position
     (still there) or clears it (moved on/gone). So a contact jumps forward once per revolution
     and holds its last-seen spot in between. Contacts are drawn in white (the HUD default),
-    distinct from the phosphor-green coverage sweep that reveals them.
+    distinct from the phosphor-green coverage sweep that reveals them. **Contacts do not
+    follow the radar toolbar toggle**: toggling radars off hides the site markers and the
+    sweep overlay but the antennas keep rotating and detecting, so the contact picture keeps
+    updating as normal — the toggle declutters the display, it never switches the sensors off.
 - **Two cameras:** the main camera draws only world layers; a fixed UI camera (zoom 1, no
   scroll) draws only the HUD, so HUD elements keep a constant on-screen size. Each camera
   `ignore()`s the other's objects. Register any new object with the correct camera.
