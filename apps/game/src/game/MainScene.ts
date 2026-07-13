@@ -331,7 +331,10 @@ export class MainScene extends Phaser.Scene {
    * painted at the plane's true ground position at the moment the sweep hit it.
    */
   private updateAircraft(deltaSec: number, zoom: number) {
-    this.sim.step(deltaSec)
+    // Fixed-tick stepping (the determinism principle): the sim banks the frame
+    // delta and consumes it in whole SIM_TICK_SEC ticks, so world state never
+    // depends on how the render loop slices time.
+    this.sim.advance(deltaSec)
     const targets = this.sim.all.map((a) => {
       const [x, y] = this.project(a.lon, a.lat)
       return { x, y, headingDeg: a.headingDeg, speedKmh: a.speedKmh }

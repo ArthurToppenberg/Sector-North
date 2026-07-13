@@ -36,6 +36,11 @@ city + radar photos, and world-data JSON all loaded) — never on a timer or gue
     `src/map/`. (`src/game/fail.ts` is a deliberate 3-line twin of `makeFail` for the
     render side, rather than coupling `game/` error plumbing into the world layer.)
   - `project.ts` — the projection layer (see below).
+  - `aircraft.ts` — the aircraft world model: `stepAircraft` (lat-corrected dead
+    reckoning) and `AircraftSim`, whose `advance()` banks real frame deltas and steps
+    the world only in whole `SIM_TICK_SEC` ticks — the determinism core principle
+    (root CLAUDE.md): replay/fast-forward is "run the elapsed ticks", bit-stable, and
+    the whole module runs headless.
 - `src/game/` — **Phaser rendering + input.** Consumes projected output; never parses
   GeoJSON or re-derives the projection. Folder layout within it:
   - `layers/` — the world render layers (Grid, Coastline, City, Airport, Radar,

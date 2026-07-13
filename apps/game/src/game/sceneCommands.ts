@@ -34,11 +34,14 @@ export function registerSceneCommands({ sim, planeLayer, subwoofer }: SceneComma
       const raw = args.trim()
       const count = raw === '' ? PLANE.defaultSpawnCount : Number.parseInt(raw, 10)
       if (!Number.isInteger(count) || count <= 0) return `Usage: /spawn-planes [positive integer]`
+      // Even compass spread, not Math.random(): the world model must stay
+      // deterministic (see the determinism principle in root CLAUDE.md) — any
+      // future real randomness must be a seeded PRNG in src/map/.
       for (let i = 0; i < count; i++) {
         sim.spawn({
           lon: CAMERA_INITIAL_CENTER.lon,
           lat: CAMERA_INITIAL_CENTER.lat,
-          headingDeg: Math.random() * 360,
+          headingDeg: (i * 360) / count,
           speedKmh: PLANE.spawnSpeedKmh,
         })
       }

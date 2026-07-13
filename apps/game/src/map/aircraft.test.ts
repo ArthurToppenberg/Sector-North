@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { stepAircraft, AircraftSim, type Aircraft } from './aircraft'
+import { stepAircraft, AircraftSim, SIM_TICK_SEC, type Aircraft } from './aircraft'
 import { KM_PER_DEG_LAT } from './project'
 
 const DEG2RAD = Math.PI / 180
@@ -80,11 +80,11 @@ describe('AircraftSim', () => {
     expect(() => sim.spawn({ ...valid, speedKmh: -1 })).toThrow(/speedKmh must be finite/)
   })
 
-  it('advances every aircraft on step', () => {
+  it('advances every aircraft', () => {
     const sim = new AircraftSim()
     const north = sim.spawn({ lon: 12, lat: 55, headingDeg: 0, speedKmh: 800 })
     const east = sim.spawn({ lon: 12, lat: 55, headingDeg: 90, speedKmh: 800 })
-    sim.step(60)
+    sim.advance(60)
     expect(north.lat).toBeGreaterThan(55)
     expect(east.lon).toBeGreaterThan(12)
   })
@@ -96,5 +96,60 @@ describe('AircraftSim', () => {
     expect(sim.clear()).toBe(2)
     expect(sim.count).toBe(0)
     expect(sim.all).toHaveLength(0)
+  })
+})
+
+describe('determinism (fixed-tick stepping)', () => {
+  const spawn = { lon: 10.75, lat: 56, headingDeg: 45, speedKmh: 800 }
+
+  it('one big step lands elsewhere than the same time in ticks — why the canonical tick exists', () => {
+    // Heading 45° so latitude changes: stepAircraft uses the start-lat cosine
+    // for the whole step, making integration step-size-sensitive.
+    const oneStep = { id: 1, ...spawn }
+    const ticked = { id: 2, ...spawn }
+    stepAircraft(oneStep, 3600)
+    for (let i = 0; i < 3600 / SIM_TICK_SEC; i++) stepAircraft(ticked, SIM_TICK_SEC)
+    expect(oneStep.lon).not.toBe(ticked.lon)
+  })
+
+  it('a fast-forward advance equals the same ticks replayed one by one, bit for bit', () => {
+    // SIM_TICK_SEC is exactly representable in binary floating point, so a
+    // whole-second duration quantizes into an exact tick count with no remainder.
+    const sim = new AircraftSim()
+    const plane = sim.spawn(spawn)
+    sim.advance(10)
+
+    const reference = { id: 1, ...spawn }
+    for (let i = 0; i < 10 / SIM_TICK_SEC; i++) stepAircraft(reference, SIM_TICK_SEC)
+
+    expect(plane.lon).toBe(reference.lon)
+    expect(plane.lat).toBe(reference.lat)
+  })
+
+  it('yields bit-identical state for the same sequence of frame deltas', () => {
+    const run = () => {
+      const sim = new AircraftSim()
+      const plane = sim.spawn(spawn)
+      for (const delta of [0.016, 0.033, 0.5, 0.007, 2.25, 0.016]) sim.advance(delta)
+      return [plane.lon, plane.lat]
+    }
+    expect(run()).toEqual(run())
+  })
+
+  it('banks sub-tick time instead of stepping partially', () => {
+    const sim = new AircraftSim()
+    const plane = sim.spawn(spawn)
+    sim.advance(SIM_TICK_SEC / 2)
+    expect(plane.lon).toBe(spawn.lon)
+    expect(plane.lat).toBe(spawn.lat)
+
+    sim.advance(SIM_TICK_SEC / 2)
+    expect(plane.lat).not.toBe(spawn.lat)
+  })
+
+  it('rejects a negative or non-finite advance', () => {
+    const sim = new AircraftSim()
+    expect(() => sim.advance(-1)).toThrow(/deltaSec must be finite/)
+    expect(() => sim.advance(Number.NaN)).toThrow(/deltaSec must be finite/)
   })
 })
