@@ -9,6 +9,14 @@ import { cameraWorldView, type WorldView } from '../camera/worldView'
  */
 const ZOOM_READOUT_PRECISION = 3
 
+/**
+ * Real seconds of frame time accumulated before the tps readout refreshes. One
+ * second smooths the tick-count jitter inherent to fixed-tick stepping (a 60 fps
+ * frame steps 0 or 1 whole 8 Hz ticks, so any shorter window flickers).
+ */
+const TPS_WINDOW_SEC = 1
+const TPS_READOUT_PRECISION = 1
+
 function formatReadout(cam: Phaser.Cameras.Scene2D.Camera, view: WorldView): string {
   return (
     `zoom   ${cam.zoom.toFixed(ZOOM_READOUT_PRECISION)}\n` +
@@ -26,6 +34,15 @@ export class DebugHud {
   // Last string pushed to the text object. `Text.setText` re-rasterises the text
   // canvas even when the content is identical, so we skip it when unchanged.
   private lastText = ''
+
+  private camReadout = ''
+
+  // "—" until the first window completes: an honest "not measured yet", never a
+  // fake 0 or the nominal rate.
+  private tpsReadout = 'tps    —'
+
+  private tpsWindowSec = 0
+  private tpsWindowTicks = 0
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene
@@ -65,7 +82,36 @@ export class DebugHud {
    */
   render(cam: Phaser.Cameras.Scene2D.Camera): void {
     const view = cameraWorldView(cam)
-    this.setTextIfChanged(formatReadout(cam, view))
+    this.camReadout = formatReadout(cam, view)
+    this.refresh()
+  }
+
+  /**
+   * Feed one frame's real duration and the whole sim ticks it stepped. The tps
+   * shown is *measured* (ticks actually run per real second), not the nominal
+   * 1/SIM_TICK_SEC — a stall or a catch-up burst is exactly what this readout
+   * exists to reveal. Runs every frame, unlike `render`, which the scene gates
+   * behind its camera-moved dirty check.
+   */
+  sampleTicks(deltaSec: number, ticks: number): void {
+    if (!Number.isFinite(deltaSec) || deltaSec < 0) {
+      throw new Error(`[DebugHud] deltaSec must be finite and >= 0, got ${deltaSec}`)
+    }
+    if (!Number.isInteger(ticks) || ticks < 0) {
+      throw new Error(`[DebugHud] ticks must be a non-negative integer, got ${ticks}`)
+    }
+    this.tpsWindowSec += deltaSec
+    this.tpsWindowTicks += ticks
+    if (this.tpsWindowSec < TPS_WINDOW_SEC) return
+    const tps = this.tpsWindowTicks / this.tpsWindowSec
+    this.tpsReadout = `tps    ${tps.toFixed(TPS_READOUT_PRECISION)}`
+    this.tpsWindowSec = 0
+    this.tpsWindowTicks = 0
+    this.refresh()
+  }
+
+  private refresh(): void {
+    this.setTextIfChanged(`${this.camReadout}\n${this.tpsReadout}`)
   }
 
   private setTextIfChanged(next: string): void {

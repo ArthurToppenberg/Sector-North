@@ -83,8 +83,8 @@ describe('AircraftSim', () => {
 
   it('rejects out-of-range, non-finite, or unknown spawn parameters', () => {
     const sim = new AircraftSim()
-    expect(() => sim.spawn({ ...valid, lon: 181 })).toThrow(/lon out of range/)
-    expect(() => sim.spawn({ ...valid, lat: -91 })).toThrow(/lat out of range/)
+    expect(() => sim.spawn({ ...valid, lon: 181 })).toThrow(/out-of-range longitude/)
+    expect(() => sim.spawn({ ...valid, lat: -91 })).toThrow(/out-of-range latitude/)
     expect(() => sim.spawn({ ...valid, headingDeg: Number.NaN })).toThrow(/headingDeg not finite/)
     expect(() => sim.spawn({ ...valid, type: 'ufo' as never })).toThrow(/type unknown/)
   })
@@ -170,6 +170,14 @@ describe('determinism (fixed-tick stepping)', () => {
 
     sim.advance(SIM_TICK_SEC / 2)
     expect(plane.lat).not.toBe(spawn.lat)
+  })
+
+  it('reports the whole ticks stepped, counting banked sub-tick time', () => {
+    const sim = new AircraftSim()
+    sim.spawn(spawn)
+    expect(sim.advance(SIM_TICK_SEC * 2.5)).toBe(2)
+    expect(sim.advance(SIM_TICK_SEC / 2)).toBe(1)
+    expect(sim.advance(0)).toBe(0)
   })
 
   it('rejects a negative or non-finite advance', () => {

@@ -1,28 +1,14 @@
 import { KM_PER_DEG_LAT } from './project'
 import { AIRCRAFT_TYPES, type AircraftTypeId } from './aircraftTypes'
 import type { Brain } from './brain'
+import { isFiniteNumber, makeFail, requireLat, requireLon } from './validate'
 
-const DEG2RAD = Math.PI / 180
+export const DEG2RAD = Math.PI / 180
 const SECONDS_PER_HOUR = 3600
+const fail = makeFail('map/aircraft')
 
-/**
- * The canonical simulation tick (seconds). Sim time only ever advances in whole
- * ticks (see `AircraftSim.advance`): `stepAircraft`'s integration is
- * step-size-sensitive (it uses the start latitude's cosine for the whole step),
- * so stepping 10 s as one step vs. 100 small ones lands in different places —
- * only a fixed tick makes replay and pause/fast-forward bit-stable, and lets the
- * same world run headless on a server (the determinism core principle, see root
- * CLAUDE.md). 0.125 is exactly representable in binary floating point, so
- * whole-second durations quantize into an exact tick count with zero remainder;
- * 8 Hz is ample for km-scale movement (800 km/h ≈ 28 m per tick).
- */
 export const SIM_TICK_SEC = 0.125
 
-/**
- * A simulated aircraft. Its position is a real GPS coordinate (WGS84) — the
- * source of truth — advanced in lon/lat by `stepAircraft`; where it is *drawn*
- * is derived from this via the projection layer, never stored here.
- */
 export interface Aircraft {
   readonly id: number
   readonly type: AircraftTypeId
@@ -33,18 +19,6 @@ export interface Aircraft {
   speedKmh: number
 }
 
-function fail(message: string): never {
-  throw new Error(`[map/aircraft] ${message}`)
-}
-
-/**
- * Advance one aircraft by `deltaSec` real seconds along its current heading,
- * mutating its lon/lat in place. The step is done in geographic units, not
- * pixels (GPS is the source of truth): a north/south component maps straight
- * through `KM_PER_DEG_LAT`, while the east/west component is divided by
- * `cos(latitude)` because a degree of longitude narrows toward the poles — the
- * same latitude correction the projection layer applies.
- */
 export function stepAircraft(ac: Aircraft, deltaSec: number): void {
   if (!Number.isFinite(deltaSec) || deltaSec < 0) fail(`deltaSec must be finite and >= 0, got ${deltaSec}`)
   const distKm = ac.speedKmh * (deltaSec / SECONDS_PER_HOUR)
@@ -61,11 +35,6 @@ export function stepAircraft(ac: Aircraft, deltaSec: number): void {
   ac.lon += (distKm * Math.sin(headingRad)) / (KM_PER_DEG_LAT * cosLat)
 }
 
-/**
- * Parameters for spawning one aircraft; validated by `AircraftSim.spawn`.
- * Speed is not a parameter — it is derived from the type's profile, so the
- * profile stays the single source of truth for how fast a type flies.
- */
 export interface AircraftSpawn {
   lon: number
   lat: number
@@ -73,28 +42,17 @@ export interface AircraftSpawn {
   type: AircraftTypeId
 }
 
-/**
- * Owns the set of in-flight aircraft and advances them each tick. Pure world
- * model — no Phaser, no projection knowledge — so the render side observes it
- * through the projection layer rather than the sim reasoning about pixels.
- */
 export class AircraftSim {
   private readonly aircraft: Aircraft[] = []
-  /**
-   * Brains are keyed by aircraft id rather than stored on the `Aircraft`
-   * struct, so world state stays plain data — serializable/replayable later
-   * without behavior objects tangled into it. A brainless aircraft simply
-   * flies straight forever.
-   */
   private readonly brains = new Map<number, Brain>()
   private nextId = 1
   /** Real seconds received but not yet consumed by a whole tick. */
   private pendingSec = 0
 
   spawn({ lon, lat, headingDeg, type }: AircraftSpawn, brain?: Brain): Aircraft {
-    if (!Number.isFinite(lon) || lon < -180 || lon > 180) fail(`spawn lon out of range: ${lon}`)
-    if (!Number.isFinite(lat) || lat < -90 || lat > 90) fail(`spawn lat out of range: ${lat}`)
-    if (!Number.isFinite(headingDeg)) fail(`spawn headingDeg not finite: ${headingDeg}`)
+    requireLon(lon, fail, 'spawn')
+    requireLat(lat, fail, 'spawn')
+    if (!isFiniteNumber(headingDeg)) fail(`spawn headingDeg not finite: ${headingDeg}`)
     const profile = AIRCRAFT_TYPES[type]
     if (profile === undefined) fail(`spawn type unknown: ${JSON.stringify(type)}`)
 
@@ -104,17 +62,11 @@ export class AircraftSim {
     return ac
   }
 
-  /**
-   * Advance the sim by real elapsed seconds. The world only ever steps in whole
-   * `SIM_TICK_SEC` ticks — the sub-tick remainder is banked for the next call —
-   * so identical elapsed time yields identical tick sequences regardless of how
-   * the caller's frames slice it up. A long delta (a paused tab catching up) is
-   * simply many ticks replayed in a burst: that is the fast-forward mechanism,
-   * not a special case.
-   */
-  advance(deltaSec: number): void {
+  /** Returns the number of whole ticks stepped, so callers can observe the real tick rate. */
+  advance(deltaSec: number): number {
     if (!Number.isFinite(deltaSec) || deltaSec < 0) fail(`deltaSec must be finite and >= 0, got ${deltaSec}`)
     this.pendingSec += deltaSec
+    let ticks = 0
     while (this.pendingSec >= SIM_TICK_SEC) {
       // Steer, then step: the brain sets the heading the whole tick is flown
       // on. Steering inside the whole-tick loop is what keeps turning
@@ -125,15 +77,15 @@ export class AircraftSim {
         stepAircraft(ac, SIM_TICK_SEC)
       }
       this.pendingSec -= SIM_TICK_SEC
+      ticks++
     }
+    return ticks
   }
 
-  /** The brain steering the given aircraft, or undefined if it flies brainless. */
   brainOf(id: number): Brain | undefined {
     return this.brains.get(id)
   }
 
-  /** Remove every aircraft; returns how many were removed. */
   clear(): number {
     const removed = this.aircraft.length
     this.aircraft.length = 0

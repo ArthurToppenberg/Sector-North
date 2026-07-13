@@ -1,16 +1,13 @@
 import type { Waypoint } from './brain'
+import { makeFail, requireLat, requireLon, requireNonEmptyArray } from './validate'
+
+const fail = makeFail('map/routes')
 
 export interface IntruderRoute {
   readonly spawn: Waypoint
   readonly waypoints: readonly Waypoint[]
 }
 
-/**
- * A Kaliningrad-style Baltic probing leg: enter from the east of Bornholm,
- * skirt Danish airspace toward the Øresund approach, then swing back out
- * east. Hardcoded for the MVP — route variation will need a seeded PRNG in
- * src/map/ (determinism rule), never Math.random().
- */
 export const INTRUDER_PROBE_ROUTE: IntruderRoute = {
   spawn: { lon: 16.8, lat: 55.1 },
   waypoints: [
@@ -20,3 +17,11 @@ export const INTRUDER_PROBE_ROUTE: IntruderRoute = {
     { lon: 17.0, lat: 55.8 },
   ],
 }
+
+requireLon(INTRUDER_PROBE_ROUTE.spawn.lon, fail, 'spawn')
+requireLat(INTRUDER_PROBE_ROUTE.spawn.lat, fail, 'spawn')
+requireNonEmptyArray(INTRUDER_PROBE_ROUTE.waypoints, fail, 'waypoints')
+INTRUDER_PROBE_ROUTE.waypoints.forEach((wp, i) => {
+  requireLon(wp.lon, fail, `waypoint ${i}`)
+  requireLat(wp.lat, fail, `waypoint ${i}`)
+})

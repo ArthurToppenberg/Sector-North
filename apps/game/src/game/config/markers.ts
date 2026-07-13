@@ -112,18 +112,6 @@ export const RADAR = {
   },
 } as const
 
-/**
- * Simulated air traffic. Aircraft fly in the background at all times (their
- * real lon/lat is the source of truth — see `src/map/aircraft.ts`); the player
- * only ever sees a **contact** painted where a radar sweep last passed over one.
- * There is no fade: a contact stays put at full brightness until the hand comes
- * back around to its bearing, which either repaints it at the plane's new
- * position (still there) or clears it (moved on / gone). So a contact jumps
- * forward one step per revolution and holds its last-seen spot in between.
- *
- * Contacts are drawn in white (the HUD default), distinct from the phosphor-green
- * coverage sweep that reveals them.
- */
 export const PLANE = {
   /**
    * Contact icon: a diamond pointing along the plane's heading. Half-extents on
@@ -157,14 +145,6 @@ export const PLANE = {
   defaultSpawnCount: 8,
 } as const
 
-/**
- * The debug waypoint-route overlay (`WaypointLayer`), toggled from the
- * localhost-only dev toolbar: each brained aircraft's planned route drawn as a
- * polyline with a hollow circle per waypoint. Phosphor green (`MAP.strokeColor`)
- * so it reads as radar-display chrome, not a tactical contact (contacts are
- * white). All sizes are held constant on screen at every zoom, like the
- * coastline hairline.
- */
 export const WAYPOINT = {
   /** Waypoint circle radius on screen (CSS pixels). */
   circleRadiusScreen: 3.5,

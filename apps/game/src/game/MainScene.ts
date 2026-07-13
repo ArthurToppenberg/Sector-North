@@ -37,6 +37,9 @@ import { log } from '../log/logger'
 import subwooferImageUrl from './assets/subwoofer/subwoofer.webp?url'
 import subwooferAudioUrl from './assets/subwoofer/bass.mp3?url'
 
+/** The dev toolbar is the second `Toolbar` row, stacked under the main one (row 0). */
+const DEV_TOOLBAR_ROW_INDEX = 1
+
 export class MainScene extends Phaser.Scene {
   private gridLayer!: GridLayer
   // Held as a field (unlike the city/airport/radar marker layers, which stay
@@ -54,6 +57,12 @@ export class MainScene extends Phaser.Scene {
   private devToolbar!: Toolbar
   private waypointsVisible = false
   private devToolsVisible = IS_LOCALHOST
+  // Reprojecting every brained aircraft's route is wasted work on frames where
+  // the set of brained aircraft hasn't changed (routes are immutable per
+  // aircraft) — cache by that id signature so `updateAircraft` only reprojects
+  // when it actually differs, not on every frame the overlay happens to be on.
+  private waypointRoutesCache: WaypointRoute[] = []
+  private lastWaypointAircraftIds = ''
   private project!: Projector
   private cameraController!: CameraController
   private debugHud!: DebugHud
@@ -238,13 +247,10 @@ export class MainScene extends Phaser.Scene {
         {
           id: 'waypoints',
           initialActive: this.waypointsVisible,
-          onToggle: (active) => {
-            this.waypointsVisible = active
-            this.waypointLayer.setVisible(active)
-          },
+          onToggle: (active) => this.setWaypointsVisible(active),
         },
       ],
-      1,
+      DEV_TOOLBAR_ROW_INDEX,
     )
     this.devToolbar.setVisible(this.devToolsVisible)
 
@@ -314,6 +320,19 @@ export class MainScene extends Phaser.Scene {
     this.cameraController.setKeyboardPanEnabled(!open)
   }
 
+  /**
+   * The single funnel for the waypoint-overlay flag, mirroring `setConsoleOpen`:
+   * the scene field, the dev-toolbar button's glyph, and the layer's visibility
+   * are kept in sync from this one place, whether the change came from the
+   * toolbar press (`onToggle`) or from hiding the toolbar itself.
+   */
+  private setWaypointsVisible(active: boolean): void {
+    if (active === this.waypointsVisible) return
+    this.waypointsVisible = active
+    this.waypointLayer.setVisible(active)
+    this.devToolbar.setActive('waypoints', active)
+  }
+
   private setDevToolsVisible(visible: boolean): void {
     if (visible === this.devToolsVisible) return
     this.devToolsVisible = visible
@@ -321,9 +340,7 @@ export class MainScene extends Phaser.Scene {
     if (!visible) {
       // Hiding the toolbar must also drop the overlay it controls — otherwise the
       // waypoint routes would linger with no visible control left to turn them off.
-      this.waypointsVisible = false
-      this.waypointLayer.setVisible(false)
-      this.devToolbar.setActive('waypoints', false)
+      this.setWaypointsVisible(false)
     }
   }
 
@@ -377,11 +394,11 @@ export class MainScene extends Phaser.Scene {
    * from their live lon/lat here (GPS is the source of truth), so a blip is
    * painted at the plane's true ground position at the moment the sweep hit it.
    */
-  private updateAircraft(deltaSec: number, zoom: number) {
+  private updateAircraft(deltaSec: number, zoom: number): number {
     // Fixed-tick stepping (the determinism principle): the sim banks the frame
     // delta and consumes it in whole SIM_TICK_SEC ticks, so world state never
     // depends on how the render loop slices time.
-    this.sim.advance(deltaSec)
+    const ticks = this.sim.advance(deltaSec)
     const targets = this.sim.all.map((a) => {
       const [x, y] = this.project(a.lon, a.lat)
       return { x, y, headingDeg: a.headingDeg, speedKmh: a.speedKmh }
@@ -394,24 +411,26 @@ export class MainScene extends Phaser.Scene {
     this.planeLayer.addContacts(this.radarSweepLayer.detectSweptTargets(targets))
     this.planeLayer.draw(zoom)
 
-    // Debug ground truth, not part of the radar picture: while the dev-toolbar
-    // toggle is on, draw every brained aircraft's planned route. The layer
-    // skips the redraw unless the route set or zoom changed.
     if (this.waypointsVisible) {
-      const routes: WaypointRoute[] = []
-      for (const ac of this.sim.all) {
-        const waypoints = this.sim.brainOf(ac.id)?.waypoints
-        if (!waypoints) continue
-        routes.push({
-          aircraftId: ac.id,
-          points: waypoints.map((wp) => {
-            const [x, y] = this.project(wp.lon, wp.lat)
-            return { x, y }
-          }),
+      const brainedIds = this.sim.all.filter((ac) => this.sim.brainOf(ac.id) !== undefined).map((ac) => ac.id)
+      const aircraftIds = brainedIds.join(',')
+      if (aircraftIds !== this.lastWaypointAircraftIds) {
+        this.lastWaypointAircraftIds = aircraftIds
+        this.waypointRoutesCache = brainedIds.map((id) => {
+          const waypoints = this.sim.brainOf(id)?.waypoints
+          if (!waypoints) throw new Error(`[MainScene] brain for aircraft ${id} vanished mid-frame`)
+          return {
+            aircraftId: id,
+            points: waypoints.map((wp) => {
+              const [x, y] = this.project(wp.lon, wp.lat)
+              return { x, y }
+            }),
+          }
         })
       }
-      this.waypointLayer.draw(routes, zoom)
+      this.waypointLayer.draw(this.waypointRoutesCache, zoom)
     }
+    return ticks
   }
 
   update(_time: number, deltaMs: number) {
@@ -428,7 +447,9 @@ export class MainScene extends Phaser.Scene {
     // centre is under (see RadarSweepLayer.selectSweepIndex).
     const view = cameraWorldView(cam)
     this.radarSweepLayer.update(deltaSec, cam.zoom, view.centerX, view.centerY)
-    this.updateAircraft(deltaSec, cam.zoom)
+    // The tps sample must also run every frame — it measures real ticks per real
+    // second, so it cannot sit behind the camera-dirty early-out below.
+    this.debugHud.sampleTicks(deltaSec, this.updateAircraft(deltaSec, cam.zoom))
 
     if (cam.scrollX === this.lastScrollX && cam.scrollY === this.lastScrollY && cam.zoom === this.lastZoom) {
       // Camera hasn't moved this frame — the grid slice and HUD readout are still

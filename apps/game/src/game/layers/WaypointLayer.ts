@@ -12,14 +12,6 @@ export interface WaypointRoute {
   readonly points: ReadonlyArray<{ readonly x: number; readonly y: number }>
 }
 
-/**
- * Debug overlay: each brained aircraft's waypoint route as a polyline with a
- * hollow circle per waypoint — the ground truth the radar picture only hints
- * at. Localhost-only (gated with the dev toolbar that toggles it). Fed every
- * frame from `MainScene.updateAircraft`, but routes are static per aircraft, so
- * it skips the actual redraw unless the route set or the zoom changed — the
- * dirty-check discipline, just keyed on content instead of the camera.
- */
 export class WaypointLayer implements WorldLayer, ToggleableLayer {
   private readonly gfx: Phaser.GameObjects.Graphics
   private lastSignature = ''
@@ -38,7 +30,20 @@ export class WaypointLayer implements WorldLayer, ToggleableLayer {
 
   draw(routes: readonly WaypointRoute[], zoom: number): void {
     assertZoom(zoom, fail)
-    const signature = `${zoom}|${routes.map((r) => r.aircraftId).join(',')}`
+    for (const route of routes) {
+      if (route.points.length === 0) fail(`route for aircraft ${route.aircraftId} has no points`)
+      for (const p of route.points) {
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+          fail(`route for aircraft ${route.aircraftId} has a non-finite point (${p.x}, ${p.y})`)
+        }
+      }
+    }
+
+    // Keyed on the actual point coordinates, not just aircraft ids, so a
+    // future brain that moves its waypoints would still repaint correctly
+    // instead of relying on today's "routes are immutable per aircraft" holding
+    // forever as an undocumented, unenforced assumption.
+    const signature = `${zoom}|${routes.map((r) => `${r.aircraftId}:${r.points.map((p) => `${p.x},${p.y}`).join(';')}`).join('|')}`
     if (signature === this.lastSignature) return
     this.lastSignature = signature
 
@@ -48,12 +53,6 @@ export class WaypointLayer implements WorldLayer, ToggleableLayer {
     this.gfx.clear()
     this.gfx.lineStyle(lineWidth, WAYPOINT.color, WAYPOINT.alpha)
     for (const route of routes) {
-      if (route.points.length === 0) fail(`route for aircraft ${route.aircraftId} has no points`)
-      for (const p of route.points) {
-        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
-          fail(`route for aircraft ${route.aircraftId} has a non-finite point (${p.x}, ${p.y})`)
-        }
-      }
       for (let i = 1; i < route.points.length; i++) {
         this.gfx.lineBetween(route.points[i - 1].x, route.points[i - 1].y, route.points[i].x, route.points[i].y)
       }

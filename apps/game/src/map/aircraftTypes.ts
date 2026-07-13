@@ -6,11 +6,6 @@ export type AircraftTypeId = 'il20m'
 
 export const AIRCRAFT_TYPE_IDS: readonly AircraftTypeId[] = ['il20m']
 
-/**
- * Real-world performance profile for one aircraft type. All values are real
- * units (km/h, deg/s), never pixels — GPS is the source of truth, and the sim
- * must be able to run headless (root CLAUDE.md).
- */
 export interface AircraftTypeProfile {
   readonly typeId: AircraftTypeId
   readonly name: string
@@ -29,9 +24,6 @@ export const AIRCRAFT_TYPES: Readonly<Record<AircraftTypeId, AircraftTypeProfile
   },
 }
 
-// The profiles are authored TS, not loaded data, so a cheap module-load sanity
-// pass replaces a full loader: a typo'd number here would otherwise surface as
-// silently wrong movement instead of an error.
 for (const typeId of AIRCRAFT_TYPE_IDS) {
   const profile = AIRCRAFT_TYPES[typeId]
   if (profile.typeId !== typeId) {

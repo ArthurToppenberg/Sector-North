@@ -14,12 +14,6 @@ export interface SceneCommandDeps {
   setDevToolsVisible: (visible: boolean) => void
 }
 
-/**
- * The game-state console commands, registered here (not in the pure registry)
- * because they need live scene objects — each captures its dependency by
- * closure, per the src/commands/ pattern. Must be called exactly once, from
- * `MainScene.create()`: the registry throws on duplicate names.
- */
 export function registerSceneCommands({ sim, planeLayer, subwoofer, setDevToolsVisible }: SceneCommandDeps): void {
   commands.register({
     name: 'subwoofer',
@@ -46,7 +40,7 @@ export function registerSceneCommands({ sim, planeLayer, subwoofer, setDevToolsV
           lon: CAMERA_INITIAL_CENTER.lon,
           lat: CAMERA_INITIAL_CENTER.lat,
           headingDeg: (i * 360) / count,
-          type: 'il20m',
+          type: AIRCRAFT_TYPES.il20m.typeId,
         })
       }
       return `Spawned ${count} aircraft (${sim.count} in the air).`

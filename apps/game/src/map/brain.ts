@@ -1,23 +1,14 @@
-import type { Aircraft } from './aircraft'
+import { DEG2RAD, type Aircraft } from './aircraft'
 import { KM_PER_DEG_LAT } from './project'
 import { makeFail, requireLat, requireLon, requirePositiveNumber } from './validate'
 
 const fail = makeFail('map/brain')
-
-const DEG2RAD = Math.PI / 180
 
 export interface Waypoint {
   readonly lon: number
   readonly lat: number
 }
 
-/**
- * Anything that steers an aircraft once per sim tick. `AircraftSim.advance`
- * calls `tick` inside its whole-tick loop, immediately before integrating the
- * position — so a brain only ever sees and produces tick-quantized state,
- * which is what keeps autonomous behavior bit-deterministic. A future
- * interceptor brain slots in here.
- */
 export interface Brain {
   tick(ac: Aircraft, deltaSec: number): void
   /**
@@ -35,22 +26,23 @@ export interface Brain {
  */
 export const WAYPOINT_CAPTURE_KM = 2
 
-// Bearing and distance both use the same lat-corrected equirectangular metric
-// as stepAircraft's integrator (cos(lat) on the longitude delta) —
-// deliberately not colocate.ts's haversine, so the brain judges geometry
-// exactly the way the aircraft will fly it.
+/** The east/north km separation between two points, lat-corrected at `fromLat`. */
+function localKm(fromLon: number, fromLat: number, toLon: number, toLat: number): [eastKm: number, northKm: number] {
+  return [(toLon - fromLon) * KM_PER_DEG_LAT * Math.cos(fromLat * DEG2RAD), (toLat - fromLat) * KM_PER_DEG_LAT]
+}
 
-/** Compass bearing (deg, 0 = north, 90 = east) from one point toward another. */
-export function bearingDeg(fromLon: number, fromLat: number, toLon: number, toLat: number): number {
-  const eastKm = (toLon - fromLon) * KM_PER_DEG_LAT * Math.cos(fromLat * DEG2RAD)
-  const northKm = (toLat - fromLat) * KM_PER_DEG_LAT
-  const deg = Math.atan2(eastKm, northKm) / DEG2RAD
+function normalizeDeg(deg: number): number {
   return deg < 0 ? deg + 360 : deg
 }
 
+/** Compass bearing (deg, 0 = north, 90 = east) from one point toward another. */
+export function bearingDeg(fromLon: number, fromLat: number, toLon: number, toLat: number): number {
+  const [eastKm, northKm] = localKm(fromLon, fromLat, toLon, toLat)
+  return normalizeDeg(Math.atan2(eastKm, northKm) / DEG2RAD)
+}
+
 function distanceKm(fromLon: number, fromLat: number, toLon: number, toLat: number): number {
-  const eastKm = (toLon - fromLon) * KM_PER_DEG_LAT * Math.cos(fromLat * DEG2RAD)
-  const northKm = (toLat - fromLat) * KM_PER_DEG_LAT
+  const [eastKm, northKm] = localKm(fromLon, fromLat, toLon, toLat)
   return Math.hypot(eastKm, northKm)
 }
 
@@ -67,16 +59,9 @@ export function turnTowardDeg(currentDeg: number, targetDeg: number, maxStepDeg:
   if (diff > 180) diff -= 360
   if (diff < -180) diff += 360
   const step = Math.abs(diff) <= maxStepDeg ? diff : Math.sign(diff) * maxStepDeg
-  const next = (currentDeg + step) % 360
-  return next < 0 ? next + 360 : next
+  return normalizeDeg((currentDeg + step) % 360)
 }
 
-/**
- * The simplest autonomous brain: fly the given waypoints in order with
- * rate-limited turns. Past the last waypoint it does nothing — the aircraft
- * holds its final heading and flies on; despawn/lifecycle is deliberately not
- * this module's business yet.
- */
 export class RouteBrain implements Brain {
   readonly waypoints: readonly Waypoint[]
   private readonly turnRateDegPerSec: number

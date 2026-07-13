@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest'
 
-// `./units` pulls DPR from `./config`, whose env module reads
-// `window.devicePixelRatio` and `window.location.hostname` at module load.
-// Stub the global with known values before the dynamic import — a static
-// import would hoist above the stub and crash the node environment.
 ;(globalThis as { window?: { devicePixelRatio: number; location: { hostname: string } } }).window = {
   devicePixelRatio: 2,
   location: { hostname: 'localhost' },
