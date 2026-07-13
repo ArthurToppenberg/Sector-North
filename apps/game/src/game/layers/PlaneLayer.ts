@@ -70,14 +70,14 @@ export class PlaneLayer implements WorldLayer, ToggleableLayer {
     this.contacts.length = 0
   }
 
-  /** Redraw every contact as a heading-aligned diamond plus a speed-proportional velocity line. */
+  /** Redraw every contact as a hollow circle plus a speed-proportional velocity line. */
   draw(zoom: number): void {
     // Clamp the zoom used for sizing: at/above the lock the icon is constant on
     // screen; below it the icon is world-anchored and scales with the terrain.
     const sizeZoom = Math.max(zoom, PLANE.sizeLockZoom)
-    const halfLength = screenPxToWorld(PLANE.iconHalfLengthScreen, sizeZoom)
-    const halfWidth = screenPxToWorld(PLANE.iconHalfWidthScreen, sizeZoom)
-    const lineWidth = screenPxToWorld(PLANE.vectorLineScreenWidth, sizeZoom)
+    const radius = screenPxToWorld(PLANE.iconRadiusScreen, sizeZoom)
+    const iconLineWidth = screenPxToWorld(PLANE.iconLineScreenWidth, sizeZoom)
+    const vectorLineWidth = screenPxToWorld(PLANE.vectorLineScreenWidth, sizeZoom)
 
     this.gfx.clear()
     for (const contact of this.contacts) {
@@ -87,25 +87,22 @@ export class PlaneLayer implements WorldLayer, ToggleableLayer {
       const headingRad = contact.headingDeg * DEG2RAD
       const forwardX = Math.sin(headingRad)
       const forwardY = -Math.cos(headingRad)
-      // Right-hand perpendicular to the heading — the diamond's across axis.
-      const rightX = -forwardY
-      const rightY = forwardX
 
+      // The vector starts at the rim, not the centre, so the circle stays hollow;
+      // a contact slow enough for the tip to fall inside the rim shows no vector.
       const length = screenPxToWorld(PLANE.vectorScreenPxPerKmh * contact.speedKmh, sizeZoom)
-      this.gfx.lineStyle(lineWidth, PLANE.blipColor, PLANE.blipAlpha)
-      this.gfx.lineBetween(contact.x, contact.y, contact.x + forwardX * length, contact.y + forwardY * length)
+      if (length > radius) {
+        this.gfx.lineStyle(vectorLineWidth, PLANE.blipColor, PLANE.blipAlpha)
+        this.gfx.lineBetween(
+          contact.x + forwardX * radius,
+          contact.y + forwardY * radius,
+          contact.x + forwardX * length,
+          contact.y + forwardY * length,
+        )
+      }
 
-      // Diamond: nose (fore) → starboard → tail (aft) → port, wound in order.
-      this.gfx.fillStyle(PLANE.blipColor, PLANE.blipAlpha)
-      this.gfx.fillPoints(
-        [
-          new Phaser.Math.Vector2(contact.x + forwardX * halfLength, contact.y + forwardY * halfLength),
-          new Phaser.Math.Vector2(contact.x + rightX * halfWidth, contact.y + rightY * halfWidth),
-          new Phaser.Math.Vector2(contact.x - forwardX * halfLength, contact.y - forwardY * halfLength),
-          new Phaser.Math.Vector2(contact.x - rightX * halfWidth, contact.y - rightY * halfWidth),
-        ],
-        true,
-      )
+      this.gfx.lineStyle(iconLineWidth, PLANE.blipColor, PLANE.blipAlpha)
+      this.gfx.strokeCircle(contact.x, contact.y, radius)
     }
   }
 }
