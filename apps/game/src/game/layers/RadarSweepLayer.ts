@@ -86,6 +86,11 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
     return [this.gfx]
   }
 
+  /**
+   * Presentation only: hides the drawn overlay (range ring + sweep hand). The
+   * antennas themselves keep rotating and detecting in `update` regardless — a
+   * hidden sweep is an invisible radar, not a switched-off one.
+   */
   setVisible(visible: boolean): void {
     this.layerVisible = visible
     this.gfx.setVisible(visible)
@@ -94,7 +99,8 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
   /**
    * Advance every sweep by `deltaSec` real seconds and redraw. Rotation is one
    * full turn per site's `updateIntervalSec`; `zoom` holds the on-screen stroke
-   * width constant. Does nothing while hidden.
+   * width constant. The angle advance always runs — detection depends on it —
+   * while the drawing is skipped when the layer is hidden.
    *
    * `(centerX, centerY)` is the camera's world-space view centre, used to pick
    * the single site to actually draw — the one whose coverage the centre is under
@@ -102,7 +108,6 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
    * rendering-conventions section).
    */
   update(deltaSec: number, zoom: number, centerX: number, centerY: number): void {
-    if (!this.layerVisible) return
     if (!Number.isFinite(deltaSec) || deltaSec < 0) {
       fail(`deltaSec must be finite and >= 0, got ${deltaSec}`)
     }
@@ -118,6 +123,8 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
       this.angle[i] = (this.angle[i] + (TAU * deltaSec) / this.markers[i].updateIntervalSec) % TAU
       this.sweptFullTurn[i] = deltaSec >= this.markers[i].updateIntervalSec
     }
+
+    if (!this.layerVisible) return
 
     const selected = this.selectSweepIndex(centerX, centerY)
     const m = this.markers[selected]
@@ -171,14 +178,14 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
    * this frame — the contacts to (re)paint. Every site is tested, not just the
    * one drawn (`update` advances all angles), so a target is detected by whichever
    * coverage it is under; a target under two hands at once is still returned once.
-   * Empty while the layer is hidden — a switched-off radar sees nothing.
+   * Runs regardless of the layer's visibility — hiding the sweep overlay is
+   * presentation, not switching the radars off.
    *
    * Generic in the target type: only `x`/`y` are read, and the matched targets
    * are returned as-is, so any extra payload (heading, speed) rides through to
    * the caller unchanged.
    */
   detectSweptTargets<T extends { x: number; y: number }>(targets: readonly T[]): T[] {
-    if (!this.layerVisible) return []
     const contacts: T[] = []
     for (const t of targets) {
       for (let i = 0; i < this.markers.length; i++) {
@@ -194,10 +201,10 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
   /**
    * Whether any site's hand swept over world-pixel point `(x, y)` this frame —
    * used to expire an existing contact the moment the sweep revisits its position
-   * (it is then repainted only if a plane is still there). False while hidden.
+   * (it is then repainted only if a plane is still there). Like detection, runs
+   * regardless of the layer's visibility.
    */
   isSwept(x: number, y: number): boolean {
-    if (!this.layerVisible) return false
     for (let i = 0; i < this.markers.length; i++) {
       if (this.sweptBySite(i, x, y)) return true
     }

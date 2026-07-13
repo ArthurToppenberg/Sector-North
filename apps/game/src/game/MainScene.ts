@@ -200,10 +200,10 @@ export class MainScene extends Phaser.Scene {
     airportLayer.setVisible(airportsVisible)
     radarLayer.setVisible(radarsVisible)
     this.radarSweepLayer.setVisible(radarsVisible)
-    // Blips are radar returns, so they belong to the radar picture — toggled
-    // with it. With the radars off the sweep freezes, so no new contacts appear
-    // regardless; hiding the layer also drops any still-painted blips at once.
-    this.planeLayer.setVisible(radarsVisible)
+    // Contact blips deliberately do NOT follow the radar toggle: hiding the
+    // radars is a decluttering act (markers + sweep overlay off), not switching
+    // the sensors off — the antennas keep rotating and detecting, so the
+    // tactical picture keeps updating with the sweeps invisible.
     // The console starts closed (constructor already hid it); it is opened by the
     // developer toolbar button or the "/" key, both routed through `setConsoleOpen`.
     this.debugHud = new DebugHud(this)
@@ -242,7 +242,6 @@ export class MainScene extends Phaser.Scene {
           radarsVisible = active
           radarLayer.setVisible(active)
           this.radarSweepLayer.setVisible(active)
-          this.planeLayer.setVisible(active)
           applyColocationLabels()
         },
       },
