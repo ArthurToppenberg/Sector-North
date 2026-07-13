@@ -9,6 +9,9 @@ export const DEPTH = {
   // Radar contact blips sit just above the coverage sweep that paints them, but
   // beneath the marker glyphs so the (sparse) infrastructure icons stay legible.
   planeBlips: 16,
+  // Debug waypoint routes overlay the blips they explain, but stay beneath the
+  // marker glyphs like the rest of the air picture.
+  waypointRoutes: 17,
   cityDots: 20,
   cityLabels: 30,
   // Airports sit just above the city labels so their markers/labels aren't

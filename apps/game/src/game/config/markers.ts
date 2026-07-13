@@ -153,8 +153,24 @@ export const PLANE = {
   blipColor: 0xffffff,
   /** Contact opacity — constant (no fade); a contact is either shown or cleared. */
   blipAlpha: 0.9,
-  /** Cruise speed (km/h) given to test aircraft spawned via `/spawn-planes`. */
-  spawnSpeedKmh: 800,
   /** How many aircraft `/spawn-planes` creates when no count is given. */
   defaultSpawnCount: 8,
+} as const
+
+/**
+ * The debug waypoint-route overlay (`WaypointLayer`), toggled from the
+ * localhost-only dev toolbar: each brained aircraft's planned route drawn as a
+ * polyline with a hollow circle per waypoint. Phosphor green (`MAP.strokeColor`)
+ * so it reads as radar-display chrome, not a tactical contact (contacts are
+ * white). All sizes are held constant on screen at every zoom, like the
+ * coastline hairline.
+ */
+export const WAYPOINT = {
+  /** Waypoint circle radius on screen (CSS pixels). */
+  circleRadiusScreen: 3.5,
+  /** Route polyline / circle stroke width on screen (CSS pixels). */
+  lineScreenWidth: 1,
+  color: MAP.strokeColor,
+  /** Dimmer than the coverage sweep hand — an annotation, not a signal. */
+  alpha: 0.55,
 } as const

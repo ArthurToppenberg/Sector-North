@@ -6,7 +6,7 @@ import { loadRadars, RADARS_ASSET } from '../map/radars'
 import { clusterByProximity, resolveColocationLabels, COLOCATION_RADIUS_KM } from '../map/colocate'
 import { projectToPixels, type Projector } from '../map/project'
 import { AircraftSim } from '../map/aircraft'
-import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER } from './config'
+import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER, IS_LOCALHOST } from './config'
 import { GridLayer } from './layers/GridLayer'
 import { CoastlineLayer } from './layers/CoastlineLayer'
 import { CityLayer } from './layers/CityLayer'
@@ -14,6 +14,7 @@ import { AirportLayer } from './layers/AirportLayer'
 import { RadarLayer } from './layers/RadarLayer'
 import { RadarSweepLayer } from './layers/RadarSweepLayer'
 import { PlaneLayer } from './layers/PlaneLayer'
+import { WaypointLayer, type WaypointRoute } from './layers/WaypointLayer'
 import { CameraController, type CenterBounds } from './camera/CameraController'
 import { cameraWorldView } from './camera/worldView'
 import { DebugHud } from './hud/DebugHud'
@@ -46,6 +47,13 @@ export class MainScene extends Phaser.Scene {
   // to turn each aircraft's live lon/lat into world pixels every frame.
   private sim!: AircraftSim
   private planeLayer!: PlaneLayer
+  // Debug chrome: the dev toolbar and the waypoint-route overlay it toggles.
+  // Always constructed so `/dev-tools` can reveal it anywhere; shown by default
+  // only on localhost (see `setDevToolsVisible`).
+  private waypointLayer!: WaypointLayer
+  private devToolbar!: Toolbar
+  private waypointsVisible = false
+  private devToolsVisible = IS_LOCALHOST
   private project!: Projector
   private cameraController!: CameraController
   private debugHud!: DebugHud
@@ -153,7 +161,12 @@ export class MainScene extends Phaser.Scene {
     // sweep reveals (GPS is the source of truth — see `update`).
     this.sim = new AircraftSim()
     this.planeLayer = new PlaneLayer(this)
-    registerSceneCommands({ sim: this.sim, planeLayer: this.planeLayer, subwoofer: this.subwoofer })
+    registerSceneCommands({
+      sim: this.sim,
+      planeLayer: this.planeLayer,
+      subwoofer: this.subwoofer,
+      setDevToolsVisible: (visible) => this.setDevToolsVisible(visible),
+    })
 
     // Cities, airports and radars are shown by default; the toolbar toggles hide
     // them. One variable per layer feeds both the layer's start visibility and the
@@ -217,6 +230,24 @@ export class MainScene extends Phaser.Scene {
       },
     ])
 
+    this.waypointLayer = new WaypointLayer(this)
+    this.waypointLayer.setVisible(this.waypointsVisible)
+    this.devToolbar = new Toolbar(
+      this,
+      [
+        {
+          id: 'waypoints',
+          initialActive: this.waypointsVisible,
+          onToggle: (active) => {
+            this.waypointsVisible = active
+            this.waypointLayer.setVisible(active)
+          },
+        },
+      ],
+      1,
+    )
+    this.devToolbar.setVisible(this.devToolsVisible)
+
     // "/" opens the console. Keyboard must exist (CameraController asserts the
     // same), so fail loudly rather than silently drop the shortcut. Only opens: once
     // the console is open the "/" is a command prefix the console's input captures,
@@ -249,6 +280,7 @@ export class MainScene extends Phaser.Scene {
         ...coastline.objects,
         ...this.radarSweepLayer.objects,
         ...this.planeLayer.objects,
+        ...this.waypointLayer.objects,
         ...cityLayer.objects,
         ...airportLayer.objects,
         ...radarLayer.objects,
@@ -256,6 +288,7 @@ export class MainScene extends Phaser.Scene {
       [
         ...this.debugHud.objects,
         ...this.toolbar.objects,
+        ...this.devToolbar.objects,
         ...this.consoleWindow.objects,
         ...this.subwoofer.objects,
       ],
@@ -279,6 +312,19 @@ export class MainScene extends Phaser.Scene {
     this.consoleWindow.setVisible(open)
     this.toolbar.setActive('developer', open)
     this.cameraController.setKeyboardPanEnabled(!open)
+  }
+
+  private setDevToolsVisible(visible: boolean): void {
+    if (visible === this.devToolsVisible) return
+    this.devToolsVisible = visible
+    this.devToolbar.setVisible(visible)
+    if (!visible) {
+      // Hiding the toolbar must also drop the overlay it controls — otherwise the
+      // waypoint routes would linger with no visible control left to turn them off.
+      this.waypointsVisible = false
+      this.waypointLayer.setVisible(false)
+      this.devToolbar.setActive('waypoints', false)
+    }
   }
 
   /**
@@ -310,6 +356,7 @@ export class MainScene extends Phaser.Scene {
     this.uiCamera.setSize(this.scale.width, this.scale.height)
     this.debugHud.reposition()
     this.toolbar.reposition()
+    this.devToolbar.reposition()
     this.infoWindows.reposition()
     this.consoleWindow.reposition()
     this.subwoofer.reposition()
@@ -346,6 +393,25 @@ export class MainScene extends Phaser.Scene {
     this.planeLayer.removeWhere((c) => this.radarSweepLayer.isSwept(c.x, c.y))
     this.planeLayer.addContacts(this.radarSweepLayer.detectSweptTargets(targets))
     this.planeLayer.draw(zoom)
+
+    // Debug ground truth, not part of the radar picture: while the dev-toolbar
+    // toggle is on, draw every brained aircraft's planned route. The layer
+    // skips the redraw unless the route set or zoom changed.
+    if (this.waypointsVisible) {
+      const routes: WaypointRoute[] = []
+      for (const ac of this.sim.all) {
+        const waypoints = this.sim.brainOf(ac.id)?.waypoints
+        if (!waypoints) continue
+        routes.push({
+          aircraftId: ac.id,
+          points: waypoints.map((wp) => {
+            const [x, y] = this.project(wp.lon, wp.lat)
+            return { x, y }
+          }),
+        })
+      }
+      this.waypointLayer.draw(routes, zoom)
+    }
   }
 
   update(_time: number, deltaMs: number) {

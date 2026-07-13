@@ -9,9 +9,15 @@ A browser game set on a real map of Denmark, built with [Phaser 4](https://phase
 
 ## Vision
 
-> 🚧 Work in progress — the game concept is still being fleshed out. The short version:
-> an *Air Defender*–style game played over a real, GPS-accurate map of Denmark. A fuller
-> vision statement will land here soon.
+> 🚧 Work in progress — everything below is the current working idea and is **subject to
+> change** as the game develops.
+>
+> Sector-North is a present-day air-policing game played over a real, GPS-accurate map of
+> Denmark. Russian aircraft — the kind actually intercepted over the Baltic today, like
+> the Il-20M reconnaissance plane — probe the edges of Danish airspace. You watch them
+> appear as radar contacts, scramble the current Danish air force to intercept and
+> identify them, and escalate to a shoot-down only if it comes to that. Positions, speeds,
+> and radar ranges are all real-world values simulated on real coordinates.
 
 ## Getting started
 

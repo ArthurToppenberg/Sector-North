@@ -40,11 +40,37 @@ city + radar photos, and world-data JSON all loaded) — never on a timer or gue
     reckoning) and `AircraftSim`, whose `advance()` banks real frame deltas and steps
     the world only in whole `SIM_TICK_SEC` ticks — the determinism core principle
     (root CLAUDE.md): replay/fast-forward is "run the elapsed ticks", bit-stable, and
-    the whole module runs headless.
+    the whole module runs headless. Every aircraft carries an `AircraftTypeId`;
+    `spawn` derives its speed from the type's profile (a spawn never states a speed),
+    and optionally attaches a `Brain`. Brains are held in a sim-owned `Map` keyed by
+    aircraft id — not on the `Aircraft` struct — so world state stays plain,
+    serializable data; a brainless aircraft flies straight forever.
+  - `aircraftTypes.ts` — the aircraft type registry: the `AircraftTypeId`
+    discriminant (the `AirportTier` pattern) and per-type `AircraftTypeProfile`s in
+    real units (cruise km/h, turn-rate deg/s). Currently one type, the Il-20M "Coot"
+    Baltic recon turboprop; Danish interceptors (F-16/F-35) extend this union later.
+  - `brain.ts` — per-tick steering. The `Brain` interface is called by
+    `AircraftSim.advance` *inside* the whole-tick loop, immediately before the
+    position step, so behavior is tick-quantized and bit-deterministic by
+    construction. `RouteBrain` flies a waypoint list with rate-limited shortest-arc
+    turns (`turnTowardDeg`) and a `WAYPOINT_CAPTURE_KM` arrival radius; past its
+    last waypoint it holds heading (despawn is future work). Its `bearingDeg`/
+    distance use the same lat-corrected equirectangular metric as `stepAircraft` —
+    deliberately not `colocate.ts`'s haversine — so the brain judges geometry
+    exactly the way the aircraft flies it.
+  - `routes.ts` — hardcoded route data (lon/lat waypoints). `INTRUDER_PROBE_ROUTE`
+    is the Kaliningrad-style Baltic probing leg `/spawn-intruder` flies; route
+    randomization must go through a seeded PRNG in `src/map/` when it arrives.
 - `src/game/` — **Phaser rendering + input.** Consumes projected output; never parses
   GeoJSON or re-derives the projection. Folder layout within it:
   - `layers/` — the world render layers (Grid, Coastline, City, Airport, Radar,
-    RadarSweep, Plane) plus their shared plumbing in `layers/helpers.ts`.
+    RadarSweep, Plane, Waypoint) plus their shared plumbing in `layers/helpers.ts`.
+    `WaypointLayer` is debug chrome, not tactical picture: it draws every brained
+    aircraft's planned route (polyline + hollow circle per waypoint, phosphor green)
+    and is toggled from the dev toolbar (itself hidden by default off localhost —
+    see the dev-toolbar bullet under rendering). It is fed every
+    frame from `MainScene.updateAircraft` but skips the actual redraw unless the
+    route set or zoom changed (the dirty-check discipline, keyed on content).
   - `hud/` — fixed-UI-camera chrome: Toolbar, DebugHud, InfoWindow(+Manager),
     ConsoleWindow, and the `/subwoofer` overlay.
   - `camera/` — `CameraController.ts` (pan/zoom/clamp input) and `worldView.ts`
@@ -135,10 +161,11 @@ mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`
   plugins (bundle-size report, JSON minification) that must not run under the test
   runner. Being a Vite config, it still resolves the `?url` asset imports in `src/map/`.
 - Environment is plain `node` — the pure `src/map/` modules and the loaders need no DOM.
-  The one exception: `src/game/config/env.ts` reads `window.devicePixelRatio` at module
-  load, so any test touching a config-importing module (`units.test.ts`) must stub
-  `globalThis.window` **before a dynamic `import()`** of the module under test — a
-  static import would hoist above the stub and crash. Do not add jsdom for this.
+  The one exception: `src/game/config/env.ts` reads `window.devicePixelRatio` and
+  `window.location.hostname` at module load, so any test touching a config-importing
+  module (`units.test.ts`) must stub `globalThis.window` (with both fields) **before a
+  dynamic `import()`** of the module under test — a static import would hoist above the
+  stub and crash. Do not add jsdom for this.
 - What is covered: the projection (including the fit-pinning/locked-zoom invariant),
   the aircraft sim, co-location clustering + label ownership, every data loader (each
   also parses its real bundled dataset — geojson uses belgium, the smallest boundary,
@@ -170,7 +197,8 @@ mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`
   it up, and runs it. A command needing game state (audio, a scene, layers) is registered
   from `src/game/` and captures what it needs by closure at registration — that is why the
   registry module itself stays pure/framework-free while the game-touching commands live
-  grouped in `src/game/sceneCommands.ts` (`/subwoofer`, `/spawn-planes`, `/clear-planes`),
+  grouped in `src/game/sceneCommands.ts` (`/subwoofer`, `/spawn-planes`, `/spawn-intruder`,
+  `/dev-tools`, `/clear-planes`),
   which `MainScene.create()` calls once with the live scene objects.
   `/help` ships with the registry (it just lists the live command set). `ConsoleWindow`'s
   input row is the one caller that dispatches typed lines through it. Duplicate/invalid
@@ -229,8 +257,8 @@ lon/lat becomes pixels.
     `airports.length`.
   - `windowContent.ts` — record → `InfoWindowContent` builders, beside
     `cityImages.ts`/`radarImages.ts` (their sole content consumers).
-  - `sceneCommands.ts` — `registerSceneCommands({ sim, planeLayer, subwoofer })`, the
-    game-state console commands captured by closure; called exactly once from
+  - `sceneCommands.ts` — `registerSceneCommands({ sim, planeLayer, subwoofer, setDevToolsVisible })`,
+    the game-state console commands captured by closure; called exactly once from
     `create()` (the registry throws on duplicates).
   What must stay in the scene: layer construction, the live `airportsVisible`/
   `radarsVisible` closures the toolbar toggles capture, camera wiring, the update/resize
@@ -284,7 +312,8 @@ lon/lat becomes pixels.
   scroll) draws only the HUD, so HUD elements keep a constant on-screen size. Each camera
   `ignore()`s the other's objects. Register any new object with the correct camera.
   **The `objects` getter is the routing seam for this:** every world render layer (GridLayer,
-  CoastlineLayer, CityLayer, AirportLayer, RadarLayer, RadarSweepLayer, PlaneLayer) exposes a
+  CoastlineLayer, CityLayer, AirportLayer, RadarLayer, RadarSweepLayer, PlaneLayer,
+  WaypointLayer) exposes a
   bare `objects` getter enumerating every Phaser GameObject it owns, so `MainScene`/`setupCameras`
   can hand that layer's objects to the correct camera (e.g. tell the fixed UI camera to
   `ignore()` the world layers). The seam is a real interface — `WorldLayer` in
@@ -367,6 +396,15 @@ lon/lat becomes pixels.
 - **HUD controls are decoupled from what they control.** Each toolbar button owns its own
   on/off state and reports changes through the `onToggle` callback the scene supplies — it
   never reaches into the layers directly; `MainScene` owns that wiring.
+- **The dev toolbar is a second `Toolbar` row, hidden by default off localhost.** `Toolbar`
+  takes a `rowIndex` (0 = the main top row) so a second instance stacks below the first
+  without either knowing the other exists. The dev toolbar (currently just the waypoints
+  toggle) and the waypoint layer it controls are **always constructed**; the toolbar's
+  visibility defaults to `IS_LOCALHOST` (`config/env.ts`) and can be overridden at runtime
+  with `/dev-tools true|false` from the developer console. All visibility changes funnel
+  through `MainScene.setDevToolsVisible`, which on hide also forces the waypoints overlay
+  off (via `Toolbar.setActive`, which syncs the glyph without firing `onToggle`) — no debug
+  overlay may survive on screen with its control hidden.
 - **HUD icons are SVGs baked into textures (`src/game/svgIcon.ts`).** HUD glyphs come from
   Lucide SVGs, authored with `currentColor`. A standalone SVG rasterised into a Phaser
   texture has no CSS colour context to inherit — it would fall back to black and vanish on
