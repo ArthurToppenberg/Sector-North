@@ -1,9 +1,9 @@
 import Phaser from 'phaser'
-import { DEPTH, GRID } from './config'
-import { screenPxToWorld } from './units'
-import { cameraWorldView, type WorldView } from './camera'
-import type { WorldLayer } from './layerHelpers'
-import { smoothstep } from './math'
+import { DEPTH, GRID } from '../config'
+import { screenPxToWorld } from '../units'
+import { cameraWorldView, type WorldView } from '../camera/worldView'
+import type { WorldLayer } from './helpers'
+import { smoothstep } from '../math'
 
 function firstLineAtOrBefore(edge: number, anchor: number, step: number): number {
   return Math.floor((edge - anchor) / step) * step + anchor

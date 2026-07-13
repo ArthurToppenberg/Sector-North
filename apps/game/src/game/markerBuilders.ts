@@ -6,10 +6,10 @@ import type { Airport, AirportTier } from '../map/airports'
 import type { Radar } from '../map/radars'
 import type { ColocationInput, ColocationLabel } from '../map/colocate'
 import type { Projector } from '../map/project'
-import type { CityMarker } from './CityLayer'
-import type { AirportMarker } from './AirportLayer'
-import type { RadarMarker } from './RadarLayer'
-import type { RadarSweepMarker } from './RadarSweepLayer'
+import type { CityMarker } from './layers/CityLayer'
+import type { AirportMarker } from './layers/AirportLayer'
+import type { RadarMarker } from './layers/RadarLayer'
+import type { RadarSweepMarker } from './layers/RadarSweepLayer'
 
 /**
  * Colocation label-ownership ranking: military airfield < major < minor < radar,

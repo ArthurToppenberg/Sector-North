@@ -1,9 +1,9 @@
 import Phaser from 'phaser'
-import { makeFail, type Fail } from './fail'
+import { makeFail, type Fail } from '../fail'
 import cityIconRaw from 'lucide-static/icons/building-2.svg?raw'
-import { DPR, CITY, DEPTH } from './config'
-import { screenPxToWorld } from './units'
-import { iconDataUri } from './svgIcon'
+import { DPR, CITY, DEPTH } from '../config'
+import { screenPxToWorld } from '../units'
+import { iconDataUri } from '../svgIcon'
 import {
   assertZoom,
   assertMarkers,
@@ -15,7 +15,7 @@ import {
   type WorldLayer,
   type ZoomReactive,
   type ToggleableLayer,
-} from './layerHelpers'
+} from './helpers'
 
 const CITY_ICON_TEXTURE = 'city-icon'
 

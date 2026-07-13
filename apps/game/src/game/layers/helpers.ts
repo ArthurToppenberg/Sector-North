@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
-import { DPR, FONT_FAMILY, CLICK_MAX_TRAVEL_SCREEN } from './config'
-import { screenPxToWorld } from './units'
-import type { Fail } from './fail'
+import { DPR, FONT_FAMILY, CLICK_MAX_TRAVEL_SCREEN } from '../config'
+import { screenPxToWorld } from '../units'
+import type { Fail } from '../fail'
 
 /**
  * The routing seam for the two-camera setup (see CLAUDE.md): every world render

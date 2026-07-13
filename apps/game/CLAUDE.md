@@ -37,10 +37,23 @@ city + radar photos, and world-data JSON all loaded) — never on a timer or gue
     render side, rather than coupling `game/` error plumbing into the world layer.)
   - `project.ts` — the projection layer (see below).
 - `src/game/` — **Phaser rendering + input.** Consumes projected output; never parses
-  GeoJSON or re-derives the projection. Within it, keep the small pure-helper modules
+  GeoJSON or re-derives the projection. Folder layout within it:
+  - `layers/` — the world render layers (Grid, Coastline, City, Airport, Radar,
+    RadarSweep, Plane) plus their shared plumbing in `layers/helpers.ts`.
+  - `hud/` — fixed-UI-camera chrome: Toolbar, DebugHud, InfoWindow(+Manager),
+    ConsoleWindow, and the `/subwoofer` overlay.
+  - `camera/` — `CameraController.ts` (pan/zoom/clamp input) and `worldView.ts`
+    (camera → world-view geometry).
+  - `config/` — the tuning constants, one module per domain behind the `index.ts` barrel.
+  - Root — `MainScene.ts` and the cross-folder seams: `markerBuilders.ts`,
+    `windowContent.ts`, `sceneCommands.ts`, `cityImages.ts`/`radarImages.ts`,
+    `svgIcon.ts` (used by both a layer and the toolbar, so it belongs to neither
+    subfolder), `units.ts`, `math.ts`, `fail.ts`.
+
+  Keep the small pure-helper modules
   separate so each has one reason to change: `math.ts` (generic, domain-agnostic math —
   no Phaser/projection/game knowledge), `units.ts` (screen↔world pixel scaling), and
-  `camera.ts` (camera → world-view geometry). `radarImages.ts` and `cityImages.ts` hold the
+  `camera/worldView.ts` (camera → world-view geometry). `radarImages.ts` and `cityImages.ts` hold the
   name → photo-asset join for radars and cities respectively — the seam between world data
   and the bundled photos. Keeping them here deliberately leaves `src/map/radars.ts` and
   `src/map/cities.ts` pure world data with no asset URLs. Both maps are allowed to be partial:
@@ -138,7 +151,7 @@ mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`
   empty message, and mirrors every entry to the matching browser-console method
   (`CONSOLE_METHOD`) as a deliberate second sink, not a fallback: both are meant to show
   the line, so lines show both in the in-game console and devtools. It knows nothing about
-  how entries are drawn. `src/game/ConsoleWindow.ts` is the sole *in-game* consumer and owns
+  how entries are drawn. `src/game/hud/ConsoleWindow.ts` is the sole *in-game* consumer and owns
   all timestamp/level formatting; each line is coloured by level (see the console bullet
   below). The four levels exist, but **`debug` has no callers** — the routine per-event
   chatter was removed rather than filtered, so a `debug` call reappearing is a deliberate
@@ -230,9 +243,9 @@ lon/lat becomes pixels.
     constructor** — never lift it into a shared base class, whose constructor would run it
     before the subclass's fields initialize (`useDefineForClassFields`). Each layer also
     validates the camera zoom is finite and strictly positive before deriving any on-screen
-    size via `screenPxToWorld`, through the shared `assertZoom` in `layerHelpers.ts` —
+    size via `screenPxToWorld`, through the shared `assertZoom` in `layers/helpers.ts` —
     throwing rather than silently producing Infinite/NaN geometry from a zero/NaN/negative
-    zoom. `layerHelpers.ts` is the home for all such cross-layer marker plumbing:
+    zoom. `layers/helpers.ts` is the home for all such cross-layer marker plumbing:
     `assertMarkers` (shared skeleton + a `perMarker` callback for each layer's extra
     fields), `createHitZone`/`setHitZonesInteractive`/`sizeHitZones` (the click-vs-drag
     hit-target machinery City and Radar share), and `createMarkerLabel` (the
@@ -270,10 +283,10 @@ lon/lat becomes pixels.
   bare `objects` getter enumerating every Phaser GameObject it owns, so `MainScene`/`setupCameras`
   can hand that layer's objects to the correct camera (e.g. tell the fixed UI camera to
   `ignore()` the world layers). The seam is a real interface — `WorldLayer` in
-  `layerHelpers.ts`, with `ZoomReactive`/`ToggleableLayer` for the zoom-fan-out and
+  `layers/helpers.ts`, with `ZoomReactive`/`ToggleableLayer` for the zoom-fan-out and
   toolbar-toggle families — which every world layer `implements`. One-off HUD/overlay components that must stay a constant
   on-screen size (not pan/zoom with the world) — e.g. the `/subwoofer` easter egg
-  (`src/game/subwoofer.ts`) — opt into the fixed UI camera the same way: expose an `objects`
+  (`src/game/hud/subwoofer.ts`) — opt into the fixed UI camera the same way: expose an `objects`
   getter that `MainScene` routes there. This is the documented pattern for any future one-off
   overlay (photo flashes, popups, etc.) to join the fixed UI camera, not just the world layers.
 - **Detail/info windows are per-location HUD panels on the UI camera.** At most one window

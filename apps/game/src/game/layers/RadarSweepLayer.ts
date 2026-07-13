@@ -1,8 +1,8 @@
 import Phaser from 'phaser'
-import { makeFail, type Fail } from './fail'
-import { RADAR, DEPTH } from './config'
-import { screenPxToWorld } from './units'
-import type { WorldLayer, ToggleableLayer } from './layerHelpers'
+import { makeFail, type Fail } from '../fail'
+import { RADAR, DEPTH } from '../config'
+import { screenPxToWorld } from '../units'
+import type { WorldLayer, ToggleableLayer } from './helpers'
 
 export interface RadarSweepMarker {
   name: string

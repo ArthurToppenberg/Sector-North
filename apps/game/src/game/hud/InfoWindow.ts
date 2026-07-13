@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
-import { makeFail, type Fail } from './fail'
-import { DPR, FONT_FAMILY, INFO_WINDOW } from './config'
+import { makeFail, type Fail } from '../fail'
+import { DPR, FONT_FAMILY, INFO_WINDOW } from '../config'
 
 /**
  * A scene object that carries Phaser's Depth component — every object an

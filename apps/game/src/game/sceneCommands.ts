@@ -1,8 +1,8 @@
 import { commands } from '../commands/registry'
 import { PLANE, CAMERA_INITIAL_CENTER } from './config'
 import type { AircraftSim } from '../map/aircraft'
-import type { PlaneLayer } from './PlaneLayer'
-import type { Subwoofer } from './subwoofer'
+import type { PlaneLayer } from './layers/PlaneLayer'
+import type { Subwoofer } from './hud/subwoofer'
 
 export interface SceneCommandDeps {
   sim: AircraftSim

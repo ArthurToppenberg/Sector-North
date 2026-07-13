@@ -1,7 +1,7 @@
 import Phaser from 'phaser'
-import { KEY_PAN_SPEED, ZOOM } from './config'
-import { screenPxToWorld } from './units'
-import { cameraWorldView } from './camera'
+import { KEY_PAN_SPEED, ZOOM } from '../config'
+import { screenPxToWorld } from '../units'
+import { cameraWorldView } from './worldView'
 
 export interface CenterBounds {
   minX: number

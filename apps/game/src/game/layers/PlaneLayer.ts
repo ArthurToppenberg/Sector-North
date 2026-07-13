@@ -1,8 +1,8 @@
 import Phaser from 'phaser'
-import { makeFail, type Fail } from './fail'
-import { PLANE, DEPTH } from './config'
-import { screenPxToWorld } from './units'
-import type { WorldLayer, ToggleableLayer } from './layerHelpers'
+import { makeFail, type Fail } from '../fail'
+import { PLANE, DEPTH } from '../config'
+import { screenPxToWorld } from '../units'
+import type { WorldLayer, ToggleableLayer } from './helpers'
 
 const DEG2RAD = Math.PI / 180
 

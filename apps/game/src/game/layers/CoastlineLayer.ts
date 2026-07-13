@@ -1,8 +1,8 @@
 import Phaser from 'phaser'
-import { makeFail, type Fail } from './fail'
-import { DEPTH, MAP } from './config'
-import { screenPxToWorld } from './units'
-import type { WorldLayer, ZoomReactive } from './layerHelpers'
+import { makeFail, type Fail } from '../fail'
+import { DEPTH, MAP } from '../config'
+import { screenPxToWorld } from '../units'
+import type { WorldLayer, ZoomReactive } from './helpers'
 
 const fail: Fail = makeFail('game/CoastlineLayer')
 

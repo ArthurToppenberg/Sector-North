@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { DPR, INFO_WINDOW, TOOLBAR, DEPTH } from './config'
+import { DPR, INFO_WINDOW, TOOLBAR, DEPTH } from '../config'
 import { InfoWindow, type InfoWindowContent } from './InfoWindow'
 
 export class InfoWindowManager {

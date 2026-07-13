@@ -1,6 +1,6 @@
 import Phaser from 'phaser'
-import { DPR, FONT_FAMILY, HUD, DEPTH } from './config'
-import { cameraWorldView, type WorldView } from './camera'
+import { DPR, FONT_FAMILY, HUD, DEPTH } from '../config'
+import { cameraWorldView, type WorldView } from '../camera/worldView'
 
 /**
  * Decimal places shown for the zoom readout. A display-formatting detail (not an

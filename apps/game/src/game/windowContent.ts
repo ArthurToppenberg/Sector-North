@@ -3,7 +3,7 @@
 // each new clickable type gets its own builder here instead of editing the window.
 import type { City } from '../map/cities'
 import type { Radar } from '../map/radars'
-import type { InfoWindowContent } from './InfoWindow'
+import type { InfoWindowContent } from './hud/InfoWindow'
 import { cityImageAsset } from './cityImages'
 import { radarImageAsset } from './radarImages'
 

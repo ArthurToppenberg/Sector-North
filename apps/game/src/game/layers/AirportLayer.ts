@@ -1,9 +1,9 @@
 import Phaser from 'phaser'
-import { makeFail, type Fail } from './fail'
-import { AIRPORT, DEPTH } from './config'
-import { screenPxToWorld } from './units'
-import type { AirportTier } from '../map/airports'
-import type { ColocationLabel } from '../map/colocate'
+import { makeFail, type Fail } from '../fail'
+import { AIRPORT, DEPTH } from '../config'
+import { screenPxToWorld } from '../units'
+import type { AirportTier } from '../../map/airports'
+import type { ColocationLabel } from '../../map/colocate'
 import {
   assertZoom,
   assertMarkers,
@@ -11,7 +11,7 @@ import {
   type WorldLayer,
   type ZoomReactive,
   type ToggleableLayer,
-} from './layerHelpers'
+} from './helpers'
 
 export interface AirportMarker {
   name: string

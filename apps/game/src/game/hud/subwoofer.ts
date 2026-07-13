@@ -1,5 +1,5 @@
 import Phaser from 'phaser'
-import { DEPTH, SUBWOOFER } from './config'
+import { DEPTH, SUBWOOFER } from '../config'
 
 /** Texture/audio cache keys, shared by the preloader and this component. */
 export const SUBWOOFER_IMAGE_KEY = 'subwoofer'

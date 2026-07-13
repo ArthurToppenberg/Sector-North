@@ -1,8 +1,8 @@
 import Phaser from 'phaser'
-import { makeFail, type Fail } from './fail'
-import { RADAR, DEPTH } from './config'
-import { screenPxToWorld } from './units'
-import type { ColocationLabel } from '../map/colocate'
+import { makeFail, type Fail } from '../fail'
+import { RADAR, DEPTH } from '../config'
+import { screenPxToWorld } from '../units'
+import type { ColocationLabel } from '../../map/colocate'
 import {
   assertZoom,
   assertMarkers,
@@ -14,7 +14,7 @@ import {
   type WorldLayer,
   type ZoomReactive,
   type ToggleableLayer,
-} from './layerHelpers'
+} from './helpers'
 
 export interface RadarMarker {
   name: string
