@@ -4,6 +4,19 @@ const DEG2RAD = Math.PI / 180
 const SECONDS_PER_HOUR = 3600
 
 /**
+ * The canonical simulation tick (seconds). Sim time only ever advances in whole
+ * ticks (see `AircraftSim.advance`): `stepAircraft`'s integration is
+ * step-size-sensitive (it uses the start latitude's cosine for the whole step),
+ * so stepping 10 s as one step vs. 100 small ones lands in different places —
+ * only a fixed tick makes replay and pause/fast-forward bit-stable, and lets the
+ * same world run headless on a server (the determinism core principle, see root
+ * CLAUDE.md). 0.125 is exactly representable in binary floating point, so
+ * whole-second durations quantize into an exact tick count with zero remainder;
+ * 8 Hz is ample for km-scale movement (800 km/h ≈ 28 m per tick).
+ */
+export const SIM_TICK_SEC = 0.125
+
+/**
  * A simulated aircraft. Its position is a real GPS coordinate (WGS84) — the
  * source of truth — advanced in lon/lat by `stepAircraft`; where it is *drawn*
  * is derived from this via the projection layer, never stored here.
@@ -61,6 +74,8 @@ export interface AircraftSpawn {
 export class AircraftSim {
   private readonly aircraft: Aircraft[] = []
   private nextId = 1
+  /** Real seconds received but not yet consumed by a whole tick. */
+  private pendingSec = 0
 
   spawn({ lon, lat, headingDeg, speedKmh }: AircraftSpawn): Aircraft {
     if (!Number.isFinite(lon) || lon < -180 || lon > 180) fail(`spawn lon out of range: ${lon}`)
@@ -73,8 +88,21 @@ export class AircraftSim {
     return ac
   }
 
-  step(deltaSec: number): void {
-    for (const ac of this.aircraft) stepAircraft(ac, deltaSec)
+  /**
+   * Advance the sim by real elapsed seconds. The world only ever steps in whole
+   * `SIM_TICK_SEC` ticks — the sub-tick remainder is banked for the next call —
+   * so identical elapsed time yields identical tick sequences regardless of how
+   * the caller's frames slice it up. A long delta (a paused tab catching up) is
+   * simply many ticks replayed in a burst: that is the fast-forward mechanism,
+   * not a special case.
+   */
+  advance(deltaSec: number): void {
+    if (!Number.isFinite(deltaSec) || deltaSec < 0) fail(`deltaSec must be finite and >= 0, got ${deltaSec}`)
+    this.pendingSec += deltaSec
+    while (this.pendingSec >= SIM_TICK_SEC) {
+      for (const ac of this.aircraft) stepAircraft(ac, SIM_TICK_SEC)
+      this.pendingSec -= SIM_TICK_SEC
+    }
   }
 
   /** Remove every aircraft; returns how many were removed. */

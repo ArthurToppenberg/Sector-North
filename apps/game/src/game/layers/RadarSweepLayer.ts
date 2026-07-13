@@ -1,6 +1,8 @@
 import Phaser from 'phaser'
-import { RADAR, DEPTH } from './config'
-import { screenPxToWorld } from './units'
+import { makeFail, type Fail } from '../fail'
+import { RADAR, DEPTH } from '../config'
+import { screenPxToWorld } from '../units'
+import type { WorldLayer, ToggleableLayer } from './helpers'
 
 export interface RadarSweepMarker {
   name: string
@@ -19,9 +21,7 @@ function norm(angle: number): number {
   return ((angle % TAU) + TAU) % TAU
 }
 
-function fail(message: string): never {
-  throw new Error(`[game/RadarSweepLayer] ${message}`)
-}
+const fail: Fail = makeFail('game/RadarSweepLayer')
 
 /**
  * Pixels-per-km must be finite and positive: every range radius is derived from
@@ -54,7 +54,7 @@ function assertMarkers(markers: readonly RadarSweepMarker[]): void {
   })
 }
 
-export class RadarSweepLayer {
+export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
   private readonly gfx: Phaser.GameObjects.Graphics
   private readonly markers: readonly RadarSweepMarker[]
   /** Range radius per site in world pixels (rangeKm × pixelsPerKm), precomputed. */

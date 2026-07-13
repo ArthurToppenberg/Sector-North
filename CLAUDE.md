@@ -59,9 +59,9 @@ This is a hard architectural rule, not a nice-to-have:
   plus the current view.
 - This is enforced at the render boundary, not just at the projection layer: each Phaser
   render layer (`AirportLayer`, `CityLayer`, `RadarLayer`) validates its markers at
-  construction via an `assertMarkers` helper (duplicated with the same rationale in all
-  three) — a non-finite projected x/y or a non-finite lon/lat is rejected with a thrown
-  error instead of being drawn, because it means the projection upstream failed.
+  construction via the shared `assertMarkers` helper (`src/game/layers/helpers.ts`) — a
+  non-finite projected x/y or a non-finite lon/lat is rejected with a thrown error
+  instead of being drawn, because it means the projection upstream failed.
 
 ```
  world model (real GPS: lat/lon, km/h)
@@ -75,6 +75,28 @@ This is a hard architectural rule, not a nice-to-have:
 
 App-level conventions (module layout, rendering/layer rules, tuning constants) live in
 `apps/game/CLAUDE.md`.
+
+## Core architecture: the simulation is deterministic and headless-capable
+
+The world model must be able to run **without Phaser, a DOM, or a display** (e.g. on a
+server — multiplayer future-proofing), and it must be **deterministic**: the same inputs
+always produce bit-identical world state, so a paused client can catch up by replaying
+the elapsed ticks (fast-forward) rather than approximating. Concretely:
+
+- **No Phaser/DOM imports in the world model** (`src/map/`) — already enforced by the
+  module boundary; keep it that way.
+- **No wall-clock reads and no unseeded randomness in the world model.** Anything that
+  needs randomness must use a **seeded PRNG living in `src/map/`**, never `Math.random()`.
+  (Rendering/log timestamps may read the clock — they present state, they don't create it.)
+- **Simulation time advances only in fixed canonical ticks** (`SIM_TICK_SEC` in
+  `src/map/aircraft.ts`). The render loop hands raw frame deltas to
+  `AircraftSim.advance()`, which banks them and steps whole ticks — never feed a variable
+  delta into a world-state step directly. Rationale: the dead-reckoning integration is
+  step-size-sensitive (it uses the start latitude's cosine per step), so only a fixed
+  tick makes replay, pause/fast-forward, and a future server/client split bit-stable.
+- **Rendering may interpolate and consume freely, but never advances world state on its
+  own clock.** Where something is drawn is a pure function of world state + view; when
+  the world changes is the tick's business alone.
 
 ## Always use the newest package versions
 
@@ -153,8 +175,11 @@ Never try to launch, serve, or drive the game to verify a change — no dev serv
 headless browser, no end-to-end/screenshot run. The user runs and visually checks the
 game themselves.
 
-- Verify your work with `pnpm --filter sector-north-game typecheck` (or `build`) instead;
-  that is the extent of automated checking expected here.
+- Verify your work with `pnpm --filter sector-north-game typecheck` and
+  `pnpm --filter sector-north-game test` (or `build`) instead; that is the extent of
+  automated checking expected here. The vitest suite covers the pure world-model modules
+  (projection, aircraft sim, co-location, loaders) — see the Testing section in
+  `apps/game/CLAUDE.md`.
 - Do not install or invoke browser-driving tooling (Playwright, Puppeteer, chromium, xvfb,
   etc.) for the game.
 - When a change needs a visual check, hand it back to the user to run rather than running

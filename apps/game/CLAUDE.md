@@ -28,12 +28,37 @@ city + radar photos, and world-data JSON all loaded) — never on a timer or gue
     not just structural: every lon/lat is range-checked against WGS84 bounds
     (lon −180..180, lat −90..90) and rejected if non-finite, so a swapped or corrupt
     coordinate fails fast at load rather than projecting to a wrong pixel.
+  - `validate.ts` — the shared strict-validation vocabulary those four loaders compose
+    (`makeFail`, `requireLon`/`requireLat`, `requireNonEmptyString`, `requireOneOf`, …).
+    The WGS84 bounds live here **once**; a loader must never restate them. Helpers take
+    the caller's `fail` so messages keep their per-module `[map/<x>]` tag, and the caller
+    composes the subject text. Must stay Phaser- and config-free like the rest of
+    `src/map/`. (`src/game/fail.ts` is a deliberate 3-line twin of `makeFail` for the
+    render side, rather than coupling `game/` error plumbing into the world layer.)
   - `project.ts` — the projection layer (see below).
+  - `aircraft.ts` — the aircraft world model: `stepAircraft` (lat-corrected dead
+    reckoning) and `AircraftSim`, whose `advance()` banks real frame deltas and steps
+    the world only in whole `SIM_TICK_SEC` ticks — the determinism core principle
+    (root CLAUDE.md): replay/fast-forward is "run the elapsed ticks", bit-stable, and
+    the whole module runs headless.
 - `src/game/` — **Phaser rendering + input.** Consumes projected output; never parses
-  GeoJSON or re-derives the projection. Within it, keep the small pure-helper modules
+  GeoJSON or re-derives the projection. Folder layout within it:
+  - `layers/` — the world render layers (Grid, Coastline, City, Airport, Radar,
+    RadarSweep, Plane) plus their shared plumbing in `layers/helpers.ts`.
+  - `hud/` — fixed-UI-camera chrome: Toolbar, DebugHud, InfoWindow(+Manager),
+    ConsoleWindow, and the `/subwoofer` overlay.
+  - `camera/` — `CameraController.ts` (pan/zoom/clamp input) and `worldView.ts`
+    (camera → world-view geometry).
+  - `config/` — the tuning constants, one module per domain behind the `index.ts` barrel.
+  - Root — `MainScene.ts` and the cross-folder seams: `markerBuilders.ts`,
+    `windowContent.ts`, `sceneCommands.ts`, `cityImages.ts`/`radarImages.ts`,
+    `svgIcon.ts` (used by both a layer and the toolbar, so it belongs to neither
+    subfolder), `units.ts`, `math.ts`, `fail.ts`.
+
+  Keep the small pure-helper modules
   separate so each has one reason to change: `math.ts` (generic, domain-agnostic math —
   no Phaser/projection/game knowledge), `units.ts` (screen↔world pixel scaling), and
-  `camera.ts` (camera → world-view geometry). `radarImages.ts` and `cityImages.ts` hold the
+  `camera/worldView.ts` (camera → world-view geometry). `radarImages.ts` and `cityImages.ts` hold the
   name → photo-asset join for radars and cities respectively — the seam between world data
   and the bundled photos. Keeping them here deliberately leaves `src/map/radars.ts` and
   `src/map/cities.ts` pure world data with no asset URLs. Both maps are allowed to be partial:
@@ -90,7 +115,7 @@ ownership to a lower-priority site still shown. `MainScene` supplies the ranking
 airfield < major < minor < radar, so a base's own name beats the radar on it), holds the
 live per-layer visibility flags, and re-runs `resolveColocationLabels` → `layer.setLabels`
 on every airport/radar toggle. The radius is a **real-world km distance**, so it lives in
-`colocate.ts` (the world layer, in km) — not in `config.ts`, which holds only on-screen
+`colocate.ts` (the world layer, in km) — not in `config/`, which holds only on-screen
 pixel constants. This is the "GPS is the source of truth" rule applied to a data transform:
 proximity is judged in real geographic distance, never pixels. The `COLOCATION_RADIUS_KM`
 value (6 km) is calibrated empirically: it merges the airfield + radar + civil airport that
@@ -100,6 +125,29 @@ radar ~10 km from Bornholm airport stays its own site).
 New code must respect this split: geographic reasoning goes in `src/map/`, drawing and
 input go in `src/game/`.
 
+## Testing (vitest)
+
+`pnpm --filter sector-north-game test` runs the vitest suite (`test:watch` for watch
+mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`, so
+`typecheck` covers them; `vite build` never sees them (nothing imports a test).
+
+- `vitest.config.ts` is **standalone on purpose** — `vite.config.ts` carries build-only
+  plugins (bundle-size report, JSON minification) that must not run under the test
+  runner. Being a Vite config, it still resolves the `?url` asset imports in `src/map/`.
+- Environment is plain `node` — the pure `src/map/` modules and the loaders need no DOM.
+  The one exception: `src/game/config/env.ts` reads `window.devicePixelRatio` at module
+  load, so any test touching a config-importing module (`units.test.ts`) must stub
+  `globalThis.window` **before a dynamic `import()`** of the module under test — a
+  static import would hoist above the stub and crash. Do not add jsdom for this.
+- What is covered: the projection (including the fit-pinning/locked-zoom invariant),
+  the aircraft sim, co-location clustering + label ownership, every data loader (each
+  also parses its real bundled dataset — geojson uses belgium, the smallest boundary,
+  because tsc cannot reasonably type a multi-MB JSON module), and the pure `game/`
+  helpers (`units`, `math`). Phaser layers/scenes are deliberately untested — verifying
+  them means running the game, which is the user's job (see root CLAUDE.md).
+- Tests assert error *substrings* (e.g. `/out-of-range longitude/`), not full messages,
+  so validator refactors that keep semantics don't churn the suite.
+
 - `src/log/` — **pure, framework-free logging.** `logger.ts` is a process-wide `Logger`
   singleton with no Phaser/rendering knowledge; any module can call `log.info(...)` etc.
   without threading an instance through. It holds a bounded newest-500 ring of entries
@@ -108,7 +156,7 @@ input go in `src/game/`.
   empty message, and mirrors every entry to the matching browser-console method
   (`CONSOLE_METHOD`) as a deliberate second sink, not a fallback: both are meant to show
   the line, so lines show both in the in-game console and devtools. It knows nothing about
-  how entries are drawn. `src/game/ConsoleWindow.ts` is the sole *in-game* consumer and owns
+  how entries are drawn. `src/game/hud/ConsoleWindow.ts` is the sole *in-game* consumer and owns
   all timestamp/level formatting; each line is coloured by level (see the console bullet
   below). The four levels exist, but **`debug` has no callers** — the routine per-event
   chatter was removed rather than filtered, so a `debug` call reappearing is a deliberate
@@ -120,9 +168,10 @@ input go in `src/game/`.
   `Command` interface and a process-wide `commands` singleton any module can import to
   `register(...)` a slash-command, plus `parseCommandLine`. The console parses input, looks
   it up, and runs it. A command needing game state (audio, a scene, layers) is registered
-  from `src/game/` and captures what it needs by closure at registration — that is why
-  `/subwoofer` lives in `MainScene`, not here, and why the registry module itself stays
-  pure/framework-free while the game-touching commands are registered from `src/game/`.
+  from `src/game/` and captures what it needs by closure at registration — that is why the
+  registry module itself stays pure/framework-free while the game-touching commands live
+  grouped in `src/game/sceneCommands.ts` (`/subwoofer`, `/spawn-planes`, `/clear-planes`),
+  which `MainScene.create()` calls once with the live scene objects.
   `/help` ships with the registry (it just lists the live command set). `ConsoleWindow`'s
   input row is the one caller that dispatches typed lines through it. Duplicate/invalid
   names throw at registration (fail fast) rather than silently shadowing.
@@ -171,7 +220,21 @@ lon/lat becomes pixels.
 - **`MainScene` is a composition root only.** It loads/projects the world, wires up the
   layers, camera controller, and HUD, and forwards signals (update tick, resize, zoom
   change). Rendering and input logic belong in the layer/controller classes, not in the
-  scene.
+  scene — and the scene's *pure* per-entity glue lives in three sibling modules it
+  composes rather than inlines:
+  - `markerBuilders.ts` — record → marker mappers (city/airport/radar/sweep) plus the
+    colocation priority constants and `buildColocationInputs`. Type-only imports, no
+    runtime Phaser, so it is node-tested like the `src/map/` modules it joins. Airports
+    then radars is the load-bearing ordering every colocation consumer slices at
+    `airports.length`.
+  - `windowContent.ts` — record → `InfoWindowContent` builders, beside
+    `cityImages.ts`/`radarImages.ts` (their sole content consumers).
+  - `sceneCommands.ts` — `registerSceneCommands({ sim, planeLayer, subwoofer })`, the
+    game-state console commands captured by closure; called exactly once from
+    `create()` (the registry throws on duplicates).
+  What must stay in the scene: layer construction, the live `airportsVisible`/
+  `radarsVisible` closures the toolbar toggles capture, camera wiring, the update/resize
+  ticks, and the console open/close funnel.
 - **Three reaction patterns for layers — pick the right one:**
   - *Zoom-reactive* (coastline stroke width, city / airport / radar marker/label sizing):
     refreshed via the camera controller's `onZoomChanged` fan-out in `MainScene`. New
@@ -181,11 +244,20 @@ lon/lat becomes pixels.
     RadarLayer all follow this identical constructor-call pattern) — so the layer is fully
     and correctly rendered before any input or camera event fires, rather than left to a
     separate first-draw step the caller must remember. The rationale now lives here rather
-    than being duplicated inline in each layer. Each also validates the camera zoom is
-    finite and strictly positive before deriving any on-screen size via `screenPxToWorld`,
-    via an identical `assertZoom` helper across AirportLayer, CityLayer, and RadarLayer —
+    than being duplicated inline in each layer. **That self-call must stay in each leaf
+    constructor** — never lift it into a shared base class, whose constructor would run it
+    before the subclass's fields initialize (`useDefineForClassFields`). Each layer also
+    validates the camera zoom is finite and strictly positive before deriving any on-screen
+    size via `screenPxToWorld`, through the shared `assertZoom` in `layers/helpers.ts` —
     throwing rather than silently producing Infinite/NaN geometry from a zero/NaN/negative
-    zoom.
+    zoom. `layers/helpers.ts` is the home for all such cross-layer marker plumbing:
+    `assertMarkers` (shared skeleton + a `perMarker` callback for each layer's extra
+    fields), `createHitZone`/`setHitZonesInteractive`/`sizeHitZones` (the click-vs-drag
+    hit-target machinery City and Radar share), and `createMarkerLabel` (the
+    `resolution: DPR` + bottom-centre-anchor label idiom). It is deliberately a module of
+    free functions + interfaces, **not** a POI base class: CityLayer is Image-array-based
+    while Airport/Radar are single-Graphics-based, so a base would leak one design into
+    the other.
   - *Viewport-reactive* (grid slice, HUD readout): runs in `update`, guarded by the
     camera-moved dirty check so idle frames do no work. Remember that a window resize
     changes the viewport without moving the camera — handle it in `onResize`.
@@ -212,12 +284,14 @@ lon/lat becomes pixels.
   scroll) draws only the HUD, so HUD elements keep a constant on-screen size. Each camera
   `ignore()`s the other's objects. Register any new object with the correct camera.
   **The `objects` getter is the routing seam for this:** every world render layer (GridLayer,
-  CoastlineLayer, CityLayer, AirportLayer, RadarLayer, RadarSweepLayer) exposes a bare
-  `objects` getter enumerating every Phaser GameObject it owns, so `MainScene`/`setupCameras`
+  CoastlineLayer, CityLayer, AirportLayer, RadarLayer, RadarSweepLayer, PlaneLayer) exposes a
+  bare `objects` getter enumerating every Phaser GameObject it owns, so `MainScene`/`setupCameras`
   can hand that layer's objects to the correct camera (e.g. tell the fixed UI camera to
-  `ignore()` the world layers). One-off HUD/overlay components that must stay a constant
+  `ignore()` the world layers). The seam is a real interface — `WorldLayer` in
+  `layers/helpers.ts`, with `ZoomReactive`/`ToggleableLayer` for the zoom-fan-out and
+  toolbar-toggle families — which every world layer `implements`. One-off HUD/overlay components that must stay a constant
   on-screen size (not pan/zoom with the world) — e.g. the `/subwoofer` easter egg
-  (`src/game/subwoofer.ts`) — opt into the fixed UI camera the same way: expose an `objects`
+  (`src/game/hud/subwoofer.ts`) — opt into the fixed UI camera the same way: expose an `objects`
   getter that `MainScene` routes there. This is the documented pattern for any future one-off
   overlay (photo flashes, popups, etc.) to join the fixed UI camera, not just the world layers.
 - **Detail/info windows are per-location HUD panels on the UI camera.** At most one window
@@ -267,7 +341,7 @@ lon/lat becomes pixels.
 - **Constant on-screen sizes** (hairline strokes, marker dots, pan speed) are computed
   with `screenPxToWorld(screenPx, zoom)` from `src/game/units.ts` — the single source of
   truth for the screen↔world scaling trick. Don't hand-roll `x * DPR / zoom`.
-- **Draw order lives in `DEPTH` in `src/game/config.ts`.** Add new layers there; no
+- **Draw order lives in `DEPTH` in `src/game/config/depth.ts`.** Add new layers there; no
   scattered magic `setDepth` numbers.
 - **Marker glyph language — distinguish by shape / size / fill, never colour** (the HUD
   white/black rule): cities draw as the Lucide `building-2` icon (the same glyph the
@@ -302,7 +376,7 @@ lon/lat becomes pixels.
   `atob` throw so the loader stalls and never fires `create`. Icon markup must be pure ASCII
   (`btoa` throws otherwise) and must actually contain a `currentColor` to replace — both are
   treated as build-time bugs and throw, never degrade to an invisible/placeholder icon.
-- **Tunable numbers live in `src/game/config.ts`**, in CSS pixels where they describe
+- **Tunable numbers live in `src/game/config/`** (one module per domain — env, map, markers, depth, hud, camera — re-exported through the `index.ts` barrel so consumers keep importing `./config`), in CSS pixels where they describe
   on-screen sizes. Logic lives in the layers; the numbers you might want to nudge live in
   config. Follow this split for new features.
 - **Device pixels:** the canvas backing store is sized at `cssPixels * DPR` and scaled
@@ -315,7 +389,7 @@ lon/lat becomes pixels.
 ## Camera bounds are locked — never change them on your own
 
 The zoom limits (`ZOOM.min` / `ZOOM.max`) and the camera-movement bounds
-(`CAMERA_CENTER_BOUNDS`) in `src/game/config.ts` are **deliberately tuned game
+(`CAMERA_CENTER_BOUNDS`) in `src/game/config/camera.ts` are **deliberately tuned game
 settings**. Do **not** change these values, and do not alter the clamp logic in
 `CameraController` that enforces them, unless the user explicitly asks you to in that
 request. They are not free to "improve", refactor away, or adjust as a side effect of

@@ -1,6 +1,8 @@
 import Phaser from 'phaser'
-import { PLANE, DEPTH } from './config'
-import { screenPxToWorld } from './units'
+import { makeFail, type Fail } from '../fail'
+import { PLANE, DEPTH } from '../config'
+import { screenPxToWorld } from '../units'
+import type { WorldLayer, ToggleableLayer } from './helpers'
 
 const DEG2RAD = Math.PI / 180
 
@@ -13,9 +15,7 @@ export interface Contact {
   speedKmh: number
 }
 
-function fail(message: string): never {
-  throw new Error(`[game/PlaneLayer] ${message}`)
-}
+const fail: Fail = makeFail('game/PlaneLayer')
 
 /**
  * Draws radar contacts. Aircraft themselves live in the world model and are never
@@ -28,7 +28,7 @@ function fail(message: string): never {
  * stay glued to the ground as the camera pans/zooms, with only the on-screen icon
  * size re-derived per frame to stay constant.
  */
-export class PlaneLayer {
+export class PlaneLayer implements WorldLayer, ToggleableLayer {
   private readonly gfx: Phaser.GameObjects.Graphics
   private contacts: Contact[] = []
 

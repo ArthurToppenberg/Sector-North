@@ -1,8 +1,9 @@
 import Phaser from 'phaser'
-import { DEPTH, GRID } from './config'
-import { screenPxToWorld } from './units'
-import { cameraWorldView, type WorldView } from './camera'
-import { smoothstep } from './math'
+import { DEPTH, GRID } from '../config'
+import { screenPxToWorld } from '../units'
+import { cameraWorldView, type WorldView } from '../camera/worldView'
+import type { WorldLayer } from './helpers'
+import { smoothstep } from '../math'
 
 function firstLineAtOrBefore(edge: number, anchor: number, step: number): number {
   return Math.floor((edge - anchor) / step) * step + anchor
@@ -15,7 +16,7 @@ export interface GridConfig {
 }
 
 /** Faint real-world reference grid drawn beneath the map. */
-export class GridLayer {
+export class GridLayer implements WorldLayer {
   private readonly spacing: number
   private readonly origin: { x: number; y: number }
   private readonly gfx: Phaser.GameObjects.Graphics

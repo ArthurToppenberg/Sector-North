@@ -3,8 +3,8 @@ import cityIconRaw from 'lucide-static/icons/building-2.svg?raw'
 import airportIconRaw from 'lucide-static/icons/plane.svg?raw'
 import radarIconRaw from 'lucide-static/icons/radar.svg?raw'
 import developerIconRaw from 'lucide-static/icons/terminal.svg?raw'
-import { DPR, TOOLBAR, DEPTH } from './config'
-import { iconDataUri } from './svgIcon'
+import { DPR, TOOLBAR, DEPTH } from '../config'
+import { iconDataUri } from '../svgIcon'
 
 /**
  * Add a toolbar toggle by adding an entry here and wiring its `onToggle` where

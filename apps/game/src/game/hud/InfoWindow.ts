@@ -1,5 +1,6 @@
 import Phaser from 'phaser'
-import { DPR, FONT_FAMILY, INFO_WINDOW } from './config'
+import { makeFail, type Fail } from '../fail'
+import { DPR, FONT_FAMILY, INFO_WINDOW } from '../config'
 
 /**
  * A scene object that carries Phaser's Depth component — every object an
@@ -42,9 +43,7 @@ export interface InfoWindowOptions {
   readonly onFocus: (window: InfoWindow) => void
 }
 
-function fail(message: string): never {
-  throw new Error(`[game/InfoWindow] ${message}`)
-}
+const fail: Fail = makeFail('game/InfoWindow')
 
 export class InfoWindow {
   private readonly scene: Phaser.Scene

@@ -1,10 +1,10 @@
 import Phaser from 'phaser'
-import { DEPTH, MAP } from './config'
-import { screenPxToWorld } from './units'
+import { makeFail, type Fail } from '../fail'
+import { DEPTH, MAP } from '../config'
+import { screenPxToWorld } from '../units'
+import type { WorldLayer, ZoomReactive } from './helpers'
 
-function fail(message: string): never {
-  throw new Error(`[game/CoastlineLayer] ${message}`)
-}
+const fail: Fail = makeFail('game/CoastlineLayer')
 
 // Rings are interleaved x/y pairs — an even count is structural, at least 4 values needed to stroke a segment.
 function assertValidRings(rings: readonly Float32Array[]): void {
@@ -20,7 +20,7 @@ function assertValidRings(rings: readonly Float32Array[]): void {
 /**
  * Renders the country coastline as a world-space vector outline.
  */
-export class CoastlineLayer {
+export class CoastlineLayer implements WorldLayer, ZoomReactive {
   private readonly rings: readonly Float32Array[]
 
   private readonly gfx: Phaser.GameObjects.Graphics
