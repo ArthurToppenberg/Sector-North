@@ -112,18 +112,6 @@ export const RADAR = {
   },
 } as const
 
-/**
- * Simulated air traffic. Aircraft fly in the background at all times (their
- * real lon/lat is the source of truth — see `src/map/aircraft.ts`); the player
- * only ever sees a **contact** painted where a radar sweep last passed over one.
- * There is no fade: a contact stays put at full brightness until the hand comes
- * back around to its bearing, which either repaints it at the plane's new
- * position (still there) or clears it (moved on / gone). So a contact jumps
- * forward one step per revolution and holds its last-seen spot in between.
- *
- * Contacts are drawn in white (the HUD default), distinct from the phosphor-green
- * coverage sweep that reveals them.
- */
 export const PLANE = {
   /**
    * Contact icon: a hollow circle centred on the contact — heading is conveyed
@@ -152,8 +140,16 @@ export const PLANE = {
   blipColor: 0xffffff,
   /** Contact opacity — constant (no fade); a contact is either shown or cleared. */
   blipAlpha: 0.9,
-  /** Cruise speed (km/h) given to test aircraft spawned via `/spawn-planes`. */
-  spawnSpeedKmh: 800,
   /** How many aircraft `/spawn-planes` creates when no count is given. */
   defaultSpawnCount: 8,
+} as const
+
+export const WAYPOINT = {
+  /** Waypoint circle radius on screen (CSS pixels). */
+  circleRadiusScreen: 3.5,
+  /** Route polyline / circle stroke width on screen (CSS pixels). */
+  lineScreenWidth: 1,
+  color: MAP.strokeColor,
+  /** Dimmer than the coverage sweep hand — an annotation, not a signal. */
+  alpha: 0.55,
 } as const

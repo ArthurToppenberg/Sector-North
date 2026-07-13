@@ -4,7 +4,7 @@ export const meta = {
   whenToUse: 'Invoked by the tidy skill after the main loop has computed the change set.',
   phases: [
     { title: 'Analyze', detail: 'cluster changed files into disjoint features' },
-    { title: 'Refactor', detail: 'one agent per feature (SRP + fail-fast)', model: 'sonnet' },
+    { title: 'Refactor', detail: 'one agent per feature (SRP + fail-fast + dedup)', model: 'sonnet' },
     { title: 'Shared edits', detail: 'edit shared files in parallel with comment analysis', model: 'sonnet' },
     { title: 'Comments', detail: 'relocate module blocks to CLAUDE.md + strip valueless comments', model: 'sonnet' },
     { title: 'Typecheck', detail: 'single tsc --noEmit gate, fix once if needed', model: 'haiku' },
@@ -64,6 +64,7 @@ const REFACTOR_SCHEMA = {
   properties: {
     changes: { type: 'array', items: { type: 'string' } },
     fallbacksRemoved: { type: 'array', items: { type: 'string' } },
+    duplicatesMerged: { type: 'array', items: { type: 'string' } },
     leftAlone: { type: 'array', items: { type: 'string' } },
     sharedEdits: {
       type: 'array',
@@ -156,6 +157,7 @@ src/game/RadarLayer.ts + its config). Rules:
   and do NOT place it in any cluster.
 - For each cluster list the concrete cleanup concerns you can see: SRP violations, fallbacks to kill
   (try/catch-to-continue, ?? / || masking a missing value, null/undefined-as-failure, swallowed errors),
+  duplicated or near-identical logic (within a file or across the cluster's files),
   dead code, loose types, on-screen magic numbers that belong in config, map/game boundary leaks.
 Do NOT edit anything.
 GUARDRAILS:\n${GUARDRAILS}`,
@@ -185,16 +187,20 @@ Priorities, in order:
    only keeps going -> let it throw; ?? / || / defaults masking a missing input -> validate up front and
    throw with a clear message; null/undefined returned to signal failure -> throw an explicit Error;
    swallowed errors -> surface them.
-2. Move on-screen magic numbers the changes touched into src/game/config.ts.
-3. Only the obvious: dead code and stray \`any\` in the changed lines.
+2. DEDUPLICATE: merge copy-pasted or near-identical logic that the recent changes introduced or touch
+   into ONE shared helper/function, placed at the right layer (respect the src/map vs src/game boundary
+   in the GUARDRAILS). Only dedup what the change set touches — do not go hunting the whole repo for
+   duplicates. If the natural shared home is a file you don't own, describe it in sharedEdits instead.
+3. Move on-screen magic numbers the changes touched into src/game/config.ts.
+4. Only the obvious: dead code and stray \`any\` in the changed lines.
 Known concerns from analysis: ${c.concerns.join('; ') || '(none flagged)'}.
 If the cluster is already fail-fast and clean, SAY SO and make NO edits — do not invent refactors or
 restructure for its own sake. Do NOT change observable game behavior. Do NOT edit files you don't own.
 If a change genuinely requires editing a shared file (${sharedNames}), DO NOT edit it — describe the
 needed edit in sharedEdits instead.
 GUARDRAILS:\n${GUARDRAILS}
-Report: changes made, every fallback removed (and what happens now instead), anything left alone + why,
-and any sharedEdits.`,
+Report: changes made, every fallback removed (and what happens now instead), duplicatesMerged (what was
+deduplicated and where the single copy now lives), anything left alone + why, and any sharedEdits.`,
       { label: `refactor:${c.name}`, phase: 'Refactor', schema: REFACTOR_SCHEMA, ...EDIT }
     ).then((r) => (r ? { ...r, cluster: c.name } : null))
   )
@@ -325,6 +331,7 @@ return {
     cluster: r.cluster,
     changes: r.changes,
     fallbacksRemoved: r.fallbacksRemoved,
+    duplicatesMerged: r.duplicatesMerged,
   })),
   sharedEdits: sharedSummary,
   typecheck,

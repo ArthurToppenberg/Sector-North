@@ -9,11 +9,18 @@
  * answer, not a guess. The outer `Math.max(..., 1)` additionally rejects a
  * pathological sub-1 ratio.
  *
- * This is the config tree's only `window` read, evaluated at module load —
- * deliberately isolated here so a non-DOM context (tests) only has to stub for
- * this one module.
+ * This module holds the config tree's only `window` reads, evaluated at module
+ * load — deliberately isolated here so a non-DOM context (tests) only has to
+ * stub for this one module.
  */
 export const DPR = Math.max(window.devicePixelRatio || 1, 1)
+
+/**
+ * Whether the game is being served from a local dev machine. Gates
+ * developer-only chrome (the dev toolbar) that must never appear on the
+ * deployed site.
+ */
+export const IS_LOCALHOST = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
 
 /** Shared HUD typeface — Chakra Petch, a squared techno face for the tactical look. */
 export const FONT_FAMILY = 'Chakra Petch' as const

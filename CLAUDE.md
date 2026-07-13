@@ -40,8 +40,9 @@ The entire game is built around **real-world geographic coordinates**, not scree
 This is a hard architectural rule, not a nice-to-have:
 
 - Every position in the world model — the map, points of interest (currently cities,
-  tiered airfields, and radar sites), and (later) aircraft — is stored as a real GPS
-  coordinate (longitude/latitude, WGS84). Pixels are always
+  tiered airfields, and radar sites), and aircraft (`apps/game/src/map/aircraft.ts`:
+  each `Aircraft` carries its live lon/lat and its speed in km/h) — is stored as a real
+  GPS coordinate (longitude/latitude, WGS84). Pixels are always
   *derived*, never stored as the primary representation. When an entity is placed on
   screen, keep its real lon/lat on the object (see how `CityMarker` carries `lon`/`lat`
   alongside its projected `x`/`y`).
@@ -57,11 +58,13 @@ This is a hard architectural rule, not a nice-to-have:
 - Zoom and pan only affect the camera/projection — **never the world model**. A plane
   always "is" at a real lat/lon; where it's *drawn* is a pure function of that position
   plus the current view.
-- This is enforced at the render boundary, not just at the projection layer: each Phaser
-  render layer (`AirportLayer`, `CityLayer`, `RadarLayer`) validates its markers at
+- This is enforced at the render boundary, not just at the projection layer: each static
+  Phaser render layer (`AirportLayer`, `CityLayer`, `RadarLayer`) validates its markers at
   construction via the shared `assertMarkers` helper (`src/game/layers/helpers.ts`) — a
   non-finite projected x/y or a non-finite lon/lat is rejected with a thrown error
-  instead of being drawn, because it means the projection upstream failed.
+  instead of being drawn, because it means the projection upstream failed. The
+  dynamic-content layers (`PlaneLayer`, `WaypointLayer`), whose content changes every
+  frame, enforce the same rejection of non-finite positions per draw/ingest.
 
 ```
  world model (real GPS: lat/lon, km/h)
@@ -177,9 +180,9 @@ game themselves.
 
 - Verify your work with `pnpm --filter sector-north-game typecheck` and
   `pnpm --filter sector-north-game test` (or `build`) instead; that is the extent of
-  automated checking expected here. The vitest suite covers the pure world-model modules
-  (projection, aircraft sim, co-location, loaders) — see the Testing section in
-  `apps/game/CLAUDE.md`.
+  automated checking expected here. The vitest suite covers the pure world-model and
+  pure game-helper modules — see the Testing section in `apps/game/CLAUDE.md` for the
+  current coverage list.
 - Do not install or invoke browser-driving tooling (Playwright, Puppeteer, chromium, xvfb,
   etc.) for the game.
 - When a change needs a visual check, hand it back to the user to run rather than running

@@ -3,6 +3,7 @@ import cityIconRaw from 'lucide-static/icons/building-2.svg?raw'
 import airportIconRaw from 'lucide-static/icons/plane.svg?raw'
 import radarIconRaw from 'lucide-static/icons/radar.svg?raw'
 import developerIconRaw from 'lucide-static/icons/terminal.svg?raw'
+import waypointsIconRaw from 'lucide-static/icons/waypoints.svg?raw'
 import { DPR, TOOLBAR, DEPTH } from '../config'
 import { iconDataUri } from '../svgIcon'
 
@@ -15,6 +16,7 @@ const ICONS = {
   airports: { key: 'toolbar-airports', raw: airportIconRaw },
   radars: { key: 'toolbar-radars', raw: radarIconRaw },
   developer: { key: 'toolbar-developer', raw: developerIconRaw },
+  waypoints: { key: 'toolbar-waypoints', raw: waypointsIconRaw },
 } as const
 
 export type ToolbarButtonId = keyof typeof ICONS
@@ -74,9 +76,19 @@ export class Toolbar {
   /** Button surface edge length in device pixels (constant; DPR never changes). */
   private readonly buttonSizePx = TOOLBAR.buttonScreenSize * DPR
   private readonly buttons: ToolbarButton[]
+  private readonly rowIndex: number
 
-  constructor(scene: Phaser.Scene, configs: ToolbarButtonConfig[]) {
+  /**
+   * `rowIndex` stacks this toolbar below `rowIndex` other toolbars of the same
+   * geometry (0 = the top row) — how the dev toolbar sits under the main one
+   * without either knowing the other exists.
+   */
+  constructor(scene: Phaser.Scene, configs: ToolbarButtonConfig[], rowIndex = 0) {
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) {
+      throw new Error(`Toolbar rowIndex must be a non-negative integer, got ${rowIndex}.`)
+    }
     Toolbar.assertValidConfigs(scene, configs)
+    this.rowIndex = rowIndex
     this.buttons = configs.map((cfg) => this.createButton(scene, cfg))
     this.reposition()
     for (const entry of this.buttons) this.refreshIcon(entry)
@@ -117,7 +129,7 @@ export class Toolbar {
   reposition(): void {
     const margin = TOOLBAR.marginScreen * DPR
     const gap = TOOLBAR.gapScreen * DPR
-    const top = margin
+    const top = margin + this.rowIndex * (this.buttonSizePx + gap)
     for (let i = 0; i < this.buttons.length; i++) {
       const left = margin + i * (this.buttonSizePx + gap)
       const { button, icon } = this.buttons[i]
@@ -145,6 +157,18 @@ export class Toolbar {
     if (entry.active === active) return
     entry.active = active
     this.refreshIcon(entry)
+  }
+
+  /**
+   * Show or hide the whole toolbar. Phaser skips invisible objects for pointer
+   * input, so hiding the button rectangles also disables their hit areas — no
+   * separate input toggling is needed.
+   */
+  setVisible(visible: boolean): void {
+    for (const { button, icon } of this.buttons) {
+      button.setVisible(visible)
+      icon.setVisible(visible)
+    }
   }
 
   /** Reflect on/off state via glyph opacity (no colour change — HUD rule). */

@@ -6,7 +6,7 @@ import { loadRadars, RADARS_ASSET } from '../map/radars'
 import { clusterByProximity, resolveColocationLabels, COLOCATION_RADIUS_KM } from '../map/colocate'
 import { projectToPixels, type Projector } from '../map/project'
 import { AircraftSim } from '../map/aircraft'
-import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER } from './config'
+import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER, IS_LOCALHOST } from './config'
 import { GridLayer } from './layers/GridLayer'
 import { CoastlineLayer } from './layers/CoastlineLayer'
 import { CityLayer } from './layers/CityLayer'
@@ -14,6 +14,7 @@ import { AirportLayer } from './layers/AirportLayer'
 import { RadarLayer } from './layers/RadarLayer'
 import { RadarSweepLayer } from './layers/RadarSweepLayer'
 import { PlaneLayer } from './layers/PlaneLayer'
+import { WaypointLayer, type WaypointRoute } from './layers/WaypointLayer'
 import { CameraController, type CenterBounds } from './camera/CameraController'
 import { cameraWorldView } from './camera/worldView'
 import { DebugHud } from './hud/DebugHud'
@@ -36,6 +37,9 @@ import { log } from '../log/logger'
 import subwooferImageUrl from './assets/subwoofer/subwoofer.webp?url'
 import subwooferAudioUrl from './assets/subwoofer/bass.mp3?url'
 
+/** The dev toolbar is the second `Toolbar` row, stacked under the main one (row 0). */
+const DEV_TOOLBAR_ROW_INDEX = 1
+
 export class MainScene extends Phaser.Scene {
   private gridLayer!: GridLayer
   // Held as a field (unlike the city/airport/radar marker layers, which stay
@@ -46,6 +50,19 @@ export class MainScene extends Phaser.Scene {
   // to turn each aircraft's live lon/lat into world pixels every frame.
   private sim!: AircraftSim
   private planeLayer!: PlaneLayer
+  // Debug chrome: the dev toolbar and the waypoint-route overlay it toggles.
+  // Always constructed so `/dev-tools` can reveal it anywhere; shown by default
+  // only on localhost (see `setDevToolsVisible`).
+  private waypointLayer!: WaypointLayer
+  private devToolbar!: Toolbar
+  private waypointsVisible = false
+  private devToolsVisible = IS_LOCALHOST
+  // Reprojecting every brained aircraft's route is wasted work on frames where
+  // the set of brained aircraft hasn't changed (routes are immutable per
+  // aircraft) — cache by that id signature so `updateAircraft` only reprojects
+  // when it actually differs, not on every frame the overlay happens to be on.
+  private waypointRoutesCache: WaypointRoute[] = []
+  private lastWaypointAircraftIds = ''
   private project!: Projector
   private cameraController!: CameraController
   private debugHud!: DebugHud
@@ -153,7 +170,12 @@ export class MainScene extends Phaser.Scene {
     // sweep reveals (GPS is the source of truth — see `update`).
     this.sim = new AircraftSim()
     this.planeLayer = new PlaneLayer(this)
-    registerSceneCommands({ sim: this.sim, planeLayer: this.planeLayer, subwoofer: this.subwoofer })
+    registerSceneCommands({
+      sim: this.sim,
+      planeLayer: this.planeLayer,
+      subwoofer: this.subwoofer,
+      setDevToolsVisible: (visible) => this.setDevToolsVisible(visible),
+    })
 
     // Cities, airports and radars are shown by default; the toolbar toggles hide
     // them. One variable per layer feeds both the layer's start visibility and the
@@ -217,6 +239,21 @@ export class MainScene extends Phaser.Scene {
       },
     ])
 
+    this.waypointLayer = new WaypointLayer(this)
+    this.waypointLayer.setVisible(this.waypointsVisible)
+    this.devToolbar = new Toolbar(
+      this,
+      [
+        {
+          id: 'waypoints',
+          initialActive: this.waypointsVisible,
+          onToggle: (active) => this.setWaypointsVisible(active),
+        },
+      ],
+      DEV_TOOLBAR_ROW_INDEX,
+    )
+    this.devToolbar.setVisible(this.devToolsVisible)
+
     // "/" opens the console. Keyboard must exist (CameraController asserts the
     // same), so fail loudly rather than silently drop the shortcut. Only opens: once
     // the console is open the "/" is a command prefix the console's input captures,
@@ -249,6 +286,7 @@ export class MainScene extends Phaser.Scene {
         ...coastline.objects,
         ...this.radarSweepLayer.objects,
         ...this.planeLayer.objects,
+        ...this.waypointLayer.objects,
         ...cityLayer.objects,
         ...airportLayer.objects,
         ...radarLayer.objects,
@@ -256,6 +294,7 @@ export class MainScene extends Phaser.Scene {
       [
         ...this.debugHud.objects,
         ...this.toolbar.objects,
+        ...this.devToolbar.objects,
         ...this.consoleWindow.objects,
         ...this.subwoofer.objects,
       ],
@@ -279,6 +318,30 @@ export class MainScene extends Phaser.Scene {
     this.consoleWindow.setVisible(open)
     this.toolbar.setActive('developer', open)
     this.cameraController.setKeyboardPanEnabled(!open)
+  }
+
+  /**
+   * The single funnel for the waypoint-overlay flag, mirroring `setConsoleOpen`:
+   * the scene field, the dev-toolbar button's glyph, and the layer's visibility
+   * are kept in sync from this one place, whether the change came from the
+   * toolbar press (`onToggle`) or from hiding the toolbar itself.
+   */
+  private setWaypointsVisible(active: boolean): void {
+    if (active === this.waypointsVisible) return
+    this.waypointsVisible = active
+    this.waypointLayer.setVisible(active)
+    this.devToolbar.setActive('waypoints', active)
+  }
+
+  private setDevToolsVisible(visible: boolean): void {
+    if (visible === this.devToolsVisible) return
+    this.devToolsVisible = visible
+    this.devToolbar.setVisible(visible)
+    if (!visible) {
+      // Hiding the toolbar must also drop the overlay it controls — otherwise the
+      // waypoint routes would linger with no visible control left to turn them off.
+      this.setWaypointsVisible(false)
+    }
   }
 
   /**
@@ -310,6 +373,7 @@ export class MainScene extends Phaser.Scene {
     this.uiCamera.setSize(this.scale.width, this.scale.height)
     this.debugHud.reposition()
     this.toolbar.reposition()
+    this.devToolbar.reposition()
     this.infoWindows.reposition()
     this.consoleWindow.reposition()
     this.subwoofer.reposition()
@@ -330,11 +394,11 @@ export class MainScene extends Phaser.Scene {
    * from their live lon/lat here (GPS is the source of truth), so a blip is
    * painted at the plane's true ground position at the moment the sweep hit it.
    */
-  private updateAircraft(deltaSec: number, zoom: number) {
+  private updateAircraft(deltaSec: number, zoom: number): number {
     // Fixed-tick stepping (the determinism principle): the sim banks the frame
     // delta and consumes it in whole SIM_TICK_SEC ticks, so world state never
     // depends on how the render loop slices time.
-    this.sim.advance(deltaSec)
+    const ticks = this.sim.advance(deltaSec)
     const targets = this.sim.all.map((a) => {
       const [x, y] = this.project(a.lon, a.lat)
       return { x, y, headingDeg: a.headingDeg, speedKmh: a.speedKmh }
@@ -346,6 +410,27 @@ export class MainScene extends Phaser.Scene {
     this.planeLayer.removeWhere((c) => this.radarSweepLayer.isSwept(c.x, c.y))
     this.planeLayer.addContacts(this.radarSweepLayer.detectSweptTargets(targets))
     this.planeLayer.draw(zoom)
+
+    if (this.waypointsVisible) {
+      const brainedIds = this.sim.all.filter((ac) => this.sim.brainOf(ac.id) !== undefined).map((ac) => ac.id)
+      const aircraftIds = brainedIds.join(',')
+      if (aircraftIds !== this.lastWaypointAircraftIds) {
+        this.lastWaypointAircraftIds = aircraftIds
+        this.waypointRoutesCache = brainedIds.map((id) => {
+          const waypoints = this.sim.brainOf(id)?.waypoints
+          if (!waypoints) throw new Error(`[MainScene] brain for aircraft ${id} vanished mid-frame`)
+          return {
+            aircraftId: id,
+            points: waypoints.map((wp) => {
+              const [x, y] = this.project(wp.lon, wp.lat)
+              return { x, y }
+            }),
+          }
+        })
+      }
+      this.waypointLayer.draw(this.waypointRoutesCache, zoom)
+    }
+    return ticks
   }
 
   update(_time: number, deltaMs: number) {
@@ -362,7 +447,9 @@ export class MainScene extends Phaser.Scene {
     // centre is under (see RadarSweepLayer.selectSweepIndex).
     const view = cameraWorldView(cam)
     this.radarSweepLayer.update(deltaSec, cam.zoom, view.centerX, view.centerY)
-    this.updateAircraft(deltaSec, cam.zoom)
+    // The tps sample must also run every frame — it measures real ticks per real
+    // second, so it cannot sit behind the camera-dirty early-out below.
+    this.debugHud.sampleTicks(deltaSec, this.updateAircraft(deltaSec, cam.zoom))
 
     if (cam.scrollX === this.lastScrollX && cam.scrollY === this.lastScrollY && cam.zoom === this.lastZoom) {
       // Camera hasn't moved this frame — the grid slice and HUD readout are still

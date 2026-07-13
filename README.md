@@ -9,9 +9,15 @@ A browser game set on a real map of Denmark, built with [Phaser 4](https://phase
 
 ## Vision
 
-> 🚧 Work in progress — the game concept is still being fleshed out. The short version:
-> an *Air Defender*–style game played over a real, GPS-accurate map of Denmark. A fuller
-> vision statement will land here soon.
+> 🚧 Work in progress — everything below is the current working idea and is **subject to
+> change** as the game develops.
+>
+> Sector-North is a present-day air-policing game played over a real, GPS-accurate map of
+> Denmark. Russian aircraft — the kind actually intercepted over the Baltic today, like
+> the Il-20M reconnaissance plane — probe the edges of Danish airspace. You watch them
+> appear as radar contacts, scramble the current Danish air force to intercept and
+> identify them, and escalate to a shoot-down only if it comes to that. Positions, speeds,
+> and radar ranges are all real-world values simulated on real coordinates.
 
 ## Getting started
 
@@ -44,10 +50,17 @@ Danish coastline (with its neighbouring countries) plus city, airport, and radar
 markers, with a single radar — normally the one whose coverage the current view
 centre falls within — showing an animated coverage sweep and range ring sized to its real range —
 scroll to zoom (anchored under the cursor), and pan by click-dragging or with
-WASD / arrow keys. Click a radar-site marker to open a draggable detail window
-showing the site's name, a photo where available, and its specs. The top-left
+WASD / arrow keys. Click a city or radar-site marker to open a draggable detail
+window — cities show their region, founding date, and notes with a landmark
+photo; radar sites show their specs and a photo where available. The top-left
 toolbar toggles the city, airport, and radar layers; the terminal icon (or the
-`.` key) opens a draggable developer console that streams the game's log.
+`/` key) opens a draggable developer console that streams the game's log.
+
+The console accepts slash commands — `/help` lists them. Try `/spawn-intruder`:
+it sends an Il-20M down a Baltic probing route past Bornholm, visible only where
+a radar sweep paints it. On localhost a second dev-toolbar row appears with a
+waypoints toggle that overlays the planned routes of such aircraft; elsewhere,
+reveal it with `/dev-tools true`.
 
 ### Other useful commands
 
@@ -69,6 +82,7 @@ Sector-North/
 │     ├─ src/map/          # World data loading + the projection layer (no Phaser)
 │     ├─ src/game/         # Phaser scenes, layers, camera, HUD
 │     ├─ src/log/          # Pure, framework-free logging (the shared Logger singleton)
+│     ├─ src/commands/     # Pure, framework-free slash-command registry for the dev console
 │     ├─ src/data/         # Bundled map data (country boundaries, cities, airports, radars)
 │     └─ CLAUDE.md         # App-level architecture rules
 ├─ docs/                   # Repo documentation assets (screenshots, etc.)

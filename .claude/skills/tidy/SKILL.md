@@ -1,6 +1,6 @@
 ---
 name: tidy
-description: Scoped, context-cheap cleanup sweep for Sector North. Scopes to the RECENT change set (auto-detected, or a git ref / file list passed as args), analyzes it into disjoint feature clusters, then runs a background Workflow that fans out agents to (1) refactor for SRP + fail-fast, (2) relocate module comments into CLAUDE.md and delete valueless ones — returning only a compact summary + a documentation outline you gate with the user. Use when the user asks to clean up, refactor, tidy, or refresh docs.
+description: Scoped, context-cheap cleanup sweep for Sector North. Scopes to the RECENT change set (auto-detected, or a git ref / file list passed as args), analyzes it into disjoint feature clusters, then runs a background Workflow that fans out agents to (1) refactor for SRP + fail-fast + deduplicate repeated logic, (2) relocate module comments into CLAUDE.md and delete valueless ones — returning only a compact summary + a documentation outline you gate with the user. Use when the user asks to clean up, refactor, tidy, or refresh docs.
 ---
 
 # Tidy — scoped, feature-clustered maintenance sweep
@@ -43,7 +43,8 @@ Workflow({
 ```
 
 The script runs, in order: **Analyze** (cluster the changed files into disjoint features) →
-**Refactor** (one agent per feature, SRP + kill every fallback) → **Shared edits** (serialize any
+**Refactor** (one agent per feature, SRP + kill every fallback + merge duplicated logic the changes
+introduced into one shared helper) → **Shared edits** (serialize any
 edits to files shared across clusters, e.g. `config.ts`) → **Typecheck** (`tsc --noEmit`, one fix
 pass if it fails) → **Comments** (relocate module blocks into the right `CLAUDE.md`, delete
 valueless comments) → build a **documentation outline** (no edits).
@@ -66,8 +67,8 @@ Then re-run the typecheck if any doc change touched code-adjacent files (rare).
 
 ## Wrap-up
 
-Give a final summary from the returned object (features cleaned, fallbacks removed, comments
-relocated/deleted, typecheck status, docs applied) and run `git diff --stat` so the user can
+Give a final summary from the returned object (features cleaned, fallbacks removed, duplicates
+merged, comments relocated/deleted, typecheck status, docs applied) and run `git diff --stat` so the user can
 review. Remind them nothing is committed, and suggest `/verify` or `/run` to confirm the game still
 behaves correctly.
 

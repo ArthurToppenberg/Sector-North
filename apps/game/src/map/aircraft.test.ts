@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { stepAircraft, AircraftSim, SIM_TICK_SEC, type Aircraft } from './aircraft'
+import { stepAircraft, AircraftSim, SIM_TICK_SEC, type Aircraft, type AircraftSpawn } from './aircraft'
+import { AIRCRAFT_TYPES } from './aircraftTypes'
 import { KM_PER_DEG_LAT } from './project'
 
 const DEG2RAD = Math.PI / 180
 
 function aircraft(overrides: Partial<Aircraft> = {}): Aircraft {
-  return { id: 1, lon: 12, lat: 55, headingDeg: 0, speedKmh: KM_PER_DEG_LAT, ...overrides }
+  return { id: 1, type: 'il20m', lon: 12, lat: 55, headingDeg: 0, speedKmh: KM_PER_DEG_LAT, ...overrides }
 }
 
 describe('stepAircraft', () => {
@@ -62,51 +63,75 @@ describe('stepAircraft', () => {
 })
 
 describe('AircraftSim', () => {
+  const valid: AircraftSpawn = { lon: 12, lat: 55, headingDeg: 0, type: 'il20m' }
+
   it('spawns aircraft with sequential ids starting at 1', () => {
     const sim = new AircraftSim()
-    const a = sim.spawn({ lon: 12, lat: 55, headingDeg: 0, speedKmh: 800 })
-    const b = sim.spawn({ lon: 12, lat: 55, headingDeg: 90, speedKmh: 800 })
+    const a = sim.spawn(valid)
+    const b = sim.spawn({ ...valid, headingDeg: 90 })
     expect(a.id).toBe(1)
     expect(b.id).toBe(2)
     expect(sim.count).toBe(2)
   })
 
-  it('rejects out-of-range or non-finite spawn parameters', () => {
+  it('derives the speed from the type profile', () => {
     const sim = new AircraftSim()
-    const valid = { lon: 12, lat: 55, headingDeg: 0, speedKmh: 800 }
-    expect(() => sim.spawn({ ...valid, lon: 181 })).toThrow(/lon out of range/)
-    expect(() => sim.spawn({ ...valid, lat: -91 })).toThrow(/lat out of range/)
+    const ac = sim.spawn(valid)
+    expect(ac.type).toBe('il20m')
+    expect(ac.speedKmh).toBe(AIRCRAFT_TYPES.il20m.cruiseSpeedKmh)
+  })
+
+  it('rejects out-of-range, non-finite, or unknown spawn parameters', () => {
+    const sim = new AircraftSim()
+    expect(() => sim.spawn({ ...valid, lon: 181 })).toThrow(/out-of-range longitude/)
+    expect(() => sim.spawn({ ...valid, lat: -91 })).toThrow(/out-of-range latitude/)
     expect(() => sim.spawn({ ...valid, headingDeg: Number.NaN })).toThrow(/headingDeg not finite/)
-    expect(() => sim.spawn({ ...valid, speedKmh: -1 })).toThrow(/speedKmh must be finite/)
+    expect(() => sim.spawn({ ...valid, type: 'ufo' as never })).toThrow(/type unknown/)
   })
 
   it('advances every aircraft', () => {
     const sim = new AircraftSim()
-    const north = sim.spawn({ lon: 12, lat: 55, headingDeg: 0, speedKmh: 800 })
-    const east = sim.spawn({ lon: 12, lat: 55, headingDeg: 90, speedKmh: 800 })
+    const north = sim.spawn(valid)
+    const east = sim.spawn({ ...valid, headingDeg: 90 })
     sim.advance(60)
     expect(north.lat).toBeGreaterThan(55)
     expect(east.lon).toBeGreaterThan(12)
   })
 
-  it('clear removes all aircraft and reports how many', () => {
+  it('brainOf returns the spawned brain, and undefined for brainless aircraft', () => {
     const sim = new AircraftSim()
-    sim.spawn({ lon: 12, lat: 55, headingDeg: 0, speedKmh: 800 })
-    sim.spawn({ lon: 12, lat: 55, headingDeg: 90, speedKmh: 800 })
+    const brain = { tick: () => {} }
+    const brained = sim.spawn(valid, brain)
+    const brainless = sim.spawn({ ...valid, headingDeg: 90 })
+    expect(sim.brainOf(brained.id)).toBe(brain)
+    expect(sim.brainOf(brainless.id)).toBeUndefined()
+  })
+
+  it('clear removes all aircraft (and their brains) and reports how many', () => {
+    const sim = new AircraftSim()
+    let ticks = 0
+    sim.spawn(valid, { tick: () => ticks++ })
+    sim.spawn({ ...valid, headingDeg: 90 })
     expect(sim.clear()).toBe(2)
     expect(sim.count).toBe(0)
     expect(sim.all).toHaveLength(0)
+
+    // A brain must not outlive clear(): later spawns must start brainless.
+    sim.spawn(valid)
+    sim.advance(1)
+    expect(ticks).toBe(0)
   })
 })
 
 describe('determinism (fixed-tick stepping)', () => {
-  const spawn = { lon: 10.75, lat: 56, headingDeg: 45, speedKmh: 800 }
+  const spawn: AircraftSpawn = { lon: 10.75, lat: 56, headingDeg: 45, type: 'il20m' }
+  const cruise = AIRCRAFT_TYPES.il20m.cruiseSpeedKmh
 
   it('one big step lands elsewhere than the same time in ticks — why the canonical tick exists', () => {
     // Heading 45° so latitude changes: stepAircraft uses the start-lat cosine
     // for the whole step, making integration step-size-sensitive.
-    const oneStep = { id: 1, ...spawn }
-    const ticked = { id: 2, ...spawn }
+    const oneStep = { id: 1, ...spawn, speedKmh: cruise }
+    const ticked = { id: 2, ...spawn, speedKmh: cruise }
     stepAircraft(oneStep, 3600)
     for (let i = 0; i < 3600 / SIM_TICK_SEC; i++) stepAircraft(ticked, SIM_TICK_SEC)
     expect(oneStep.lon).not.toBe(ticked.lon)
@@ -119,7 +144,7 @@ describe('determinism (fixed-tick stepping)', () => {
     const plane = sim.spawn(spawn)
     sim.advance(10)
 
-    const reference = { id: 1, ...spawn }
+    const reference = { id: 1, ...spawn, speedKmh: cruise }
     for (let i = 0; i < 10 / SIM_TICK_SEC; i++) stepAircraft(reference, SIM_TICK_SEC)
 
     expect(plane.lon).toBe(reference.lon)
@@ -145,6 +170,14 @@ describe('determinism (fixed-tick stepping)', () => {
 
     sim.advance(SIM_TICK_SEC / 2)
     expect(plane.lat).not.toBe(spawn.lat)
+  })
+
+  it('reports the whole ticks stepped, counting banked sub-tick time', () => {
+    const sim = new AircraftSim()
+    sim.spawn(spawn)
+    expect(sim.advance(SIM_TICK_SEC * 2.5)).toBe(2)
+    expect(sim.advance(SIM_TICK_SEC / 2)).toBe(1)
+    expect(sim.advance(0)).toBe(0)
   })
 
   it('rejects a negative or non-finite advance', () => {

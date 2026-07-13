@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 
-// `./units` pulls DPR from `./config`, which reads `window.devicePixelRatio` at
-// module load. Stub the global with a known DPR before the dynamic import — a
-// static import would hoist above the stub and crash the node environment.
-;(globalThis as { window?: { devicePixelRatio: number } }).window = { devicePixelRatio: 2 }
+;(globalThis as { window?: { devicePixelRatio: number; location: { hostname: string } } }).window = {
+  devicePixelRatio: 2,
+  location: { hostname: 'localhost' },
+}
 const { screenPxToWorld } = await import('./units')
 
 describe('screenPxToWorld', () => {

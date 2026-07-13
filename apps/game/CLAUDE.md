@@ -28,8 +28,11 @@ city + radar photos, and world-data JSON all loaded) — never on a timer or gue
     not just structural: every lon/lat is range-checked against WGS84 bounds
     (lon −180..180, lat −90..90) and rejected if non-finite, so a swapped or corrupt
     coordinate fails fast at load rather than projecting to a wrong pixel.
-  - `validate.ts` — the shared strict-validation vocabulary those four loaders compose
-    (`makeFail`, `requireLon`/`requireLat`, `requireNonEmptyString`, `requireOneOf`, …).
+  - `validate.ts` — the shared strict-validation vocabulary of the whole world layer
+    (`makeFail`, `requireLon`/`requireLat`, `requireNonEmptyString`, `requireOneOf`, …):
+    composed by the four data loaders above and equally by the aircraft world model —
+    `AircraftSim.spawn`, `RouteBrain`'s constructor, and the authored-TS module-load
+    checks in `aircraftTypes.ts` and `routes.ts`.
     The WGS84 bounds live here **once**; a loader must never restate them. Helpers take
     the caller's `fail` so messages keep their per-module `[map/<x>]` tag, and the caller
     composes the subject text. Must stay Phaser- and config-free like the rest of
@@ -40,11 +43,56 @@ city + radar photos, and world-data JSON all loaded) — never on a timer or gue
     reckoning) and `AircraftSim`, whose `advance()` banks real frame deltas and steps
     the world only in whole `SIM_TICK_SEC` ticks — the determinism core principle
     (root CLAUDE.md): replay/fast-forward is "run the elapsed ticks", bit-stable, and
-    the whole module runs headless.
+    the whole module runs headless. `SIM_TICK_SEC` is `0.125`: exactly representable
+    in binary floating point, so whole-second durations quantize into an exact tick
+    count with zero remainder, and 8 Hz is ample for km-scale movement (800 km/h ≈
+    28 m per tick). Every aircraft carries an `AircraftTypeId`;
+    `spawn` derives its speed from the type's profile (a spawn never states a speed),
+    and optionally attaches a `Brain`. Brains are held in a sim-owned `Map` keyed by
+    aircraft id — not on the `Aircraft` struct — so world state stays plain,
+    serializable data; a brainless aircraft flies straight forever.
+  - `aircraftTypes.ts` — the aircraft type registry: the `AircraftTypeId`
+    discriminant (the `AirportTier` pattern) and per-type `AircraftTypeProfile`s in
+    real units (cruise km/h, turn-rate deg/s). Currently one type, the Il-20M "Coot"
+    Baltic recon turboprop; Danish interceptors (F-16/F-35) extend this union later.
+    **Authored-TS sanity check:** because this registry is a literal authored in TS,
+    not data loaded and validated at runtime, it runs a cheap module-load pass that
+    calls the `validate.ts` helpers directly on the literal — a typo'd number throws
+    at import time instead of surfacing later as silently wrong movement. `routes.ts`
+    (below) follows the same convention for its own literal.
+  - `brain.ts` — per-tick steering. The `Brain` interface is called by
+    `AircraftSim.advance` *inside* the whole-tick loop, immediately before the
+    position step, so behavior is tick-quantized and bit-deterministic by
+    construction. `RouteBrain` flies a waypoint list with rate-limited shortest-arc
+    turns (`turnTowardDeg`) and a `WAYPOINT_CAPTURE_KM` arrival radius; past its
+    last waypoint it holds heading (despawn is future work). Its `bearingDeg`/
+    distance use the same lat-corrected equirectangular metric as `stepAircraft` —
+    deliberately not `colocate.ts`'s haversine — so the brain judges geometry
+    exactly the way the aircraft flies it. The interface's optional read-only
+    `waypoints` exposes the intended route for debug rendering only (the
+    `WaypointLayer` overlay) — presentation, never steering; `tick` is the sole
+    steering path.
+  - `routes.ts` — hardcoded route data. An `IntruderRoute` is a distinct `spawn`
+    point plus the `waypoints` legs (all lon/lat): `/spawn-intruder` spawns at
+    `spawn` with its initial heading derived down the first leg (`bearingDeg`), so
+    the intruder enters clean rather than opening with a swerve. `INTRUDER_PROBE_ROUTE`
+    is the Kaliningrad-style Baltic probing leg `/spawn-intruder` flies; runs the
+    same authored-TS sanity check as `aircraftTypes.ts` above, so a typo'd
+    coordinate throws at import rather than on the first `/spawn-intruder`. Route
+    randomization must go through a seeded PRNG in `src/map/` when it arrives.
 - `src/game/` — **Phaser rendering + input.** Consumes projected output; never parses
   GeoJSON or re-derives the projection. Folder layout within it:
   - `layers/` — the world render layers (Grid, Coastline, City, Airport, Radar,
-    RadarSweep, Plane) plus their shared plumbing in `layers/helpers.ts`.
+    RadarSweep, Plane, Waypoint) plus their shared plumbing in `layers/helpers.ts`.
+    `WaypointLayer` is debug chrome, not tactical picture: it draws every brained
+    aircraft's planned route (polyline + hollow circle per waypoint, phosphor green)
+    and is toggled from the dev toolbar (itself hidden by default off localhost —
+    see the dev-toolbar bullet under rendering). It is fed from
+    `MainScene.updateAircraft` only while the overlay is visible, behind a two-level
+    dirty check: the scene reprojects routes only when the set of brained aircraft
+    ids changes (routes are immutable per aircraft), and the layer itself skips the
+    redraw unless zoom or the projected point content changed — deliberately keyed
+    on coordinates, not ids, so a future brain that moves its waypoints still repaints.
   - `hud/` — fixed-UI-camera chrome: Toolbar, DebugHud, InfoWindow(+Manager),
     ConsoleWindow, and the `/subwoofer` overlay.
   - `camera/` — `CameraController.ts` (pan/zoom/clamp input) and `worldView.ts`
@@ -135,12 +183,16 @@ mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`
   plugins (bundle-size report, JSON minification) that must not run under the test
   runner. Being a Vite config, it still resolves the `?url` asset imports in `src/map/`.
 - Environment is plain `node` — the pure `src/map/` modules and the loaders need no DOM.
-  The one exception: `src/game/config/env.ts` reads `window.devicePixelRatio` at module
-  load, so any test touching a config-importing module (`units.test.ts`) must stub
-  `globalThis.window` **before a dynamic `import()`** of the module under test — a
-  static import would hoist above the stub and crash. Do not add jsdom for this.
+  The one exception: `src/game/config/env.ts` reads `window.devicePixelRatio` and
+  `window.location.hostname` at module load, so any test touching a config-importing
+  module (`units.test.ts`) must stub `globalThis.window` (with both fields) **before a
+  dynamic `import()`** of the module under test — a static import would hoist above the
+  stub and crash. Do not add jsdom for this.
 - What is covered: the projection (including the fit-pinning/locked-zoom invariant),
-  the aircraft sim, co-location clustering + label ownership, every data loader (each
+  the aircraft sim, the steering brain (bearing/shortest-arc turn geometry, `RouteBrain`
+  waypoint capture in order, rate-limited turns, and bit-determinism across irregular
+  frame slices), the aircraft type registry (id/profile consistency), co-location
+  clustering + label ownership, every data loader (each
   also parses its real bundled dataset — geojson uses belgium, the smallest boundary,
   because tsc cannot reasonably type a multi-MB JSON module), and the pure `game/`
   helpers (`units`, `math`). Phaser layers/scenes are deliberately untested — verifying
@@ -170,7 +222,8 @@ mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`
   it up, and runs it. A command needing game state (audio, a scene, layers) is registered
   from `src/game/` and captures what it needs by closure at registration — that is why the
   registry module itself stays pure/framework-free while the game-touching commands live
-  grouped in `src/game/sceneCommands.ts` (`/subwoofer`, `/spawn-planes`, `/clear-planes`),
+  grouped in `src/game/sceneCommands.ts` (`/subwoofer`, `/spawn-planes`, `/spawn-intruder`,
+  `/dev-tools`, `/clear-planes`),
   which `MainScene.create()` calls once with the live scene objects.
   `/help` ships with the registry (it just lists the live command set). `ConsoleWindow`'s
   input row is the one caller that dispatches typed lines through it. Duplicate/invalid
@@ -229,8 +282,8 @@ lon/lat becomes pixels.
     `airports.length`.
   - `windowContent.ts` — record → `InfoWindowContent` builders, beside
     `cityImages.ts`/`radarImages.ts` (their sole content consumers).
-  - `sceneCommands.ts` — `registerSceneCommands({ sim, planeLayer, subwoofer })`, the
-    game-state console commands captured by closure; called exactly once from
+  - `sceneCommands.ts` — `registerSceneCommands({ sim, planeLayer, subwoofer, setDevToolsVisible })`,
+    the game-state console commands captured by closure; called exactly once from
     `create()` (the registry throws on duplicates).
   What must stay in the scene: layer construction, the live `airportsVisible`/
   `radarsVisible` closures the toolbar toggles capture, camera wiring, the update/resize
@@ -280,11 +333,20 @@ lon/lat becomes pixels.
     drawn one is already at its correct, continuous phase rather than snapping to zero; the
     starting angles are staggered at construction (one full turn spread evenly across the sites)
     for the same reason on the very first frame.
+  - **Contacts (`PlaneLayer`) are revealed only by the sweep, not drawn continuously.** Aircraft
+    fly in the background at all times — their real lon/lat is the source of truth (`src/map/
+    aircraft.ts`) — but the player only ever sees a contact painted where a radar sweep last
+    passed over one. There is no fade: a contact stays at full brightness until the sweep hand
+    comes back around to its bearing, which either repaints it at the plane's new position
+    (still there) or clears it (moved on/gone). So a contact jumps forward once per revolution
+    and holds its last-seen spot in between. Contacts are drawn in white (the HUD default),
+    distinct from the phosphor-green coverage sweep that reveals them.
 - **Two cameras:** the main camera draws only world layers; a fixed UI camera (zoom 1, no
   scroll) draws only the HUD, so HUD elements keep a constant on-screen size. Each camera
   `ignore()`s the other's objects. Register any new object with the correct camera.
   **The `objects` getter is the routing seam for this:** every world render layer (GridLayer,
-  CoastlineLayer, CityLayer, AirportLayer, RadarLayer, RadarSweepLayer, PlaneLayer) exposes a
+  CoastlineLayer, CityLayer, AirportLayer, RadarLayer, RadarSweepLayer, PlaneLayer,
+  WaypointLayer) exposes a
   bare `objects` getter enumerating every Phaser GameObject it owns, so `MainScene`/`setupCameras`
   can hand that layer's objects to the correct camera (e.g. tell the fixed UI camera to
   `ignore()` the world layers). The seam is a real interface — `WorldLayer` in
@@ -367,6 +429,15 @@ lon/lat becomes pixels.
 - **HUD controls are decoupled from what they control.** Each toolbar button owns its own
   on/off state and reports changes through the `onToggle` callback the scene supplies — it
   never reaches into the layers directly; `MainScene` owns that wiring.
+- **The dev toolbar is a second `Toolbar` row, hidden by default off localhost.** `Toolbar`
+  takes a `rowIndex` (0 = the main top row) so a second instance stacks below the first
+  without either knowing the other exists. The dev toolbar (currently just the waypoints
+  toggle) and the waypoint layer it controls are **always constructed**; the toolbar's
+  visibility defaults to `IS_LOCALHOST` (`config/env.ts`) and can be overridden at runtime
+  with `/dev-tools true|false` from the developer console. All visibility changes funnel
+  through `MainScene.setDevToolsVisible`, which on hide also forces the waypoints overlay
+  off (via `Toolbar.setActive`, which syncs the glyph without firing `onToggle`) — no debug
+  overlay may survive on screen with its control hidden.
 - **HUD icons are SVGs baked into textures (`src/game/svgIcon.ts`).** HUD glyphs come from
   Lucide SVGs, authored with `currentColor`. A standalone SVG rasterised into a Phaser
   texture has no CSS colour context to inherit — it would fall back to black and vanish on
