@@ -1,9 +1,17 @@
 import Phaser from 'phaser'
 import { makeFail, type Fail } from './fail'
-import { DPR, FONT_FAMILY, AIRPORT, DEPTH } from './config'
+import { AIRPORT, DEPTH } from './config'
 import { screenPxToWorld } from './units'
 import type { AirportTier } from '../map/airports'
 import type { ColocationLabel } from '../map/colocate'
+import {
+  assertZoom,
+  assertMarkers,
+  createMarkerLabel,
+  type WorldLayer,
+  type ZoomReactive,
+  type ToggleableLayer,
+} from './layerHelpers'
 
 export interface AirportMarker {
   name: string
@@ -38,27 +46,8 @@ function triangleVertices(x: number, y: number, r: number): readonly [Point, Poi
 
 const fail: Fail = makeFail('game/AirportLayer')
 
-function assertZoom(zoom: number): number {
-  if (!Number.isFinite(zoom) || zoom <= 0) fail(`zoom must be finite and > 0, got ${zoom}`)
-  return zoom
-}
-
-function assertMarkers(markers: readonly AirportMarker[]): void {
-  if (markers.length === 0) fail('expected at least one airport marker')
-  markers.forEach((m, i) => {
-    if (typeof m.name !== 'string' || m.name.length === 0) fail(`marker ${i} has no name`)
-    if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) {
-      fail(`marker ${m.name} has a non-finite projected position (${m.x}, ${m.y})`)
-    }
-    if (!Number.isFinite(m.lon) || !Number.isFinite(m.lat)) {
-      fail(`marker ${m.name} has a non-finite lon/lat (${m.lon}, ${m.lat})`)
-    }
-    if (!TIERS.includes(m.tier)) fail(`marker ${m.name} has unknown tier: ${JSON.stringify(m.tier)}`)
-  })
-}
-
 /** Renders airfield markers (triangle glyphs) and their name labels. */
-export class AirportLayer {
+export class AirportLayer implements WorldLayer, ZoomReactive, ToggleableLayer {
   private readonly markers: readonly AirportMarker[]
   private readonly gfx: Phaser.GameObjects.Graphics
   private readonly labels: Phaser.GameObjects.Text[]
@@ -66,25 +55,23 @@ export class AirportLayer {
   private layerVisible = true
 
   constructor(scene: Phaser.Scene, markers: readonly AirportMarker[]) {
-    assertMarkers(markers)
+    assertMarkers(markers, fail, 'airport', (m) => {
+      if (!TIERS.includes(m.tier)) fail(`marker ${m.name} has unknown tier: ${JSON.stringify(m.tier)}`)
+    })
     this.markers = markers
     this.suppressed = markers.map((m) => m.labelSuppressed)
 
     this.gfx = scene.add.graphics().setDepth(DEPTH.airportMarkers)
 
     this.labels = markers.map((m) =>
-      scene.add
-        .text(m.x, m.y, m.label, {
-          fontFamily: FONT_FAMILY,
-          fontStyle: '500',
-          fontSize: `${AIRPORT.labelScreenSize * DPR}px`,
-          color: AIRPORT.labelColor,
-          // Rasterise at device resolution so labels stay crisp on HiDPI displays.
-          resolution: DPR,
-        })
-        // Anchor bottom-centre so the label sits above its marker, centred on it.
-        .setOrigin(0.5, 1)
-        .setDepth(DEPTH.airportLabels),
+      createMarkerLabel(
+        scene,
+        m.x,
+        m.y,
+        m.label,
+        { fontWeight: '500', screenSize: AIRPORT.labelScreenSize, color: AIRPORT.labelColor },
+        DEPTH.airportLabels,
+      ),
     )
 
     this.onZoomChanged(scene.cameras.main.zoom)
@@ -122,7 +109,7 @@ export class AirportLayer {
   }
 
   onZoomChanged(zoom: number): void {
-    assertZoom(zoom)
+    assertZoom(zoom, fail)
     this.drawMarkers(zoom)
     this.layoutLabels(zoom)
   }

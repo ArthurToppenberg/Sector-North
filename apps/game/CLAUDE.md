@@ -211,11 +211,20 @@ lon/lat becomes pixels.
     RadarLayer all follow this identical constructor-call pattern) — so the layer is fully
     and correctly rendered before any input or camera event fires, rather than left to a
     separate first-draw step the caller must remember. The rationale now lives here rather
-    than being duplicated inline in each layer. Each also validates the camera zoom is
-    finite and strictly positive before deriving any on-screen size via `screenPxToWorld`,
-    via an identical `assertZoom` helper across AirportLayer, CityLayer, and RadarLayer —
+    than being duplicated inline in each layer. **That self-call must stay in each leaf
+    constructor** — never lift it into a shared base class, whose constructor would run it
+    before the subclass's fields initialize (`useDefineForClassFields`). Each layer also
+    validates the camera zoom is finite and strictly positive before deriving any on-screen
+    size via `screenPxToWorld`, through the shared `assertZoom` in `layerHelpers.ts` —
     throwing rather than silently producing Infinite/NaN geometry from a zero/NaN/negative
-    zoom.
+    zoom. `layerHelpers.ts` is the home for all such cross-layer marker plumbing:
+    `assertMarkers` (shared skeleton + a `perMarker` callback for each layer's extra
+    fields), `createHitZone`/`setHitZonesInteractive`/`sizeHitZones` (the click-vs-drag
+    hit-target machinery City and Radar share), and `createMarkerLabel` (the
+    `resolution: DPR` + bottom-centre-anchor label idiom). It is deliberately a module of
+    free functions + interfaces, **not** a POI base class: CityLayer is Image-array-based
+    while Airport/Radar are single-Graphics-based, so a base would leak one design into
+    the other.
   - *Viewport-reactive* (grid slice, HUD readout): runs in `update`, guarded by the
     camera-moved dirty check so idle frames do no work. Remember that a window resize
     changes the viewport without moving the camera — handle it in `onResize`.
@@ -242,10 +251,12 @@ lon/lat becomes pixels.
   scroll) draws only the HUD, so HUD elements keep a constant on-screen size. Each camera
   `ignore()`s the other's objects. Register any new object with the correct camera.
   **The `objects` getter is the routing seam for this:** every world render layer (GridLayer,
-  CoastlineLayer, CityLayer, AirportLayer, RadarLayer, RadarSweepLayer) exposes a bare
-  `objects` getter enumerating every Phaser GameObject it owns, so `MainScene`/`setupCameras`
+  CoastlineLayer, CityLayer, AirportLayer, RadarLayer, RadarSweepLayer, PlaneLayer) exposes a
+  bare `objects` getter enumerating every Phaser GameObject it owns, so `MainScene`/`setupCameras`
   can hand that layer's objects to the correct camera (e.g. tell the fixed UI camera to
-  `ignore()` the world layers). One-off HUD/overlay components that must stay a constant
+  `ignore()` the world layers). The seam is a real interface — `WorldLayer` in
+  `layerHelpers.ts`, with `ZoomReactive`/`ToggleableLayer` for the zoom-fan-out and
+  toolbar-toggle families — which every world layer `implements`. One-off HUD/overlay components that must stay a constant
   on-screen size (not pan/zoom with the world) — e.g. the `/subwoofer` easter egg
   (`src/game/subwoofer.ts`) — opt into the fixed UI camera the same way: expose an `objects`
   getter that `MainScene` routes there. This is the documented pattern for any future one-off

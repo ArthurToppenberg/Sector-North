@@ -59,9 +59,9 @@ This is a hard architectural rule, not a nice-to-have:
   plus the current view.
 - This is enforced at the render boundary, not just at the projection layer: each Phaser
   render layer (`AirportLayer`, `CityLayer`, `RadarLayer`) validates its markers at
-  construction via an `assertMarkers` helper (duplicated with the same rationale in all
-  three) — a non-finite projected x/y or a non-finite lon/lat is rejected with a thrown
-  error instead of being drawn, because it means the projection upstream failed.
+  construction via the shared `assertMarkers` helper (`src/game/layerHelpers.ts`) — a
+  non-finite projected x/y or a non-finite lon/lat is rejected with a thrown error
+  instead of being drawn, because it means the projection upstream failed.
 
 ```
  world model (real GPS: lat/lon, km/h)

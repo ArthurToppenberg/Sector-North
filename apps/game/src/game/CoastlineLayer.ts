@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { makeFail, type Fail } from './fail'
 import { DEPTH, MAP } from './config'
 import { screenPxToWorld } from './units'
+import type { WorldLayer, ZoomReactive } from './layerHelpers'
 
 const fail: Fail = makeFail('game/CoastlineLayer')
 
@@ -19,7 +20,7 @@ function assertValidRings(rings: readonly Float32Array[]): void {
 /**
  * Renders the country coastline as a world-space vector outline.
  */
-export class CoastlineLayer {
+export class CoastlineLayer implements WorldLayer, ZoomReactive {
   private readonly rings: readonly Float32Array[]
 
   private readonly gfx: Phaser.GameObjects.Graphics

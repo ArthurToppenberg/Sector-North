@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { makeFail, type Fail } from './fail'
 import { RADAR, DEPTH } from './config'
 import { screenPxToWorld } from './units'
+import type { WorldLayer, ToggleableLayer } from './layerHelpers'
 
 export interface RadarSweepMarker {
   name: string
@@ -53,7 +54,7 @@ function assertMarkers(markers: readonly RadarSweepMarker[]): void {
   })
 }
 
-export class RadarSweepLayer {
+export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
   private readonly gfx: Phaser.GameObjects.Graphics
   private readonly markers: readonly RadarSweepMarker[]
   /** Range radius per site in world pixels (rangeKm × pixelsPerKm), precomputed. */

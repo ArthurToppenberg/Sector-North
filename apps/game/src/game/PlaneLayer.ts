@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import { makeFail, type Fail } from './fail'
 import { PLANE, DEPTH } from './config'
 import { screenPxToWorld } from './units'
+import type { WorldLayer, ToggleableLayer } from './layerHelpers'
 
 const DEG2RAD = Math.PI / 180
 
@@ -27,7 +28,7 @@ const fail: Fail = makeFail('game/PlaneLayer')
  * stay glued to the ground as the camera pans/zooms, with only the on-screen icon
  * size re-derived per frame to stay constant.
  */
-export class PlaneLayer {
+export class PlaneLayer implements WorldLayer, ToggleableLayer {
   private readonly gfx: Phaser.GameObjects.Graphics
   private contacts: Contact[] = []
 
