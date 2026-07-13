@@ -9,17 +9,6 @@ const fail: Fail = makeFail('game/frameClock')
  */
 const BACKWARDS_EPSILON_MS = 1
 
-/**
- * Converts a stream of raw monotonic timestamps (ms) into true elapsed seconds
- * per frame. Successive deltas telescope: their sum is exactly the wall-clock
- * time since the first sample, so anything integrated from them cannot drift
- * from real time.
- *
- * This exists because Phaser's TimeStep delta is 10-frame-smoothed, clamped to
- * 200 ms, and reset on focus/resume — it does NOT sum to wall-clock time. The
- * scene feeds this class the raw rAF timestamp (update()'s first argument,
- * passed through TimeStep unsmoothed) instead.
- */
 export class FrameClock {
   private lastMs: number | null = null
 

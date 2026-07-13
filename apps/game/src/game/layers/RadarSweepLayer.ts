@@ -16,7 +16,6 @@ export interface RadarSweepMarker {
 
 const TAU = Math.PI * 2
 
-/** Wrap an angle (radians) into `[0, TAU)`. */
 function norm(angle: number): number {
   return ((angle % TAU) + TAU) % TAU
 }

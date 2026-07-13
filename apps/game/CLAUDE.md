@@ -19,6 +19,21 @@ registered as a listener for `APP_READY_EVENT` *before* Phaser's async `create()
 and is only torn down once that event fires (world projected; toolbar + city SVG glyphs,
 city + radar photos, and world-data JSON all loaded) — never on a timer or guess.
 
+## Frame timing (FrameClock)
+
+Phaser's `TimeStep` delta is 10-frame-smoothed, clamped to 200 ms, and reset on
+focus/resume — it does **not** sum to wall-clock time. Since the aircraft sim's
+fixed-tick banking must stay bit-stable/deterministic (see the root CLAUDE.md's
+"simulation is deterministic and headless-capable" principle), `MainScene` never feeds
+that smoothed delta into world-state stepping. Instead it passes `FrameClock`
+(`src/game/frameClock.ts`) the raw rAF timestamp — `update()`'s first argument, which
+Phaser's `TimeStep` passes through unsmoothed — and `FrameClock.sample()` converts
+successive raw timestamps into elapsed-seconds deltas whose sum telescopes exactly to
+real wall-clock time since the first sample. A timestamp that goes backwards by more
+than a sub-millisecond scheduler-jitter epsilon is treated as a real clock bug and
+throws; jitter within that epsilon reports zero elapsed time without moving the anchor,
+so the lost sliver isn't double-counted on the next sample.
+
 ## Module layout — keep the boundary
 
 - `src/map/` — **world data + projection.** Pure TypeScript, no Phaser imports.
