@@ -97,7 +97,7 @@ ownership to a lower-priority site still shown. `MainScene` supplies the ranking
 airfield < major < minor < radar, so a base's own name beats the radar on it), holds the
 live per-layer visibility flags, and re-runs `resolveColocationLabels` → `layer.setLabels`
 on every airport/radar toggle. The radius is a **real-world km distance**, so it lives in
-`colocate.ts` (the world layer, in km) — not in `config.ts`, which holds only on-screen
+`colocate.ts` (the world layer, in km) — not in `config/`, which holds only on-screen
 pixel constants. This is the "GPS is the source of truth" rule applied to a data transform:
 proximity is judged in real geographic distance, never pixels. The `COLOCATION_RADIUS_KM`
 value (6 km) is calibrated empirically: it merges the airfield + radar + civil airport that
@@ -117,7 +117,7 @@ mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`
   plugins (bundle-size report, JSON minification) that must not run under the test
   runner. Being a Vite config, it still resolves the `?url` asset imports in `src/map/`.
 - Environment is plain `node` — the pure `src/map/` modules and the loaders need no DOM.
-  The one exception: `src/game/config.ts` reads `window.devicePixelRatio` at module
+  The one exception: `src/game/config/env.ts` reads `window.devicePixelRatio` at module
   load, so any test touching a config-importing module (`units.test.ts`) must stub
   `globalThis.window` **before a dynamic `import()`** of the module under test — a
   static import would hoist above the stub and crash. Do not add jsdom for this.
@@ -323,7 +323,7 @@ lon/lat becomes pixels.
 - **Constant on-screen sizes** (hairline strokes, marker dots, pan speed) are computed
   with `screenPxToWorld(screenPx, zoom)` from `src/game/units.ts` — the single source of
   truth for the screen↔world scaling trick. Don't hand-roll `x * DPR / zoom`.
-- **Draw order lives in `DEPTH` in `src/game/config.ts`.** Add new layers there; no
+- **Draw order lives in `DEPTH` in `src/game/config/depth.ts`.** Add new layers there; no
   scattered magic `setDepth` numbers.
 - **Marker glyph language — distinguish by shape / size / fill, never colour** (the HUD
   white/black rule): cities draw as the Lucide `building-2` icon (the same glyph the
@@ -358,7 +358,7 @@ lon/lat becomes pixels.
   `atob` throw so the loader stalls and never fires `create`. Icon markup must be pure ASCII
   (`btoa` throws otherwise) and must actually contain a `currentColor` to replace — both are
   treated as build-time bugs and throw, never degrade to an invisible/placeholder icon.
-- **Tunable numbers live in `src/game/config.ts`**, in CSS pixels where they describe
+- **Tunable numbers live in `src/game/config/`** (one module per domain — env, map, markers, depth, hud, camera — re-exported through the `index.ts` barrel so consumers keep importing `./config`), in CSS pixels where they describe
   on-screen sizes. Logic lives in the layers; the numbers you might want to nudge live in
   config. Follow this split for new features.
 - **Device pixels:** the canvas backing store is sized at `cssPixels * DPR` and scaled
@@ -371,7 +371,7 @@ lon/lat becomes pixels.
 ## Camera bounds are locked — never change them on your own
 
 The zoom limits (`ZOOM.min` / `ZOOM.max`) and the camera-movement bounds
-(`CAMERA_CENTER_BOUNDS`) in `src/game/config.ts` are **deliberately tuned game
+(`CAMERA_CENTER_BOUNDS`) in `src/game/config/camera.ts` are **deliberately tuned game
 settings**. Do **not** change these values, and do not alter the clamp logic in
 `CameraController` that enforces them, unless the user explicitly asks you to in that
 request. They are not free to "improve", refactor away, or adjust as a side effect of
