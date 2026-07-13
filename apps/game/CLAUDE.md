@@ -150,9 +150,10 @@ mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`
   `Command` interface and a process-wide `commands` singleton any module can import to
   `register(...)` a slash-command, plus `parseCommandLine`. The console parses input, looks
   it up, and runs it. A command needing game state (audio, a scene, layers) is registered
-  from `src/game/` and captures what it needs by closure at registration — that is why
-  `/subwoofer` lives in `MainScene`, not here, and why the registry module itself stays
-  pure/framework-free while the game-touching commands are registered from `src/game/`.
+  from `src/game/` and captures what it needs by closure at registration — that is why the
+  registry module itself stays pure/framework-free while the game-touching commands live
+  grouped in `src/game/sceneCommands.ts` (`/subwoofer`, `/spawn-planes`, `/clear-planes`),
+  which `MainScene.create()` calls once with the live scene objects.
   `/help` ships with the registry (it just lists the live command set). `ConsoleWindow`'s
   input row is the one caller that dispatches typed lines through it. Duplicate/invalid
   names throw at registration (fail fast) rather than silently shadowing.
@@ -201,7 +202,21 @@ lon/lat becomes pixels.
 - **`MainScene` is a composition root only.** It loads/projects the world, wires up the
   layers, camera controller, and HUD, and forwards signals (update tick, resize, zoom
   change). Rendering and input logic belong in the layer/controller classes, not in the
-  scene.
+  scene — and the scene's *pure* per-entity glue lives in three sibling modules it
+  composes rather than inlines:
+  - `markerBuilders.ts` — record → marker mappers (city/airport/radar/sweep) plus the
+    colocation priority constants and `buildColocationInputs`. Type-only imports, no
+    runtime Phaser, so it is node-tested like the `src/map/` modules it joins. Airports
+    then radars is the load-bearing ordering every colocation consumer slices at
+    `airports.length`.
+  - `windowContent.ts` — record → `InfoWindowContent` builders, beside
+    `cityImages.ts`/`radarImages.ts` (their sole content consumers).
+  - `sceneCommands.ts` — `registerSceneCommands({ sim, planeLayer, subwoofer })`, the
+    game-state console commands captured by closure; called exactly once from
+    `create()` (the registry throws on duplicates).
+  What must stay in the scene: layer construction, the live `airportsVisible`/
+  `radarsVisible` closures the toolbar toggles capture, camera wiring, the update/resize
+  ticks, and the console open/close funnel.
 - **Three reaction patterns for layers — pick the right one:**
   - *Zoom-reactive* (coastline stroke width, city / airport / radar marker/label sizing):
     refreshed via the camera controller's `onZoomChanged` fan-out in `MainScene`. New

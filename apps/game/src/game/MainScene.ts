@@ -1,42 +1,40 @@
 import Phaser from 'phaser'
 import { loadBoundaries, BOUNDARY_ASSETS, PROJECTION_FRAME_ASSETS } from '../map/geojson'
-import { loadMajorCities, CITIES_ASSET, type City } from '../map/cities'
-import { loadAirports, AIRPORTS_ASSET, type AirportTier, type Airport } from '../map/airports'
-import { loadRadars, RADARS_ASSET, type Radar } from '../map/radars'
-import {
-  clusterByProximity,
-  resolveColocationLabels,
-  COLOCATION_RADIUS_KM,
-  type ColocationInput,
-  type ColocationLabel,
-} from '../map/colocate'
+import { loadMajorCities, CITIES_ASSET } from '../map/cities'
+import { loadAirports, AIRPORTS_ASSET } from '../map/airports'
+import { loadRadars, RADARS_ASSET } from '../map/radars'
+import { clusterByProximity, resolveColocationLabels, COLOCATION_RADIUS_KM } from '../map/colocate'
 import { projectToPixels, type Projector } from '../map/project'
 import { AircraftSim } from '../map/aircraft'
-import { DPR, MAP, PLANE, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER } from './config'
+import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER } from './config'
 import { GridLayer } from './GridLayer'
 import { CoastlineLayer } from './CoastlineLayer'
-import { CityLayer, type CityMarker } from './CityLayer'
-import { AirportLayer, type AirportMarker } from './AirportLayer'
-import { RadarLayer, type RadarMarker } from './RadarLayer'
-import { RadarSweepLayer, type RadarSweepMarker } from './RadarSweepLayer'
+import { CityLayer } from './CityLayer'
+import { AirportLayer } from './AirportLayer'
+import { RadarLayer } from './RadarLayer'
+import { RadarSweepLayer } from './RadarSweepLayer'
 import { PlaneLayer } from './PlaneLayer'
 import { CameraController, type CenterBounds } from './CameraController'
 import { cameraWorldView } from './camera'
 import { DebugHud } from './DebugHud'
 import { Toolbar } from './Toolbar'
-import { type InfoWindowContent } from './InfoWindow'
 import { InfoWindowManager } from './InfoWindowManager'
 import { ConsoleWindow } from './ConsoleWindow'
 import { Subwoofer, SUBWOOFER_IMAGE_KEY, SUBWOOFER_AUDIO_KEY } from './subwoofer'
-import { preloadRadarImages, radarImageAsset } from './radarImages'
-import { preloadCityImages, cityImageAsset } from './cityImages'
+import { preloadRadarImages } from './radarImages'
+import { preloadCityImages } from './cityImages'
+import {
+  buildColocationInputs,
+  buildCityMarkers,
+  buildAirportMarkers,
+  buildRadarMarkers,
+  buildRadarSweepMarkers,
+} from './markerBuilders'
+import { cityWindowContent, radarWindowContent } from './windowContent'
+import { registerSceneCommands } from './sceneCommands'
 import { log } from '../log/logger'
-import { commands } from '../commands/registry'
 import subwooferImageUrl from './assets/subwoofer/subwoofer.webp?url'
 import subwooferAudioUrl from './assets/subwoofer/bass.mp3?url'
-
-const AIRPORT_LABEL_PRIORITY: Record<AirportTier, number> = { military: 0, major: 1, minor: 2 }
-const RADAR_LABEL_PRIORITY = 3
 
 export class MainScene extends Phaser.Scene {
   private gridLayer!: GridLayer
@@ -114,22 +112,11 @@ export class MainScene extends Phaser.Scene {
       },
       frame,
     )
+    this.project = projected.project
 
-    const poiInputs = this.buildColocationInputs(airports, radars)
+    const poiInputs = buildColocationInputs(airports, radars)
     const poiClusters = clusterByProximity(poiInputs, COLOCATION_RADIUS_KM)
     const initialLabels = resolveColocationLabels(poiInputs, poiClusters, poiInputs.map(() => true))
-
-    const cityMarkers = this.buildCityMarkers(cities, projected.project)
-    const airportMarkers = this.buildAirportMarkers(
-      airports,
-      projected.project,
-      initialLabels.slice(0, airports.length),
-    )
-    const radarMarkers = this.buildRadarMarkers(
-      radars,
-      projected.project,
-      initialLabels.slice(airports.length),
-    )
 
     this.gridLayer = new GridLayer(this, {
       pixelsPerKm: projected.pixelsPerKm,
@@ -140,65 +127,34 @@ export class MainScene extends Phaser.Scene {
     // marker index; the scene owns the records and the window manager, so it maps
     // one to the other. The layers stay decoupled from the window itself.
     this.infoWindows = new InfoWindowManager(this, this.cameras.main)
-    const cityLayer = new CityLayer(this, cityMarkers, (index) => {
-      this.infoWindows.toggle(`city:${index}`, this.cityWindowContent(cities[index]))
+    const cityLayer = new CityLayer(this, buildCityMarkers(cities, projected.project), (index) => {
+      this.infoWindows.toggle(`city:${index}`, cityWindowContent(cities[index]))
     })
-    const airportLayer = new AirportLayer(this, airportMarkers)
-    const radarLayer = new RadarLayer(this, radarMarkers, (index) => {
-      this.infoWindows.toggle(`radar:${index}`, this.radarWindowContent(radars[index]))
-    })
-    this.consoleWindow = new ConsoleWindow(this, () => this.setConsoleOpen(false))
-    // Easter-egg command wired here (not in the pure registry) because it needs the
-    // scene to play audio and draw the overlay; it captures `subwoofer` by closure.
-    this.subwoofer = new Subwoofer(this)
-    commands.register({
-      name: 'subwoofer',
-      description: 'Drop the bass.',
-      hidden: true,
-      run: () => {
-        this.subwoofer.trigger()
-        return 'BWAAAAH'
+    const airportLayer = new AirportLayer(
+      this,
+      buildAirportMarkers(airports, projected.project, initialLabels.slice(0, airports.length)),
+    )
+    const radarLayer = new RadarLayer(
+      this,
+      buildRadarMarkers(radars, projected.project, initialLabels.slice(airports.length)),
+      (index) => {
+        this.infoWindows.toggle(`radar:${index}`, radarWindowContent(radars[index]))
       },
-    })
+    )
+    this.consoleWindow = new ConsoleWindow(this, () => this.setConsoleOpen(false))
+    this.subwoofer = new Subwoofer(this)
     this.radarSweepLayer = new RadarSweepLayer(
       this,
-      this.buildRadarSweepMarkers(radars, projected.project),
+      buildRadarSweepMarkers(radars, projected.project),
       projected.pixelsPerKm,
     )
     // Air traffic: the sim flies aircraft in the background whether or not they
     // are seen; the plane layer only ever draws the contact blips the radar
-    // sweep reveals. The projector turns each aircraft's lon/lat into world
-    // pixels every frame (GPS is the source of truth — see `update`).
-    this.project = projected.project
+    // sweep reveals (GPS is the source of truth — see `update`).
     this.sim = new AircraftSim()
     this.planeLayer = new PlaneLayer(this)
-    commands.register({
-      name: 'spawn-planes',
-      description: 'Spawn N test aircraft flying outward from the map centre (default 8).',
-      run: (args) => {
-        const raw = args.trim()
-        const count = raw === '' ? PLANE.defaultSpawnCount : Number.parseInt(raw, 10)
-        if (!Number.isInteger(count) || count <= 0) return `Usage: /spawn-planes [positive integer]`
-        for (let i = 0; i < count; i++) {
-          this.sim.spawn({
-            lon: CAMERA_INITIAL_CENTER.lon,
-            lat: CAMERA_INITIAL_CENTER.lat,
-            headingDeg: Math.random() * 360,
-            speedKmh: PLANE.spawnSpeedKmh,
-          })
-        }
-        return `Spawned ${count} aircraft (${this.sim.count} in the air).`
-      },
-    })
-    commands.register({
-      name: 'clear-planes',
-      description: 'Remove all simulated aircraft.',
-      run: () => {
-        const removed = this.sim.clear()
-        this.planeLayer.clear()
-        return `Removed ${removed} aircraft.`
-      },
-    })
+    registerSceneCommands({ sim: this.sim, planeLayer: this.planeLayer, subwoofer: this.subwoofer })
+
     // Cities, airports and radars are shown by default; the toolbar toggles hide
     // them. One variable per layer feeds both the layer's start visibility and the
     // toolbar's initial state so the glyph and the actual visibility can't drift.
@@ -323,96 +279,6 @@ export class MainScene extends Phaser.Scene {
     this.consoleWindow.setVisible(open)
     this.toolbar.setActive('developer', open)
     this.cameraController.setKeyboardPanEnabled(!open)
-  }
-
-  private buildColocationInputs(
-    airports: readonly Airport[],
-    radars: readonly Radar[],
-  ): ColocationInput[] {
-    return [
-      ...airports.map((a) => ({ name: a.name, lon: a.lon, lat: a.lat, priority: AIRPORT_LABEL_PRIORITY[a.tier] })),
-      ...radars.map((r) => ({ name: r.name, lon: r.lon, lat: r.lat, priority: RADAR_LABEL_PRIORITY })),
-    ]
-  }
-
-  private buildCityMarkers(cities: readonly City[], project: Projector): CityMarker[] {
-    return cities.map((c) => {
-      const [x, y] = project(c.lon, c.lat)
-      return { name: c.name, x, y, lon: c.lon, lat: c.lat, population: c.population }
-    })
-  }
-
-  private buildAirportMarkers(
-    airports: readonly Airport[],
-    project: Projector,
-    labels: readonly ColocationLabel[],
-  ): AirportMarker[] {
-    return airports.map((a, i) => {
-      const [x, y] = project(a.lon, a.lat)
-      const { label, suppressed } = labels[i]
-      return { name: a.name, label, labelSuppressed: suppressed, x, y, lon: a.lon, lat: a.lat, tier: a.tier }
-    })
-  }
-
-  private buildRadarMarkers(
-    radars: readonly Radar[],
-    project: Projector,
-    labels: readonly ColocationLabel[],
-  ): RadarMarker[] {
-    return radars.map((r, i) => {
-      const [x, y] = project(r.lon, r.lat)
-      const { label, suppressed } = labels[i]
-      return { name: r.name, model: r.model, label, labelSuppressed: suppressed, x, y, lon: r.lon, lat: r.lat }
-    })
-  }
-
-  private cityWindowContent(city: City): InfoWindowContent {
-    // Every current city has a photo, but a photo-less city is a valid case that
-    // falls back to the placeholder — same contract as the radar builder.
-    const image = cityImageAsset(city.name)
-    return {
-      title: city.name,
-      imageTextureKey: image?.textureKey,
-      imageCredit: image?.credit,
-      fields: [
-        { label: 'Region', value: city.region },
-        { label: 'Population', value: city.population.toLocaleString('en-US') },
-        { label: 'Founded', value: city.founded },
-        { label: 'Notes', value: city.notes },
-      ],
-    }
-  }
-
-  private radarWindowContent(radar: Radar): InfoWindowContent {
-    // Only some sites have a usable photo; the rest fall back to the placeholder.
-    const image = radarImageAsset(radar.name)
-    return {
-      title: radar.name,
-      imageTextureKey: image?.textureKey,
-      imageCredit: image?.credit,
-      fields: [
-        { label: 'Model', value: radar.model },
-        { label: 'Manufacturer', value: radar.manufacturer },
-        { label: 'Origin', value: radar.origin },
-        { label: 'Type', value: radar.type },
-        { label: 'Dimensionality', value: radar.dimensionality },
-        { label: 'Band', value: `${radar.band}-band` },
-        { label: 'Range', value: `${radar.rangeKm} km` },
-        { label: 'Update interval', value: `${radar.updateIntervalSec} s` },
-        {
-          label: 'Altitude ceiling',
-          value: radar.altitudeCeilingKm === null ? 'N/A' : `${radar.altitudeCeilingKm} km`,
-        },
-        { label: 'Notes', value: radar.notes },
-      ],
-    }
-  }
-
-  private buildRadarSweepMarkers(radars: readonly Radar[], project: Projector): RadarSweepMarker[] {
-    return radars.map((r) => {
-      const [x, y] = project(r.lon, r.lat)
-      return { name: r.name, x, y, rangeKm: r.rangeKm, updateIntervalSec: r.updateIntervalSec }
-    })
   }
 
   /**
