@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { stepAircraft, AircraftSim, SIM_TICK_SEC, type Aircraft, type AircraftSpawn } from './aircraft'
 import { AIRCRAFT_TYPES } from './aircraftTypes'
 import { KM_PER_DEG_LAT } from './project'
+import { RadarField } from './radarField'
 
 const DEG2RAD = Math.PI / 180
 
@@ -120,6 +121,56 @@ describe('AircraftSim', () => {
     sim.spawn(valid)
     sim.advance(1)
     expect(ticks).toBe(0)
+  })
+})
+
+describe('AircraftSim radar-field collaboration', () => {
+  const spawn: AircraftSpawn = { lon: 12, lat: 55.1, headingDeg: 0, type: 'il20m' }
+
+  function wholeDiscField(): RadarField {
+    return new RadarField([{ name: 'A', lon: 12, lat: 55, rangeKm: 200, updateIntervalSec: SIM_TICK_SEC }])
+  }
+
+  it('ticks the field after steering and stepping, so contacts see post-step positions', () => {
+    const field = wholeDiscField()
+    const sim = new AircraftSim(field)
+    const plane = sim.spawn(spawn)
+    sim.advance(SIM_TICK_SEC)
+    expect(field.contacts).toHaveLength(1)
+    expect(field.contacts[0].lat).toBe(plane.lat)
+    expect(field.contacts[0].lat).toBeGreaterThan(55.1)
+  })
+
+  it('does not tick the field on banked sub-tick time', () => {
+    const field = new RadarField([{ name: 'A', lon: 12, lat: 55, rangeKm: 200, updateIntervalSec: 0.5 }])
+    const sim = new AircraftSim(field)
+    sim.spawn(spawn)
+    sim.advance(SIM_TICK_SEC / 2)
+    expect(field.bearingOf(0)).toBe(0)
+    expect(field.contacts).toHaveLength(0)
+  })
+
+  it('clear() removes aircraft only — painted contacts stay until swept or cleared explicitly', () => {
+    const field = wholeDiscField()
+    const sim = new AircraftSim(field)
+    sim.spawn(spawn)
+    sim.advance(SIM_TICK_SEC)
+    expect(sim.clear()).toBe(1)
+    expect(field.contacts).toHaveLength(1)
+    expect(field.clearContacts()).toBe(1)
+  })
+})
+
+describe('pendingTickFraction', () => {
+  it('reports the banked sub-tick time as a fraction in [0, 1)', () => {
+    const sim = new AircraftSim()
+    expect(sim.pendingTickFraction).toBe(0)
+    sim.advance(SIM_TICK_SEC / 2)
+    expect(sim.pendingTickFraction).toBe(0.5)
+    sim.advance(SIM_TICK_SEC / 4)
+    expect(sim.pendingTickFraction).toBe(0.75)
+    sim.advance(SIM_TICK_SEC / 4)
+    expect(sim.pendingTickFraction).toBe(0)
   })
 })
 

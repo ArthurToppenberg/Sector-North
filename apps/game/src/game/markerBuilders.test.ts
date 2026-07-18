@@ -7,6 +7,7 @@ import {
   buildAirportMarkers,
   buildRadarMarkers,
   buildRadarSweepMarkers,
+  buildRadarSites,
 } from './markerBuilders'
 import type { City } from '../map/cities'
 import type { Airport } from '../map/airports'
@@ -101,8 +102,31 @@ describe('marker builders', () => {
     })
   })
 
-  it('build sweep markers with the real-km range and period', () => {
-    const [m] = buildRadarSweepMarkers([radar], project)
-    expect(m).toEqual({ name: 'Site A', x: 26, y: 177, rangeKm: 470, updateIntervalSec: 10 })
+  it('build sweep markers whose semi-axes are the projected detection boundary', () => {
+    // Y-flipping identity-scale projector (1 px per degree), matching the real
+    // projection's downward screen Y, so the north boundary point lands above
+    // the site and rangeYPx comes out positive.
+    const projectDown: Projector = (lon, lat) => [lon, -lat]
+    const [m] = buildRadarSweepMarkers([radar], projectDown)
+    expect(m.name).toBe('Site A')
+    expect(m.x).toBe(13)
+    expect(m.y).toBe(-59)
+    // North-south: 470 km in degrees of latitude, uncorrected.
+    expect(m.rangeYPx).toBeCloseTo(470 / 111.195, 10)
+    // East-west: widened by the site-latitude correction — the ellipse that keeps
+    // the drawn ring on RadarField's real-km detection edge.
+    expect(m.rangeXPx).toBeCloseTo(m.rangeYPx / Math.cos((59 * Math.PI) / 180), 10)
+  })
+
+  it('build radar sites carrying the real coordinates, range and period', () => {
+    const [s] = buildRadarSites([radar])
+    expect(s).toEqual({ name: 'Site A', lon: 13, lat: 59, rangeKm: 470, updateIntervalSec: 10 })
+  })
+
+  it('keep sweep markers and radar sites index-aligned from the same radars array', () => {
+    const radars = [radar, { ...radar, name: 'Site B', lon: 14, lat: 60 }]
+    const markerNames = buildRadarSweepMarkers(radars, project).map((m) => m.name)
+    const siteNames = buildRadarSites(radars).map((s) => s.name)
+    expect(siteNames).toEqual(markerNames)
   })
 })

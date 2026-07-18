@@ -2,19 +2,20 @@ import { commands } from '../commands/registry'
 import { PLANE, CAMERA_INITIAL_CENTER } from './config'
 import type { AircraftSim } from '../map/aircraft'
 import { AIRCRAFT_TYPES } from '../map/aircraftTypes'
-import { bearingDeg, RouteBrain } from '../map/brain'
+import { RouteBrain } from '../map/brain'
+import { bearingDeg } from '../map/geo'
 import { INTRUDER_PROBE_ROUTE } from '../map/routes'
-import type { PlaneLayer } from './layers/PlaneLayer'
+import type { RadarField } from '../map/radarField'
 import type { Subwoofer } from './hud/subwoofer'
 
 export interface SceneCommandDeps {
   sim: AircraftSim
-  planeLayer: PlaneLayer
+  radarField: RadarField
   subwoofer: Subwoofer
   setDevToolsVisible: (visible: boolean) => void
 }
 
-export function registerSceneCommands({ sim, planeLayer, subwoofer, setDevToolsVisible }: SceneCommandDeps): void {
+export function registerSceneCommands({ sim, radarField, subwoofer, setDevToolsVisible }: SceneCommandDeps): void {
   commands.register({
     name: 'subwoofer',
     description: 'Drop the bass.',
@@ -89,7 +90,7 @@ export function registerSceneCommands({ sim, planeLayer, subwoofer, setDevToolsV
     description: 'Remove all simulated aircraft.',
     run: () => {
       const removed = sim.clear()
-      planeLayer.clear()
+      radarField.clearContacts()
       return `Removed ${removed} aircraft.`
     },
   })
