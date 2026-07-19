@@ -1,11 +1,14 @@
 // Pure record → marker mappers between src/map/ world data and the render
-// layers' marker shapes. Type-only imports keep this module free of runtime
-// Phaser, so it is node-testable like the map/ modules it joins.
+// layers' marker shapes. Runtime imports come only from src/map/ (never
+// Phaser), so it is node-testable like the map/ modules it joins.
+import { KM_PER_DEG_LAT } from '../map/project'
+import { DEG2RAD } from '../map/aircraft'
 import type { City } from '../map/cities'
 import type { Airport, AirportTier } from '../map/airports'
 import type { Radar } from '../map/radars'
 import type { ColocationInput, ColocationLabel } from '../map/colocate'
 import type { Projector } from '../map/project'
+import type { RadarSite } from '../map/radarField'
 import type { CityMarker } from './layers/CityLayer'
 import type { AirportMarker } from './layers/AirportLayer'
 import type { RadarMarker } from './layers/RadarLayer'
@@ -63,9 +66,36 @@ export function buildRadarMarkers(
   })
 }
 
+/**
+ * Index alignment invariant: `buildRadarSweepMarkers` and `buildRadarSites` must
+ * be fed the same `radars` array, so sweep marker i and `RadarField` site i are
+ * the same physical radar — `RadarSweepLayer.draw` presents field state through
+ * the markers by index (and asserts the counts match).
+ */
 export function buildRadarSweepMarkers(radars: readonly Radar[], project: Projector): RadarSweepMarker[] {
   return radars.map((r) => {
     const [x, y] = project(r.lon, r.lat)
-    return { name: r.name, x, y, rangeKm: r.rangeKm, updateIntervalSec: r.updateIntervalSec }
+    // The detection boundary RadarField judges is a real-km disc in geo.ts's
+    // localKm metric, lat-corrected at the SITE's latitude — while the
+    // projection compresses longitude at the frame's mean latitude. The disc
+    // therefore projects to an ellipse, not a circle, and drawing a circle of
+    // rangeKm × pixelsPerKm would overstate east–west coverage by up to ~11%
+    // here (sites lie south of the frame's mean latitude). The projection is
+    // linear in dLon/dLat, so projecting the boundary's due-east and due-north
+    // points yields the exact semi-axes; the drawn ring then coincides with
+    // the sensing edge at every bearing.
+    const [eastX] = project(r.lon + r.rangeKm / (KM_PER_DEG_LAT * Math.cos(r.lat * DEG2RAD)), r.lat)
+    const [, northY] = project(r.lon, r.lat + r.rangeKm / KM_PER_DEG_LAT)
+    return { name: r.name, x, y, rangeXPx: eastX - x, rangeYPx: y - northY }
   })
+}
+
+export function buildRadarSites(radars: readonly Radar[]): RadarSite[] {
+  return radars.map((r) => ({
+    name: r.name,
+    lon: r.lon,
+    lat: r.lat,
+    rangeKm: r.rangeKm,
+    updateIntervalSec: r.updateIntervalSec,
+  }))
 }

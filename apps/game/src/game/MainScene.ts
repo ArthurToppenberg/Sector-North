@@ -6,6 +6,7 @@ import { loadRadars, RADARS_ASSET } from '../map/radars'
 import { clusterByProximity, resolveColocationLabels, COLOCATION_RADIUS_KM } from '../map/colocate'
 import { projectToPixels, type Projector } from '../map/project'
 import { AircraftSim } from '../map/aircraft'
+import { RadarField } from '../map/radarField'
 import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER, IS_LOCALHOST, SPEED_CONTROL } from './config'
 import { GridLayer } from './layers/GridLayer'
 import { CoastlineLayer } from './layers/CoastlineLayer'
@@ -31,6 +32,7 @@ import {
   buildAirportMarkers,
   buildRadarMarkers,
   buildRadarSweepMarkers,
+  buildRadarSites,
 } from './markerBuilders'
 import { cityWindowContent, radarWindowContent } from './windowContent'
 import { registerSceneCommands } from './sceneCommands'
@@ -45,12 +47,14 @@ const DEV_TOOLBAR_ROW_INDEX = 1
 export class MainScene extends Phaser.Scene {
   private gridLayer!: GridLayer
   // Held as a field (unlike the city/airport/radar marker layers, which stay
-  // locals in `create`) because it animates on the update tick — see `update`.
+  // locals in `create`) because it redraws on the update tick — see `update`.
   private radarSweepLayer!: RadarSweepLayer
-  // Aircraft simulation + its contact-blip renderer. Held as fields (like the
-  // radar sweep) because both advance on the update tick; the projector is kept
-  // to turn each aircraft's live lon/lat into world pixels every frame.
+  // The world model and its presenters. The sim owns the radar field and ticks
+  // it inside its fixed-tick loop; the sweep and plane layers only draw the
+  // resulting bearings and contact picture each frame. The projector is kept to
+  // turn stored lon/lat (contacts, waypoints) into world pixels every frame.
   private sim!: AircraftSim
+  private radarField!: RadarField
   private planeLayer!: PlaneLayer
   // Debug chrome: the dev toolbar and the waypoint-route overlay it toggles.
   // Always constructed so `/dev-tools` can reveal it anywhere; shown by default
@@ -70,10 +74,11 @@ export class MainScene extends Phaser.Scene {
   private debugHud!: DebugHud
   private speedControl!: SpeedControl
   // The active time-compression multiplier the speed control selects. It scales
-  // the real frame delta before the delta reaches anything that simulates the
-  // world (aircraft sim, radar sweeps) — 0 pauses, >1 fast-forwards. Determinism
-  // is untouched: the sim still consumes whole fixed ticks, just more or fewer
-  // of them per real second.
+  // the real frame delta before the delta reaches the sim — the one consumer of
+  // world time, whose fixed-tick loop also ticks the radar field — so 0 pauses
+  // and >1 fast-forwards the whole picture (aircraft, antennas, contacts).
+  // Determinism is untouched: the sim still consumes whole fixed ticks, just
+  // more or fewer of them per real second.
   private simSpeed: number = SPEED_CONTROL.initialMultiplier
   private toolbar!: Toolbar
   private infoWindows!: InfoWindowManager
@@ -171,19 +176,20 @@ export class MainScene extends Phaser.Scene {
     )
     this.consoleWindow = new ConsoleWindow(this, () => this.setConsoleOpen(false))
     this.subwoofer = new Subwoofer(this)
-    this.radarSweepLayer = new RadarSweepLayer(
-      this,
-      buildRadarSweepMarkers(radars, projected.project),
-      projected.pixelsPerKm,
-    )
-    // Air traffic: the sim flies aircraft in the background whether or not they
-    // are seen; the plane layer only ever draws the contact blips the radar
-    // sweep reveals (GPS is the source of truth — see `update`).
-    this.sim = new AircraftSim()
+    this.radarSweepLayer = new RadarSweepLayer(this, buildRadarSweepMarkers(radars, projected.project))
+    // Sensors are world state: the field's antennas rotate and detect inside the
+    // sim's fixed-tick loop (headless, deterministic); the sim flies aircraft in
+    // the background whether or not they are seen, and the plane layer only ever
+    // draws the contact picture the field paints (GPS is the source of truth —
+    // see `update`). Built from the same `radars` array as the sweep markers
+    // above, in the same order — the index-alignment invariant the sweep layer
+    // asserts.
+    this.radarField = new RadarField(buildRadarSites(radars))
+    this.sim = new AircraftSim(this.radarField)
     this.planeLayer = new PlaneLayer(this)
     registerSceneCommands({
       sim: this.sim,
-      planeLayer: this.planeLayer,
+      radarField: this.radarField,
       subwoofer: this.subwoofer,
       setDevToolsVisible: (visible) => this.setDevToolsVisible(visible),
     })
@@ -202,8 +208,9 @@ export class MainScene extends Phaser.Scene {
     this.radarSweepLayer.setVisible(radarsVisible)
     // Contact blips deliberately do NOT follow the radar toggle: hiding the
     // radars is a decluttering act (markers + sweep overlay off), not switching
-    // the sensors off — the antennas keep rotating and detecting, so the
-    // tactical picture keeps updating with the sweeps invisible.
+    // the sensors off. The antennas live in the world model (`RadarField`, ticked
+    // by the sim regardless of any visibility flag), so `setVisible` only gates
+    // drawing and the tactical picture keeps updating with the sweeps invisible.
     // The console starts closed (constructor already hid it); it is opened by the
     // developer toolbar button or the "/" key, both routed through `setConsoleOpen`.
     this.debugHud = new DebugHud(this)
@@ -403,25 +410,21 @@ export class MainScene extends Phaser.Scene {
   }
 
   /**
-   * Advance the background air traffic and refresh its contact blips. Must run
-   * after `radarSweepLayer.update` each frame: the sweep advances its angles
-   * there, and detection reads the arc swept this frame. Aircraft are projected
-   * from their live lon/lat here (GPS is the source of truth), so a blip is
-   * painted at the plane's true ground position at the moment the sweep hit it.
+   * Advance the world — the sim steps the aircraft and ticks the radar field
+   * inside its fixed-tick loop — then redraw the contact picture it produced.
+   * Contacts are projected from their stored lon/lat here (GPS is the source of
+   * truth), so a blip is painted at the plane's true ground position at the
+   * moment the sweep hit it.
    */
   private updateAircraft(deltaSec: number, zoom: number): number {
     const ticks = this.sim.advance(deltaSec)
-    const targets = this.sim.all.map((a) => {
-      const [x, y] = this.project(a.lon, a.lat)
-      return { x, y, headingDeg: a.headingDeg, speedKmh: a.speedKmh }
-    })
-    // A sweep either refreshes a contact (plane still there) or clears it (moved
-    // on / gone): expire the slice the hand just passed, then re-add whatever it
-    // detects there. Order matters — a detected target sits in the swept slice, so
-    // it must be re-added after the expiry, not before.
-    this.planeLayer.removeWhere((c) => this.radarSweepLayer.isSwept(c.x, c.y))
-    this.planeLayer.addContacts(this.radarSweepLayer.detectSweptTargets(targets))
-    this.planeLayer.draw(zoom)
+    this.planeLayer.draw(
+      this.radarField.contacts.map((c) => {
+        const [x, y] = this.project(c.lon, c.lat)
+        return { x, y, headingDeg: c.headingDeg, speedKmh: c.speedKmh }
+      }),
+      zoom,
+    )
 
     if (this.waypointsVisible) {
       const brainedIds = this.sim.all.filter((ac) => this.sim.brainOf(ac.id) !== undefined).map((ac) => ac.id)
@@ -456,24 +459,27 @@ export class MainScene extends Phaser.Scene {
 
     const cam = this.cameras.main
 
-    // Time compression scales everything that simulates the world — the aircraft
-    // sim AND the radar sweeps, whose rotation is a simulated antenna, not chrome:
-    // scaling both keeps the detection cadence in step with aircraft motion (and
-    // pause genuinely freezes the whole picture). The camera above stays on the
-    // real delta — input is not part of the world.
+    // Time compression scales the one delta the world consumes: the sim's
+    // fixed-tick loop steps the aircraft AND ticks the radar field, so pause
+    // genuinely freezes the whole picture (aircraft, antennas, contacts) and
+    // detection cadence stays in step with aircraft motion at any speed. The
+    // camera above stays on the real delta — input is not part of the world.
     const simDeltaSec = deltaSec * this.simSpeed
 
-    // Radar sweeps must advance every frame — including while the camera is idle —
-    // so run before the camera-dirty early-out below. The view centre (from the
-    // canonical live-scroll helper, not the render-lagged cam.worldView) picks the
-    // single radar to sweep — the one whose coverage the centre is under (see
-    // RadarSweepLayer.selectSweepIndex).
-    const view = cameraWorldView(cam)
-    this.radarSweepLayer.update(simDeltaSec, cam.zoom, view.centerX, view.centerY)
+    // The world advance and the animated presenters (contacts, sweep hand) run
+    // every frame — including while the camera is idle — so they sit before the
+    // camera-dirty early-out below.
+    const ticks = this.updateAircraft(simDeltaSec, cam.zoom)
     // The tps sample must also run every frame — it measures real ticks per real
     // second, so it cannot sit behind the camera-dirty early-out below. It is fed
     // the REAL delta on purpose: at 2x the readout honestly shows ~16 tps.
-    this.debugHud.sampleTicks(deltaSec, this.updateAircraft(simDeltaSec, cam.zoom))
+    this.debugHud.sampleTicks(deltaSec, ticks)
+    // The view centre (from the canonical live-scroll helper, not the
+    // render-lagged cam.worldView) picks the single radar whose coverage is
+    // drawn — the one the centre is under (see RadarSweepLayer.selectSweepIndex);
+    // the banked sub-tick fraction smooths the hand between ticks.
+    const view = cameraWorldView(cam)
+    this.radarSweepLayer.draw(this.radarField, this.sim.pendingTickFraction, cam.zoom, view.centerX, view.centerY)
 
     if (cam.scrollX === this.lastScrollX && cam.scrollY === this.lastScrollY && cam.zoom === this.lastZoom) {
       // Camera hasn't moved this frame — the grid slice and HUD readout are still

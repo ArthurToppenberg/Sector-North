@@ -97,9 +97,14 @@ the elapsed ticks (fast-forward) rather than approximating. Concretely:
   delta into a world-state step directly. Rationale: the dead-reckoning integration is
   step-size-sensitive (it uses the start latitude's cosine per step), so only a fixed
   tick makes replay, pause/fast-forward, and a future server/client split bit-stable.
+  The radar sensor field (`src/map/radarField.ts`) — sweep bearings, detection, the
+  contact picture — is world state stepped in these same canonical ticks
+  (steer → step → radar inside `advance()`'s loop), so the contact picture is
+  bit-identical however frames slice the elapsed time.
 - **Rendering may interpolate and consume freely, but never advances world state on its
-  own clock.** Where something is drawn is a pure function of world state + view; when
-  the world changes is the tick's business alone.
+  own clock.** Where something is drawn is a pure function of world state + view (the
+  sweep hand, for example, extrapolates between ticks via `AircraftSim.pendingTickFraction`
+  — display-side only); when the world changes is the tick's business alone.
 
 ## Always use the newest package versions
 

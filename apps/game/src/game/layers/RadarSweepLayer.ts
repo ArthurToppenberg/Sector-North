@@ -2,40 +2,32 @@ import Phaser from 'phaser'
 import { makeFail, type Fail } from '../fail'
 import { RADAR, DEPTH } from '../config'
 import { screenPxToWorld } from '../units'
+import { DEG2RAD } from '../../map/aircraft'
+import type { RadarField } from '../../map/radarField'
 import type { WorldLayer, ToggleableLayer } from './helpers'
 
 export interface RadarSweepMarker {
   name: string
   x: number
   y: number
-  /** Detection range in real kilometres — the sweep hand's length on the ground. */
-  rangeKm: number
-  /** Antenna revolution period in seconds — one full sweep rotation. */
-  updateIntervalSec: number
-}
-
-const TAU = Math.PI * 2
-
-function norm(angle: number): number {
-  return ((angle % TAU) + TAU) % TAU
+  /**
+   * Semi-axes (world pixels) of the site's projected detection boundary. The
+   * RadarField judges range in real km lat-corrected at the site's latitude,
+   * while the projection compresses longitude at the frame's mean latitude, so
+   * the boundary is an ellipse on screen — `buildRadarSweepMarkers` projects it
+   * exactly, keeping the drawn coverage edge coincident with the sensing edge.
+   */
+  rangeXPx: number
+  rangeYPx: number
 }
 
 const fail: Fail = makeFail('game/RadarSweepLayer')
 
 /**
- * Pixels-per-km must be finite and positive: every range radius is derived from
- * it, so a zero/NaN value would collapse or poison the whole layer's geometry.
- */
-function assertPixelsPerKm(pixelsPerKm: number): void {
-  if (!Number.isFinite(pixelsPerKm) || pixelsPerKm <= 0) {
-    fail(`pixelsPerKm must be finite and > 0, got ${pixelsPerKm}`)
-  }
-}
-
-/**
  * Validate at the layer boundary (GPS is the source of truth): a non-finite
- * projected position means projection failed, and a non-positive range or
- * revolution time is a data/wiring bug — refuse to animate garbage.
+ * projected position means projection failed, and a non-positive range axis is
+ * a data/wiring bug (e.g. a projector that doesn't flip Y) — refuse to draw
+ * garbage.
  */
 function assertMarkers(markers: readonly RadarSweepMarker[]): void {
   if (markers.length === 0) fail('expected at least one radar sweep marker')
@@ -44,41 +36,26 @@ function assertMarkers(markers: readonly RadarSweepMarker[]): void {
     if (!Number.isFinite(m.x) || !Number.isFinite(m.y)) {
       fail(`marker ${m.name} has a non-finite projected position (${m.x}, ${m.y})`)
     }
-    if (!Number.isFinite(m.rangeKm) || m.rangeKm <= 0) {
-      fail(`marker ${m.name} has a non-positive rangeKm: ${m.rangeKm}`)
-    }
-    if (!Number.isFinite(m.updateIntervalSec) || m.updateIntervalSec <= 0) {
-      fail(`marker ${m.name} has a non-positive updateIntervalSec: ${m.updateIntervalSec}`)
+    if (!Number.isFinite(m.rangeXPx) || m.rangeXPx <= 0 || !Number.isFinite(m.rangeYPx) || m.rangeYPx <= 0) {
+      fail(`marker ${m.name} has non-positive range semi-axes (${m.rangeXPx}, ${m.rangeYPx})`)
     }
   })
 }
 
+/**
+ * Pure presenter of the radar sensor field: the antennas themselves — sweep
+ * bearings, detection, the contact picture — are world state in
+ * `src/map/radarField.ts`, ticked inside the sim's fixed-tick loop. This layer
+ * only draws one site's range ring and sweep hand from that state each frame.
+ */
 export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
   private readonly gfx: Phaser.GameObjects.Graphics
   private readonly markers: readonly RadarSweepMarker[]
-  /** Range radius per site in world pixels (rangeKm × pixelsPerKm), precomputed. */
-  private readonly rangePx: number[]
-  /** Current sweep angle per site (radians), advanced by real elapsed time. */
-  private readonly angle: number[]
-  /** Each site's sweep angle at the start of the current frame, before `update`
-   * advanced it — the trailing edge of the arc swept this frame, used by
-   * `detectSweptTargets` to find contacts the hand crossed. */
-  private readonly prevAngle: number[]
-  /** Whether the hand completed at least one full revolution this frame (a
-   * fast-forward after a hidden tab). The wrapped `prevAngle → angle` arc only
-   * carries the fractional turn, so whole revolutions must be flagged
-   * explicitly or a catch-up frame would sweep just a sliver. */
-  private readonly sweptFullTurn: boolean[]
   private layerVisible = true
 
-  constructor(scene: Phaser.Scene, markers: readonly RadarSweepMarker[], pixelsPerKm: number) {
+  constructor(scene: Phaser.Scene, markers: readonly RadarSweepMarker[]) {
     assertMarkers(markers)
-    assertPixelsPerKm(pixelsPerKm)
     this.markers = markers
-    this.rangePx = markers.map((m) => m.rangeKm * pixelsPerKm)
-    this.angle = markers.map((_, i) => (i / markers.length) * TAU)
-    this.prevAngle = this.angle.slice()
-    this.sweptFullTurn = markers.map(() => false)
     this.gfx = scene.add.graphics().setDepth(DEPTH.radarSweep)
   }
 
@@ -88,8 +65,9 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
 
   /**
    * Presentation only: hides the drawn overlay (range ring + sweep hand). The
-   * antennas themselves keep rotating and detecting in `update` regardless — a
-   * hidden sweep is an invisible radar, not a switched-off one.
+   * antennas live in the world model (`RadarField`) and keep rotating and
+   * detecting regardless — a hidden sweep is an invisible radar, not a
+   * switched-off one.
    */
   setVisible(visible: boolean): void {
     this.layerVisible = visible
@@ -97,118 +75,56 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
   }
 
   /**
-   * Advance every sweep by `deltaSec` real seconds and redraw. Rotation is one
-   * full turn per site's `updateIntervalSec`; `zoom` holds the on-screen stroke
-   * width constant. The angle advance always runs — detection depends on it —
-   * while the drawing is skipped when the layer is hidden.
+   * Redraw the single drawn site's coverage from the field's current state.
+   * `tickFraction` is the sim's banked sub-tick time in [0, 1): the hand is
+   * extrapolated by that fraction of the site's per-tick step so it moves
+   * smoothly between ticks — display-side only, world state never reads it.
    *
    * `(centerX, centerY)` is the camera's world-space view centre, used to pick
    * the single site to actually draw — the one whose coverage the centre is under
    * (see `selectSweepIndex` and the clutter-reduction rule in `apps/game/CLAUDE.md`'s
-   * rendering-conventions section).
+   * rendering-conventions section). `zoom` holds the on-screen stroke width constant.
    */
-  update(deltaSec: number, zoom: number, centerX: number, centerY: number): void {
-    if (!Number.isFinite(deltaSec) || deltaSec < 0) {
-      fail(`deltaSec must be finite and >= 0, got ${deltaSec}`)
+  draw(field: RadarField, tickFraction: number, zoom: number, centerX: number, centerY: number): void {
+    // Index alignment is the invariant that lets marker i present field site i:
+    // both must be built from the same radars array in the same order
+    // (buildRadarSweepMarkers / buildRadarSites).
+    if (field.siteCount !== this.markers.length) {
+      fail(`field has ${field.siteCount} sites but the layer has ${this.markers.length} markers`)
+    }
+    if (!Number.isFinite(tickFraction) || tickFraction < 0 || tickFraction >= 1) {
+      fail(`tickFraction must be in [0, 1), got ${tickFraction}`)
     }
     if (!Number.isFinite(centerX) || !Number.isFinite(centerY)) {
       fail(`camera centre must be finite, got (${centerX}, ${centerY})`)
-    }
-
-    for (let i = 0; i < this.markers.length; i++) {
-      // Screen Y grows downward, so an increasing angle sweeps clockwise — the
-      // radar convention. Wrap to keep the accumulated value bounded. Every site
-      // advances (not just the drawn one), so detection can run for all radars.
-      this.prevAngle[i] = this.angle[i]
-      this.angle[i] = (this.angle[i] + (TAU * deltaSec) / this.markers[i].updateIntervalSec) % TAU
-      this.sweptFullTurn[i] = deltaSec >= this.markers[i].updateIntervalSec
     }
 
     if (!this.layerVisible) return
 
     const selected = this.selectSweepIndex(centerX, centerY)
     const m = this.markers[selected]
-    const r = this.rangePx[selected]
 
     const lineWidth = screenPxToWorld(RADAR.sweep.lineScreenWidth, zoom)
     const ringWidth = screenPxToWorld(RADAR.sweep.ringScreenWidth, zoom)
 
     this.gfx.clear()
 
-    // Faint range ring first, so the brighter sweep hand draws over it.
+    // Faint range ring first, so the brighter sweep hand draws over it. The ring
+    // is the ellipse the real-km detection boundary projects to (see the marker's
+    // semi-axes doc); strokeEllipse takes full width/height, not radii.
     this.gfx.lineStyle(ringWidth, RADAR.sweep.color, RADAR.sweep.ringAlpha)
-    this.gfx.strokeCircle(m.x, m.y, r)
+    this.gfx.strokeEllipse(m.x, m.y, m.rangeXPx * 2, m.rangeYPx * 2)
 
+    const bearing = field.bearingOf(selected) + tickFraction * field.perTickStepDeg(selected)
+    // Compass → screen: sin/cos of the bearing give the east/north components
+    // (0° = north, clockwise); east scales by the x semi-axis and north by the y
+    // semi-axis (negated — screen Y grows down). Because the projection is linear,
+    // the detection ray at this bearing maps to exactly this segment, so the hand
+    // crosses a blip precisely when the field's sweep passes the plane's compass
+    // bearing, and the hand tip rides the drawn ring.
+    const a = bearing * DEG2RAD
     this.gfx.lineStyle(lineWidth, RADAR.sweep.color, RADAR.sweep.lineAlpha)
-    const a = this.angle[selected]
-    this.gfx.lineBetween(m.x, m.y, m.x + Math.cos(a) * r, m.y + Math.sin(a) * r)
-  }
-
-  /** Whether world-pixel point `(x, y)`, offset `(dx, dy)` from site `i`'s
-   * origin, falls inside that site's range ring — the squared-radius
-   * comparison shared by `sweptBySite` and `selectSweepIndex`. */
-  private withinRangeSq(i: number, dx: number, dy: number): boolean {
-    return dx * dx + dy * dy <= this.rangePx[i] * this.rangePx[i]
-  }
-
-  /**
-   * Is world-pixel point `(x, y)` inside site `i`'s range ring AND the angular
-   * slice its hand swept during the most recent `update`? Bearings use the same
-   * convention as the drawn hand (`atan2` in world-pixel space, clockwise because
-   * screen Y grows down), so this exactly tracks where the visible sweep points.
-   *
-   * Half-open arc (prevAngle, angle]: the closing edge counts, the opening edge
-   * does not, so a bearing on a frame boundary is swept exactly once (this frame's
-   * closing edge is next frame's excluded opening edge).
-   */
-  private sweptBySite(i: number, x: number, y: number): boolean {
-    const m = this.markers[i]
-    const dx = x - m.x
-    const dy = y - m.y
-    if (!this.withinRangeSq(i, dx, dy)) return false
-    if (this.sweptFullTurn[i]) return true
-    const swept = norm(this.angle[i] - this.prevAngle[i])
-    if (swept === 0) return false
-    const offset = norm(Math.atan2(dy, dx) - this.prevAngle[i])
-    return offset > 0 && offset <= swept
-  }
-
-  /**
-   * Report which `targets` (world-pixel points) any radar's sweep hand crossed
-   * this frame — the contacts to (re)paint. Every site is tested, not just the
-   * one drawn (`update` advances all angles), so a target is detected by whichever
-   * coverage it is under; a target under two hands at once is still returned once.
-   * Runs regardless of the layer's visibility — hiding the sweep overlay is
-   * presentation, not switching the radars off.
-   *
-   * Generic in the target type: only `x`/`y` are read, and the matched targets
-   * are returned as-is, so any extra payload (heading, speed) rides through to
-   * the caller unchanged.
-   */
-  detectSweptTargets<T extends { x: number; y: number }>(targets: readonly T[]): T[] {
-    const contacts: T[] = []
-    for (const t of targets) {
-      for (let i = 0; i < this.markers.length; i++) {
-        if (this.sweptBySite(i, t.x, t.y)) {
-          contacts.push(t)
-          break
-        }
-      }
-    }
-    return contacts
-  }
-
-  /**
-   * Whether any site's hand swept over world-pixel point `(x, y)` this frame —
-   * used to expire an existing contact the moment the sweep revisits its position
-   * (it is then repainted only if a plane is still there). Like detection, runs
-   * regardless of the layer's visibility.
-   */
-  isSwept(x: number, y: number): boolean {
-    for (let i = 0; i < this.markers.length; i++) {
-      if (this.sweptBySite(i, x, y)) return true
-    }
-    return false
+    this.gfx.lineBetween(m.x, m.y, m.x + Math.sin(a) * m.rangeXPx, m.y - Math.cos(a) * m.rangeYPx)
   }
 
   private selectSweepIndex(centerX: number, centerY: number): number {
@@ -216,13 +132,18 @@ export class RadarSweepLayer implements WorldLayer, ToggleableLayer {
     let bestDistSq = Infinity
     let bestContains = false
     for (let i = 0; i < this.markers.length; i++) {
-      const dx = this.markers[i].x - centerX
-      const dy = this.markers[i].y - centerY
+      const m = this.markers[i]
+      const dx = m.x - centerX
+      const dy = m.y - centerY
       const distSq = dx * dx + dy * dy
-      // Squared distance vs squared range radius avoids a sqrt. A site whose ring
-      // contains the centre outranks one that doesn't; within the same containment
-      // tier the nearer wins. (Centre inside no ring → all false → nearest overall.)
-      const contains = this.withinRangeSq(i, dx, dy)
+      // Containment tests the drawn ellipse (axis-normalized ≤ 1), so the drawn
+      // ring and the "you are inside this coverage" pick can never disagree. A
+      // site whose ring contains the centre outranks one that doesn't; within the
+      // same containment tier the nearer wins. (Centre inside no ring → all
+      // false → nearest overall.)
+      const nx = dx / m.rangeXPx
+      const ny = dy / m.rangeYPx
+      const contains = nx * nx + ny * ny <= 1
       const better = contains === bestContains ? distSq < bestDistSq : contains
       if (better) {
         best = i

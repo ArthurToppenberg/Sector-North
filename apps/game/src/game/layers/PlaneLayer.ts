@@ -6,7 +6,7 @@ import type { WorldLayer } from './helpers'
 
 const DEG2RAD = Math.PI / 180
 
-/** A radar contact: a world-pixel point plus the plane's velocity when the sweep last saw it. */
+/** A radar contact projected for drawing: a world-pixel point plus the plane's velocity when the sweep last saw it. */
 export interface Contact {
   x: number
   y: number
@@ -18,19 +18,17 @@ export interface Contact {
 const fail: Fail = makeFail('game/PlaneLayer')
 
 /**
- * Draws radar contacts. Aircraft themselves live in the world model and are never
- * drawn directly here — the player only sees a contact where a radar sweep crossed
- * one. A contact holds its position at full brightness (no fade); it is expired by
- * `removeWhere` the moment the sweep revisits its bearing, and re-added by
- * `addContacts` only if a plane is still there — so a contact jumps forward one
- * step per revolution and vanishes once its plane has moved on. Every-frame /
- * animated layer (like `RadarSweepLayer`): its geometry is world-space so contacts
- * stay glued to the ground as the camera pans/zooms, with only the on-screen icon
- * size re-derived per frame to stay constant.
+ * Draws the radar contact picture. The contacts themselves are world state owned
+ * by `RadarField` (`src/map/radarField.ts`) — snapshots painted where a sweep
+ * last crossed a plane, held at full brightness (no fade) until the sweep
+ * revisits them. This layer is a pure presenter: each frame it receives the
+ * already-projected contact list and redraws it. Every-frame / animated layer
+ * (like `RadarSweepLayer`): its geometry is world-space so contacts stay glued
+ * to the ground as the camera pans/zooms, with only the on-screen icon size
+ * re-derived per frame to stay constant.
  */
 export class PlaneLayer implements WorldLayer {
   private readonly gfx: Phaser.GameObjects.Graphics
-  private contacts: Contact[] = []
 
   constructor(scene: Phaser.Scene) {
     this.gfx = scene.add.graphics().setDepth(DEPTH.planeBlips)
@@ -40,34 +38,20 @@ export class PlaneLayer implements WorldLayer {
     return [this.gfx]
   }
 
-  /** Add contacts reported by the radar sweep this frame. */
-  addContacts(contacts: ReadonlyArray<Contact>): void {
+  /**
+   * Redraw every contact as a hollow circle plus a speed-proportional velocity
+   * line. Dynamic-content layer: positions are validated per draw — a non-finite
+   * value means the projection upstream failed, so refuse to draw it.
+   */
+  draw(contacts: readonly Contact[], zoom: number): void {
     for (const c of contacts) {
       if (!Number.isFinite(c.x) || !Number.isFinite(c.y)) {
         fail(`contact has a non-finite position (${c.x}, ${c.y})`)
       }
       if (!Number.isFinite(c.headingDeg)) fail(`contact has a non-finite heading: ${c.headingDeg}`)
       if (!Number.isFinite(c.speedKmh) || c.speedKmh < 0) fail(`contact has an invalid speed: ${c.speedKmh}`)
-      this.contacts.push({ x: c.x, y: c.y, headingDeg: c.headingDeg, speedKmh: c.speedKmh })
     }
-  }
 
-  /** Drop every contact matching `predicate` — used to expire the slice the sweep just passed. */
-  removeWhere(predicate: (contact: Contact) => boolean): void {
-    let kept = 0
-    for (const contact of this.contacts) {
-      if (!predicate(contact)) this.contacts[kept++] = contact
-    }
-    this.contacts.length = kept
-  }
-
-  /** Remove all contacts (e.g. when the aircraft are cleared). */
-  clear(): void {
-    this.contacts.length = 0
-  }
-
-  /** Redraw every contact as a hollow circle plus a speed-proportional velocity line. */
-  draw(zoom: number): void {
     // Clamp the zoom used for sizing: at/above the lock the icon is constant on
     // screen; below it the icon is world-anchored and scales with the terrain.
     const sizeZoom = Math.max(zoom, PLANE.sizeLockZoom)
@@ -76,7 +60,7 @@ export class PlaneLayer implements WorldLayer {
     const vectorLineWidth = screenPxToWorld(PLANE.vectorLineScreenWidth, sizeZoom)
 
     this.gfx.clear()
-    for (const contact of this.contacts) {
+    for (const contact of contacts) {
       // Heading → pixel direction: north (0°) is up (−y, screen Y grows down),
       // east (90°) is +x. Exact at the projection's mean latitude and within a
       // few percent across this map's span, so no projector is needed here.

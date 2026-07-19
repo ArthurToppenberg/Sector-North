@@ -90,9 +90,9 @@ export const RADAR = {
   labelRevealZoom: 11,
   /**
    * The animated coverage sweep (see the "Every-frame / animated" reaction-pattern note
-   * in `apps/game/CLAUDE.md`): its geometry is a real-world distance (km × `pixelsPerKm`),
-   * so it lives in world space and zooms with the map — only the stroke widths below are
-   * constant on screen.
+   * in `apps/game/CLAUDE.md`): its geometry is the site's real-km detection boundary
+   * projected into world pixels, so it lives in world space and zooms with the map —
+   * only the stroke widths below are constant on screen.
    *
    * Drawn in phosphor green (`MAP.strokeColor`), not white — a deliberate,
    * user-requested exception to the HUD white/black rule so the sweep reads as part of

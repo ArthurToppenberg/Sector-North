@@ -46,8 +46,8 @@ so the lost sliver isn't double-counted on the next sample.
   - `validate.ts` — the shared strict-validation vocabulary of the whole world layer
     (`makeFail`, `requireLon`/`requireLat`, `requireNonEmptyString`, `requireOneOf`, …):
     composed by the four data loaders above and equally by the aircraft world model —
-    `AircraftSim.spawn`, `RouteBrain`'s constructor, and the authored-TS module-load
-    checks in `aircraftTypes.ts` and `routes.ts`.
+    `AircraftSim.spawn`, `RouteBrain`'s and `RadarField`'s constructors, and the
+    authored-TS module-load checks in `aircraftTypes.ts` and `routes.ts`.
     The WGS84 bounds live here **once**; a loader must never restate them. Helpers take
     the caller's `fail` so messages keep their per-module `[map/<x>]` tag, and the caller
     composes the subject text. Must stay Phaser- and config-free like the rest of
@@ -80,13 +80,28 @@ so the lost sliver isn't double-counted on the next sample.
     position step, so behavior is tick-quantized and bit-deterministic by
     construction. `RouteBrain` flies a waypoint list with rate-limited shortest-arc
     turns (`turnTowardDeg`) and a `WAYPOINT_CAPTURE_KM` arrival radius; past its
-    last waypoint it holds heading (despawn is future work). Its `bearingDeg`/
-    distance use the same lat-corrected equirectangular metric as `stepAircraft` —
-    deliberately not `colocate.ts`'s haversine — so the brain judges geometry
-    exactly the way the aircraft flies it. The interface's optional read-only
+    last waypoint it holds heading (despawn is future work). Its geometry comes
+    from `geo.ts` (below), so the brain judges bearings and distances exactly the
+    way the aircraft flies them. The interface's optional read-only
     `waypoints` exposes the intended route for debug rendering only (the
     `WaypointLayer` overlay) — presentation, never steering; `tick` is the sole
     steering path.
+  - `geo.ts` — the shared lat-corrected equirectangular geometry (`localKm`,
+    `bearingDeg`, `distanceKm`, `normalizeDeg`) both the brain and the radar field
+    measure with — deliberately NOT `colocate.ts`'s haversine, because a sensor or
+    brain judging geometry with a different metric than `stepAircraft`'s motion
+    model would disagree with the flown path.
+  - `radarField.ts` — the sensor world model: every site's rotating sweep bearing
+    plus the contact picture the sweeps paint (`Contact` lon/lat snapshots of
+    where a sweep last crossed a plane). Ticked once per fixed tick by
+    `AircraftSim.advance` — steer → step → radar, so detection sees each tick's
+    true positions and the picture is bit-deterministic however frames slice the
+    elapsed time. Detection is judged in real km and compass bearings via
+    `geo.ts` (half-open swept arc `(prev, bearing]`, so a bearing exactly on a
+    tick boundary is swept exactly once). Living in `src/map/` rather than a
+    render layer is the point: the sensors run headless like the rest of the
+    world model, and no layer's visibility can gate detection — the render side
+    only presents this state.
   - `routes.ts` — hardcoded route data. An `IntruderRoute` is a distinct `spawn`
     point plus the `waypoints` legs (all lon/lat): `/spawn-intruder` spawns at
     `spawn` with its initial heading derived down the first leg (`bearingDeg`), so
@@ -204,7 +219,10 @@ mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`
   dynamic `import()`** of the module under test — a static import would hoist above the
   stub and crash. Do not add jsdom for this.
 - What is covered: the projection (including the fit-pinning/locked-zoom invariant),
-  the aircraft sim, the steering brain (bearing/shortest-arc turn geometry, `RouteBrain`
+  the aircraft sim (fixed-tick banking, the steer → step → radar tick integration,
+  `pendingTickFraction`), the shared geometry helpers (`geo.ts`), the radar field (arc
+  detection/expiry and bit-determinism of the contact picture), the steering brain
+  (shortest-arc turn geometry, `RouteBrain`
   waypoint capture in order, rate-limited turns, and bit-determinism across irregular
   frame slices), the aircraft type registry (id/profile consistency), co-location
   clustering + label ownership, every data loader (each
@@ -297,12 +315,17 @@ lon/lat becomes pixels.
     `airports.length`.
   - `windowContent.ts` — record → `InfoWindowContent` builders, beside
     `cityImages.ts`/`radarImages.ts` (their sole content consumers).
-  - `sceneCommands.ts` — `registerSceneCommands({ sim, planeLayer, subwoofer, setDevToolsVisible })`,
+  - `sceneCommands.ts` — `registerSceneCommands({ sim, radarField, subwoofer, setDevToolsVisible })`,
     the game-state console commands captured by closure; called exactly once from
     `create()` (the registry throws on duplicates).
   What must stay in the scene: layer construction, the live `airportsVisible`/
   `radarsVisible` closures the toolbar toggles capture, camera wiring, the update/resize
-  ticks, and the console open/close funnel.
+  ticks, and the console open/close funnel. In `update()` the ordering is load-bearing:
+  `updateAircraft` advances the sim (whose fixed-tick loop also ticks the radar field)
+  and only then projects and draws the contact picture, and the sweep layer draws from
+  the post-advance bearings plus `pendingTickFraction` — all of it, plus the tps sample,
+  sits *above* the camera-dirty early-out because the world and its animated presenters
+  must run even while the camera idles.
 - **Three reaction patterns for layers — pick the right one:**
   - *Zoom-reactive* (coastline stroke width, city / airport / radar marker/label sizing):
     refreshed via the camera controller's `onZoomChanged` fan-out in `MainScene`. New
@@ -329,39 +352,58 @@ lon/lat becomes pixels.
   - *Viewport-reactive* (grid slice, HUD readout): runs in `update`, guarded by the
     camera-moved dirty check so idle frames do no work. Remember that a window resize
     changes the viewport without moving the camera — handle it in `onResize`.
-  - *Every-frame / animated* (`RadarSweepLayer`): runs every frame off the scene's `update`
-    tick — not behind the camera-moved dirty check — because its content is intrinsically
-    time-varying. The layer's visibility (the radar toolbar toggle) gates only the *drawing*:
-    the antenna simulation — every site's angle advance plus `detectSweptTargets`/`isSwept` —
-    runs unconditionally, because hiding the sweeps is decluttering the display, not switching
-    the sensors off (see the contacts bullet below). This every-frame work is cheap here only
-    because there are a handful of sites; reach for it just for genuinely
-    animated content, not to dodge the dirty-check discipline above. Because all its geometry
-    is world-space (km → pixels via `pixelsPerKm`), a sweep covers the same patch of ground at
-    every zoom, so — unlike the static marker layers — it needs no zoom handler / `onZoomChanged`
-    wiring: only the stroke widths are re-derived per frame (via `screenPxToWorld`) to hold a
-    constant on-screen thickness. **Clutter reduction:** every site's sweep angle advances
-    every frame, but only a single site actually draws its range ring and sweep
-    hand each frame — the rest advance silently off-screen. The drawn site is coverage-first
+  - *Every-frame / animated* (`RadarSweepLayer`, `PlaneLayer`): redrawn every frame off the
+    scene's `update` tick — not behind the camera-moved dirty check — because their content
+    is intrinsically time-varying. Both are **pure presenters** of the sensor world model
+    (`src/map/radarField.ts`): the antennas — sweep bearings, detection, the contact
+    picture — advance only inside the sim's fixed-tick loop, so a layer's visibility gates
+    nothing but drawing (see the contacts bullet below). This every-frame work is cheap here
+    only because there are a handful of sites; reach for it just for genuinely
+    animated content, not to dodge the dirty-check discipline above. All the sweep geometry
+    is world-space, so a sweep covers the same patch of ground at every zoom and — unlike
+    the static marker layers — it needs no zoom handler / `onZoomChanged` wiring: only the
+    stroke widths are re-derived per frame (via `screenPxToWorld`) to hold a constant
+    on-screen thickness. The drawn coverage ring is **the ellipse the real-km detection
+    boundary projects to**, not a `rangeKm × pixelsPerKm` circle: `RadarField` judges range
+    in `geo.ts`'s metric (lat-corrected at the *site's* latitude) while the projection
+    compresses longitude at the *frame mean* latitude, and every site sits south of that
+    mean — a pixel circle would overstate east–west coverage by up to ~11%, painting blips
+    short of the ring and leaving an undetectable annulus inside it. `buildRadarSweepMarkers`
+    projects the boundary's due-east/due-north points into exact per-site semi-axes
+    (`rangeXPx`/`rangeYPx`); the hand at compass bearing θ is drawn to
+    `(sinθ·rangeXPx, −cosθ·rangeYPx)`, which — the projection being linear — is exactly
+    where the detection ray at θ projects, so the hand visually crosses a blip at the
+    moment the field's bearing passes the plane. The drawn hand is the field's
+    compass bearing extrapolated by the sim's banked sub-tick fraction
+    (`AircraftSim.pendingTickFraction`) — smooth motion display-side, world state untouched.
+    **Clutter reduction:** every site's bearing advances every tick, but only a single site
+    actually draws its range ring and sweep hand each frame. The drawn site is coverage-first
     (`RadarSweepLayer.selectSweepIndex`): a radar whose range ring *contains* the view centre
     beats one that doesn't (so a nearer but smaller-range radar loses to a farther radar you're
     actually inside), and the physically nearest breaks ties within a containment tier; if the
-    centre is inside no ring, the nearest overall is drawn so a sweep always shows. Angles are
+    centre is inside no ring, the nearest overall is drawn so a sweep always shows. Bearings are
     never reset when a site gains or loses the "drawn" status, so whichever site becomes the
-    drawn one is already at its correct, continuous phase rather than snapping to zero; the
-    starting angles are staggered at construction (one full turn spread evenly across the sites)
-    for the same reason on the very first frame.
+    drawn one is already at its correct, continuous phase rather than snapping to zero;
+    `RadarField` staggers the starting bearings at construction (one full turn spread evenly
+    across the sites) for the same reason on the very first frame. Sweep marker i presents
+    field site i — both are built from the same `radars` array (`buildRadarSweepMarkers` /
+    `buildRadarSites`), an index-alignment invariant `RadarSweepLayer.draw` asserts.
   - **Contacts (`PlaneLayer`) are revealed only by the sweep, not drawn continuously.** Aircraft
     fly in the background at all times — their real lon/lat is the source of truth (`src/map/
     aircraft.ts`) — but the player only ever sees a contact painted where a radar sweep last
     passed over one. There is no fade: a contact stays at full brightness until the sweep hand
     comes back around to its bearing, which either repaints it at the plane's new position
     (still there) or clears it (moved on/gone). So a contact jumps forward once per revolution
-    and holds its last-seen spot in between. Contacts are drawn in white (the HUD default),
+    and holds its last-seen spot in between. The contact list itself is world state — `Contact`
+    lon/lat snapshots owned by `RadarField` — and `PlaneLayer` just redraws the projected list
+    each frame. Contacts are drawn in white (the HUD default),
     distinct from the phosphor-green coverage sweep that reveals them. **Contacts do not
     follow the radar toolbar toggle**: toggling radars off hides the site markers and the
     sweep overlay but the antennas keep rotating and detecting, so the contact picture keeps
     updating as normal — the toggle declutters the display, it never switches the sensors off.
+    This is not a carve-out any layer implements: the antennas are world state the sim ticks
+    regardless of any visibility flag, and `setVisible` only ever gates drawing, so the
+    behaviour falls out of the world/render split by construction.
 - **Two cameras:** the main camera draws only world layers; a fixed UI camera (zoom 1, no
   scroll) draws only the HUD, so HUD elements keep a constant on-screen size. Each camera
   `ignore()`s the other's objects. Register any new object with the correct camera.
@@ -436,7 +478,9 @@ lon/lat becomes pixels.
   minor fields at the closer `AIRPORT.minorLabelRevealZoom`, and the (sparse) radars at a
   lower zoom than the airports. Radar coverage is drawn by the separate `RadarSweepLayer`
   (its own `DEPTH.radarSweep`, toggled together with the radar markers): a faint world-space
-  range ring plus an animated rotating sweep hand, sized by the site's real `rangeKm` — the
+  range ring plus an animated rotating sweep hand, sized by the site's real `rangeKm` (drawn
+  as the projected real-km detection boundary — see the ellipse rule in the "Every-frame /
+  animated" bullet above, which keeps the visible edge on the sensing edge) — the
   one HUD element in phosphor green (`MAP.strokeColor`), the sanctioned colour exception (see
   the root `CLAUDE.md` HUD rule and `RADAR.sweep`). Only one site draws its coverage each frame
   — see the coverage-first selection rule in the "Every-frame / animated" bullet above.

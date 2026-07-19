@@ -1,23 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { bearingDeg, turnTowardDeg, RouteBrain, WAYPOINT_CAPTURE_KM, type Waypoint } from './brain'
+import { turnTowardDeg, RouteBrain, WAYPOINT_CAPTURE_KM, type Waypoint } from './brain'
+import { bearingDeg } from './geo'
 import { AircraftSim, SIM_TICK_SEC } from './aircraft'
 import { AIRCRAFT_TYPES } from './aircraftTypes'
 import { KM_PER_DEG_LAT } from './project'
-
-describe('bearingDeg', () => {
-  it('returns the cardinal bearings exactly', () => {
-    expect(bearingDeg(12, 55, 12, 56)).toBe(0)
-    expect(bearingDeg(12, 55, 13, 55)).toBe(90)
-    expect(bearingDeg(12, 55, 12, 54)).toBe(180)
-    expect(bearingDeg(12, 55, 11, 55)).toBe(270)
-  })
-
-  it('applies the cos(latitude) correction to east-west separation', () => {
-    // At 60°N a degree of longitude is half a degree of latitude wide, so a
-    // 1°-east 0.5°-north target sits exactly northeast (45°).
-    expect(bearingDeg(12, 60, 13, 60.5)).toBeCloseTo(45, 10)
-  })
-})
 
 describe('turnTowardDeg', () => {
   it('moves at most maxStepDeg toward the target', () => {

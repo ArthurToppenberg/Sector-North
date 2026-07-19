@@ -1,6 +1,7 @@
 import { KM_PER_DEG_LAT } from './project'
 import { AIRCRAFT_TYPES, type AircraftTypeId } from './aircraftTypes'
 import type { Brain } from './brain'
+import type { RadarField } from './radarField'
 import { isFiniteNumber, makeFail, requireLat, requireLon } from './validate'
 
 export const DEG2RAD = Math.PI / 180
@@ -49,6 +50,8 @@ export class AircraftSim {
   /** Real seconds received but not yet consumed by a whole tick. */
   private pendingSec = 0
 
+  constructor(private readonly radarField?: RadarField) {}
+
   spawn({ lon, lat, headingDeg, type }: AircraftSpawn, brain?: Brain): Aircraft {
     requireLon(lon, fail, 'spawn')
     requireLat(lat, fail, 'spawn')
@@ -76,10 +79,23 @@ export class AircraftSim {
         this.brains.get(ac.id)?.tick(ac, SIM_TICK_SEC)
         stepAircraft(ac, SIM_TICK_SEC)
       }
+      // Steer → step → radar is the determinism contract: detection sees each
+      // tick's true positions, so the contact picture is bit-identical however
+      // frames slice the elapsed time.
+      this.radarField?.tick(this.aircraft)
       this.pendingSec -= SIM_TICK_SEC
       ticks++
     }
     return ticks
+  }
+
+  /**
+   * How far through the next tick the banked time has come, in [0, 1).
+   * Presentation only — the renderer may extrapolate the sweep hand between
+   * ticks with it; world state never reads it.
+   */
+  get pendingTickFraction(): number {
+    return this.pendingSec / SIM_TICK_SEC
   }
 
   brainOf(id: number): Brain | undefined {
