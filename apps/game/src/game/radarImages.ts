@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import skagenUrl from './assets/radar/skagen-radarhoved.jpg?url'
 import bornholmUrl from './assets/radar/bornholm-rytterknaegten.jpg?url'
+import skrydstrupUrl from './assets/radar/skrydstrup-tps-77.jpg?url'
 
 /**
  * A radar's info-window photograph: the Phaser texture key it loads under, the
@@ -23,6 +24,13 @@ const RADAR_IMAGES: Record<string, RadarImageAsset> = {
     textureKey: 'radar-img:bornholm',
     url: bornholmUrl,
     credit: 'Elgaard / CC BY-SA 4.0',
+  },
+  // Not the Danish installation (no freely licensed photo of it exists): a
+  // Romanian Air Force unit of the same TPS-77 model — see assets/radar/CREDITS.md.
+  'Skrydstrup Air Base': {
+    textureKey: 'radar-img:skrydstrup',
+    url: skrydstrupUrl,
+    credit: 'Revista Cer Senin / CC BY-SA 3.0',
   },
 }
 

@@ -7,7 +7,11 @@ import type { ColocationLabel } from '../../map/colocate'
 import {
   assertZoom,
   assertMarkers,
+  createHitZone,
+  setHitZonesInteractive,
+  sizeHitZones,
   createMarkerLabel,
+  type SelectHandler,
   type WorldLayer,
   type ZoomReactive,
   type ToggleableLayer,
@@ -51,10 +55,12 @@ export class AirportLayer implements WorldLayer, ZoomReactive, ToggleableLayer {
   private readonly markers: readonly AirportMarker[]
   private readonly gfx: Phaser.GameObjects.Graphics
   private readonly labels: Phaser.GameObjects.Text[]
+  /** One invisible interactive hit target per airfield, for click-to-open. */
+  private readonly hitZones: Phaser.GameObjects.Zone[]
   private readonly suppressed: boolean[]
   private layerVisible = true
 
-  constructor(scene: Phaser.Scene, markers: readonly AirportMarker[]) {
+  constructor(scene: Phaser.Scene, markers: readonly AirportMarker[], onSelect: SelectHandler) {
     assertMarkers(markers, fail, 'airport', (m) => {
       if (!TIERS.includes(m.tier)) fail(`marker ${m.name} has unknown tier: ${JSON.stringify(m.tier)}`)
     })
@@ -62,6 +68,7 @@ export class AirportLayer implements WorldLayer, ZoomReactive, ToggleableLayer {
     this.suppressed = markers.map((m) => m.labelSuppressed)
 
     this.gfx = scene.add.graphics().setDepth(DEPTH.airportMarkers)
+    this.hitZones = markers.map((m, i) => createHitZone(scene, m.x, m.y, DEPTH.airportMarkers, i, onSelect))
 
     this.labels = markers.map((m) =>
       createMarkerLabel(
@@ -78,12 +85,13 @@ export class AirportLayer implements WorldLayer, ZoomReactive, ToggleableLayer {
   }
 
   get objects(): Phaser.GameObjects.GameObject[] {
-    return [this.gfx, ...this.labels]
+    return [this.gfx, ...this.labels, ...this.hitZones]
   }
 
   setVisible(visible: boolean): void {
     this.layerVisible = visible
     this.gfx.setVisible(visible)
+    setHitZonesInteractive(this.hitZones, visible)
     // Recompute labels for the new master state at the current zoom.
     this.onZoomChanged(this.gfx.scene.cameras.main.zoom)
   }
@@ -112,6 +120,7 @@ export class AirportLayer implements WorldLayer, ZoomReactive, ToggleableLayer {
     assertZoom(zoom, fail)
     this.drawMarkers(zoom)
     this.layoutLabels(zoom)
+    sizeHitZones(this.hitZones, AIRPORT.hitTargetScreenSize, zoom)
   }
 
   private drawMarkers(zoom: number): void {

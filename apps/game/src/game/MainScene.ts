@@ -36,6 +36,7 @@ import { ConsoleWindow } from './hud/ConsoleWindow'
 import { Subwoofer, SUBWOOFER_IMAGE_KEY, SUBWOOFER_AUDIO_KEY } from './hud/subwoofer'
 import { preloadRadarImages } from './radarImages'
 import { preloadCityImages } from './cityImages'
+import { preloadAirportImages } from './airportImages'
 import {
   buildColocationInputs,
   buildCityMarkers,
@@ -44,7 +45,7 @@ import {
   buildRadarSweepMarkers,
   buildRadarSites,
 } from './markerBuilders'
-import { cityWindowContent, radarWindowContent } from './windowContent'
+import { cityWindowContent, airportWindowContent, radarWindowContent } from './windowContent'
 import { registerSceneCommands } from './sceneCommands'
 import { FrameClock } from './frameClock'
 import { log } from '../log/logger'
@@ -130,10 +131,12 @@ export class MainScene extends Phaser.Scene {
     // buttons and the city markers from them.
     Toolbar.preload(this)
     CityLayer.preload(this)
-    // City + radar site photos, shown in each marker's detail window (opened on
-    // click in `create`), so load them before then. Cities all have a photo; only
-    // some radar sites do (the rest show the "NO IMAGE" placeholder).
+    // City + airfield + radar site photos, shown in each marker's detail window
+    // (opened on click in `create`), so load them before then. Cities all have a
+    // photo; only some airfields and radar sites do (the rest show the "NO IMAGE"
+    // placeholder).
     preloadCityImages(this)
+    preloadAirportImages(this)
     preloadRadarImages(this)
 
     for (const { name, url } of BOUNDARY_ASSETS) {
@@ -177,9 +180,9 @@ export class MainScene extends Phaser.Scene {
       origin: { x: projected.bounds.x, y: projected.bounds.y },
     })
     const coastline = new CoastlineLayer(this, projected.polygons)
-    // Clicking a city or radar opens a fresh detail window. The layer reports the
-    // marker index; the scene owns the records and the window manager, so it maps
-    // one to the other. The layers stay decoupled from the window itself.
+    // Clicking a city, airfield or radar opens a fresh detail window. The layer
+    // reports the marker index; the scene owns the records and the window manager,
+    // so it maps one to the other. The layers stay decoupled from the window itself.
     this.infoWindows = new InfoWindowManager(this, this.cameras.main)
     const cityLayer = new CityLayer(this, buildCityMarkers(cities, projected.project), (index) => {
       this.infoWindows.toggle(`city:${index}`, cityWindowContent(cities[index]))
@@ -187,6 +190,9 @@ export class MainScene extends Phaser.Scene {
     const airportLayer = new AirportLayer(
       this,
       buildAirportMarkers(airports, projected.project, initialLabels.slice(0, airports.length)),
+      (index) => {
+        this.infoWindows.toggle(`airport:${index}`, airportWindowContent(airports[index]))
+      },
     )
     const radarLayer = new RadarLayer(
       this,
