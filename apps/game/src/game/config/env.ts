@@ -33,3 +33,14 @@ export const FONT_FAMILY = 'Chakra Petch' as const
  * listen can't drift apart.
  */
 export const APP_READY_EVENT = 'app-ready' as const
+
+/**
+ * Game-level events `MainScene.preload` mirrors from Phaser's loader so the DOM
+ * boot overlay (`main.ts`) can render a progress bar and the key of each loaded
+ * file without reaching into Phaser's loader plugin. BOOT_LOAD_PROGRESS_EVENT
+ * carries the overall 0..1 completion; BOOT_LOAD_FILE_EVENT carries the key of
+ * the file that just finished. Shared here, like APP_READY_EVENT, so the emit
+ * and the listen can't drift apart.
+ */
+export const BOOT_LOAD_PROGRESS_EVENT = 'boot-load-progress' as const
+export const BOOT_LOAD_FILE_EVENT = 'boot-load-file' as const

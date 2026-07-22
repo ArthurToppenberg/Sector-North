@@ -2,8 +2,9 @@ import Phaser from 'phaser'
 // Self-hosted HUD typeface (no CDN). Only the weights we actually use.
 import '@fontsource/chakra-petch/latin-400.css'
 import '@fontsource/chakra-petch/latin-600.css'
-import { DPR, FONT_FAMILY, APP_READY_EVENT } from './game/config'
+import { DPR, FONT_FAMILY, APP_READY_EVENT, BOOT_LOAD_PROGRESS_EVENT, BOOT_LOAD_FILE_EVENT } from './game/config'
 import { MainScene } from './game/MainScene'
+import { LoaderUi } from './loaderUi'
 import { log } from './log/logger'
 
 const MOUNT_ID = 'game'
@@ -60,11 +61,25 @@ async function loadHudFont(): Promise<void> {
   }
 }
 
+// Drive the overlay's progress bar + status line from the load events the
+// scene's preload mirrors onto game.events. Registered right after game
+// creation — before the scene can boot — so no file completion is missed.
+function bindLoaderProgress(game: Phaser.Game, loaderUi: LoaderUi): void {
+  game.events.on(BOOT_LOAD_PROGRESS_EVENT, (progress: number) => loaderUi.setProgress(progress))
+  game.events.on(BOOT_LOAD_FILE_EVENT, (key: string) => loaderUi.setStatus(key))
+}
+
 // Tear down the boot loader once the scene has finished creating (world
 // projected, toolbar SVG loaded). Registered before `create` can run — the
 // loader queues asynchronously, so the event fires after this handler is set.
+// The progress listeners come off too: nothing may keep mutating an overlay
+// that no longer exists.
 function teardownLoaderWhenReady(game: Phaser.Game, loader: HTMLElement): void {
-  game.events.once(APP_READY_EVENT, () => loader.remove())
+  game.events.once(APP_READY_EVENT, () => {
+    game.events.off(BOOT_LOAD_PROGRESS_EVENT)
+    game.events.off(BOOT_LOAD_FILE_EVENT)
+    loader.remove()
+  })
 }
 
 function keepCanvasSizedToWindow(game: Phaser.Game): void {
@@ -74,11 +89,15 @@ function keepCanvasSizedToWindow(game: Phaser.Game): void {
 }
 
 async function boot(mount: HTMLElement, loader: HTMLElement): Promise<void> {
+  const loaderUi = new LoaderUi(loader)
+
+  loaderUi.setStatus('hud font')
   await loadHudFont()
   log.info('Boot: HUD fonts loaded')
 
   const game = new Phaser.Game(createGameConfig(mount))
   log.info('Boot: game instance created')
+  bindLoaderProgress(game, loaderUi)
   teardownLoaderWhenReady(game, loader)
   keepCanvasSizedToWindow(game)
 }

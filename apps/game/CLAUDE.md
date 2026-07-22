@@ -19,6 +19,16 @@ registered as a listener for `APP_READY_EVENT` *before* Phaser's async `create()
 and is only torn down once that event fires (world projected; toolbar + city SVG glyphs,
 city + radar photos, and world-data JSON all loaded) — never on a timer or guess.
 
+The `#loader` overlay is not just a spinner: it carries a progress bar and a status line
+(fixed markup in `index.html`, mutated only by `src/loaderUi.ts`). `MainScene.preload()`
+mirrors Phaser's loader stream onto two game-level events (`BOOT_LOAD_PROGRESS_EVENT`
+with the overall 0..1 fraction, `BOOT_LOAD_FILE_EVENT` with each completed file's key —
+two events because Phaser emits `FILE_COMPLETE` *before* recomputing `progress`), and
+`main.ts` binds them to the overlay right after game creation, before the scene can boot.
+`LoaderUi` is deliberately DOM-only so the pre-Phaser font phase reports through the same
+surface; the teardown also `off`s the progress listeners so nothing keeps mutating a
+removed overlay.
+
 ## Frame timing (FrameClock)
 
 Phaser's `TimeStep` delta is 10-frame-smoothed, clamped to 200 ms, and reset on
