@@ -17,7 +17,8 @@ fall back to the wrong typeface. A boot failure is surfaced into the mount's `te
 and then re-thrown, rather than left as a silent black screen. The loader teardown is
 registered as a listener for `APP_READY_EVENT` *before* Phaser's async `create()` can run,
 and is only torn down once that event fires (world projected; toolbar + city SVG glyphs,
-city + radar photos, and world-data JSON all loaded) — never on a timer or guess.
+city + airfield + radar photos, and world-data JSON all loaded) — never on a timer or
+guess.
 
 The `#loader` overlay is not just a spinner: it carries a progress bar and a status line
 (fixed markup in `index.html`, mutated only by `src/loaderUi.ts`). `MainScene.preload()`
@@ -139,21 +140,23 @@ so the lost sliver isn't double-counted on the next sample.
     (camera → world-view geometry).
   - `config/` — the tuning constants, one module per domain behind the `index.ts` barrel.
   - Root — `MainScene.ts` and the cross-folder seams: `markerBuilders.ts`,
-    `windowContent.ts`, `sceneCommands.ts`, `cityImages.ts`/`radarImages.ts`,
+    `windowContent.ts`, `sceneCommands.ts`, `cityImages.ts`/`airportImages.ts`/`radarImages.ts`,
     `svgIcon.ts` (used by both a layer and the toolbar, so it belongs to neither
     subfolder), `units.ts`, `math.ts`, `fail.ts`.
 
   Keep the small pure-helper modules
   separate so each has one reason to change: `math.ts` (generic, domain-agnostic math —
   no Phaser/projection/game knowledge), `units.ts` (screen↔world pixel scaling), and
-  `camera/worldView.ts` (camera → world-view geometry). `radarImages.ts` and `cityImages.ts` hold the
-  name → photo-asset join for radars and cities respectively — the seam between world data
-  and the bundled photos. Keeping them here deliberately leaves `src/map/radars.ts` and
-  `src/map/cities.ts` pure world data with no asset URLs. Both maps are allowed to be partial:
-  `radarImageAsset`/`cityImageAsset` return `null` rather than throwing for an entry with no
-  photo — a genuinely image-less case, not a missing asset; keep that fail-fast-exception
-  note inline. (The radar map is partial today — only some sites have a licensed photo; every
-  current city has one, but the same null contract still holds for a future photo-less city.)
+  `camera/worldView.ts` (camera → world-view geometry). `radarImages.ts`, `airportImages.ts`
+  and `cityImages.ts` hold the name → photo-asset join for radars, airfields and cities
+  respectively — the seam between world data and the bundled photos. Keeping them here
+  deliberately leaves `src/map/radars.ts`, `src/map/airports.ts` and `src/map/cities.ts`
+  pure world data with no asset URLs. All three maps are allowed to be partial:
+  `radarImageAsset`/`airportImageAsset`/`cityImageAsset` return `null` rather than throwing
+  for an entry with no photo — a genuinely image-less case, not a missing asset; keep that
+  fail-fast-exception note inline. (The radar and airfield maps are partial today — only
+  some sites have a licensed photo, and most minor strips have none at all; every current
+  city has one, but the same null contract still holds for a future photo-less city.)
 - `src/data/` — bundled data assets. Coordinates are lon/lat (WGS84); prefer simplified
   geometry (fewer points = faster to draw). Every dataset is imported the same way — via
   Vite `?url`, so each file is emitted to `dist/` and fetched at runtime (through Phaser's
@@ -440,8 +443,9 @@ lon/lat becomes pixels.
   renders on every camera. This is a concrete instance of the two-camera rule above.
   Window content (`InfoWindowContent`) is **entity-agnostic**: a record maps into the same
   title / fields / optional-image shape, so the window component never learns about entity
-  types. The city (`cityWindowContent`) and radar (`radarWindowContent`) builders are wired
-  — clicking a city or radar marker toggles its window; airfields are not yet clickable. Each
+  types. The city (`cityWindowContent`), airfield (`airportWindowContent`) and radar
+  (`radarWindowContent`) builders are wired — clicking a city, airfield or radar marker
+  toggles its window. Each
   layer owns one invisible interactive hit `Zone` per marker (held at a constant on-screen
   size, disabled when the layer is hidden) that distinguishes a click from a drag by pointer
   travel, so a camera pan ending over a marker never opens a window. The entity-agnostic

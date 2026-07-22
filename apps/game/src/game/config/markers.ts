@@ -36,6 +36,13 @@ export const AIRPORT = {
    * grass strips/glider fields so relative importance reads from size alone.
    */
   markerScreenRadius: { military: 5, major: 5, minor: 3 },
+  /**
+   * On-screen edge length (CSS px) of each airfield's invisible click target that
+   * opens its detail window. Larger than the triangle so the small glyph is
+   * comfortable to hit; held constant on screen (re-derived per zoom via
+   * `screenPxToWorld`) like the glyph itself. Mirrors `RADAR.hitTargetScreenSize`.
+   */
+  hitTargetScreenSize: 24,
   /** Marker outline width on screen (CSS pixels). */
   strokeScreenWidth: 1.25,
   /** Marker colour — outline for civil fields, fill for military (HUD: white). */
