@@ -17,24 +17,47 @@
         width: 100vw;
         height: 100vh;
       }
-      /* Boot loader: a white spinner on the black backdrop, shown from first
-         paint until the scene signals it has created (world projected + toolbar
-         SVG loaded), then removed by main.ts. White/black only, per HUD rule. */
+      /* Boot loader: spinner + progress bar + the key of the file that just
+         loaded, on the black backdrop. Shown from first paint until the scene
+         signals it has created (world projected + all assets loaded), then
+         removed by main.ts; the bar/status are driven by src/loaderUi.ts.
+         White/black only, per HUD rule. */
       #loader {
         position: absolute;
         inset: 0;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 18px;
       }
-      #loader::after {
-        content: '';
+      .loader-spinner {
         width: 36px;
         height: 36px;
         border: 3px solid rgba(255, 255, 255, 0.25);
         border-top-color: #ffffff;
         border-radius: 50%;
         animation: loader-spin 0.8s linear infinite;
+      }
+      .loader-bar {
+        width: 240px;
+        height: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+      }
+      .loader-bar-fill {
+        width: 0%;
+        height: 100%;
+        background: #ffffff;
+        transition: width 0.15s linear;
+      }
+      /* Chakra Petch arrives via main.ts's @fontsource imports; until then the
+         monospace fallback renders — acceptable for a boot readout. */
+      .loader-status {
+        font: 12px 'Chakra Petch', monospace;
+        color: rgba(255, 255, 255, 0.7);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        min-height: 1em;
       }
       @keyframes loader-spin {
         to {
@@ -45,7 +68,11 @@
   </head>
   <body>
     <div id="game">
-      <div id="loader" role="status" aria-label="Loading"></div>
+      <div id="loader" role="status" aria-label="Loading">
+        <div class="loader-spinner"></div>
+        <div class="loader-bar"><div class="loader-bar-fill"></div></div>
+        <div class="loader-status">booting</div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

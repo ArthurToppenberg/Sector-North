@@ -7,7 +7,17 @@ import { clusterByProximity, resolveColocationLabels, COLOCATION_RADIUS_KM } fro
 import { projectToPixels, type Projector } from '../map/project'
 import { AircraftSim } from '../map/aircraft'
 import { RadarField } from '../map/radarField'
-import { DPR, MAP, APP_READY_EVENT, CAMERA_CENTER_BOUNDS, CAMERA_INITIAL_CENTER, IS_LOCALHOST, SPEED_CONTROL } from './config'
+import {
+  DPR,
+  MAP,
+  APP_READY_EVENT,
+  BOOT_LOAD_PROGRESS_EVENT,
+  BOOT_LOAD_FILE_EVENT,
+  CAMERA_CENTER_BOUNDS,
+  CAMERA_INITIAL_CENTER,
+  IS_LOCALHOST,
+  SPEED_CONTROL,
+} from './config'
 import { GridLayer } from './layers/GridLayer'
 import { CoastlineLayer } from './layers/CoastlineLayer'
 import { CityLayer } from './layers/CityLayer'
@@ -105,6 +115,17 @@ export class MainScene extends Phaser.Scene {
   }
 
   preload() {
+    // Mirror the loader's stream onto game-level events so the DOM boot overlay
+    // (`main.ts`) can show a progress bar + per-file status. Two events because
+    // Phaser emits FILE_COMPLETE *before* it recomputes `progress` for that
+    // file, so the bar must be driven by the separate PROGRESS event.
+    this.load.on(Phaser.Loader.Events.FILE_COMPLETE, (key: string) => {
+      this.game.events.emit(BOOT_LOAD_FILE_EVENT, key)
+    })
+    this.load.on(Phaser.Loader.Events.PROGRESS, (progress: number) => {
+      this.game.events.emit(BOOT_LOAD_PROGRESS_EVENT, progress)
+    })
+
     // Rasterise the SVG glyphs into textures before `create` builds the toolbar
     // buttons and the city markers from them.
     Toolbar.preload(this)
