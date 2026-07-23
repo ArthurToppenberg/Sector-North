@@ -7,6 +7,9 @@ import { clusterByProximity, resolveColocationLabels, COLOCATION_RADIUS_KM } fro
 import { projectToPixels, type Projector } from '../map/project'
 import { AircraftSim } from '../map/aircraft'
 import { RadarField } from '../map/radarField'
+import { Rng } from '../map/rng'
+import { TRAFFIC_PATTERNS } from '../map/trafficPatterns'
+import { TrafficScheduler, TRAFFIC_SEED, TRAFFIC_WARMUP_SEC } from '../map/trafficScheduler'
 import {
   DPR,
   MAP,
@@ -212,11 +215,18 @@ export class MainScene extends Phaser.Scene {
     // above, in the same order — the index-alignment invariant the sweep layer
     // asserts.
     this.radarField = new RadarField(buildRadarSites(radars))
-    this.sim = new AircraftSim(this.radarField)
+    const traffic = new TrafficScheduler(TRAFFIC_PATTERNS, airports, new Rng(TRAFFIC_SEED))
+    this.sim = new AircraftSim(this.radarField, traffic)
+    // One warm-up hour of whole ticks fills the sky (and the contact picture)
+    // to steady state before the first frame — the sanctioned fast-forward,
+    // so boot doesn't open onto an empty sector while traffic transits inward.
+    this.sim.advance(TRAFFIC_WARMUP_SEC)
+    log.info(`Public traffic warmed up: ${this.sim.count} aircraft airborne`)
     this.planeLayer = new PlaneLayer(this)
     registerSceneCommands({
       sim: this.sim,
       radarField: this.radarField,
+      traffic,
       subwoofer: this.subwoofer,
       setDevToolsVisible: (visible) => this.setDevToolsVisible(visible),
     })

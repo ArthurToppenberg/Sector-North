@@ -124,6 +124,84 @@ describe('AircraftSim', () => {
   })
 })
 
+describe('AircraftSim tick spawner', () => {
+  const valid: AircraftSpawn = { lon: 12, lat: 55, headingDeg: 0, type: 'il20m' }
+
+  it('invokes the spawner exactly once per whole tick', () => {
+    let calls = 0
+    const sim = new AircraftSim(undefined, { tick: () => calls++ })
+    expect(sim.advance(SIM_TICK_SEC * 5)).toBe(5)
+    expect(calls).toBe(5)
+  })
+
+  it('does not invoke the spawner on banked sub-tick time', () => {
+    let calls = 0
+    const sim = new AircraftSim(undefined, { tick: () => calls++ })
+    sim.advance(SIM_TICK_SEC / 2)
+    expect(calls).toBe(0)
+    sim.advance(SIM_TICK_SEC / 2)
+    expect(calls).toBe(1)
+  })
+
+  it('steps a spawner-injected aircraft in the same tick it spawns', () => {
+    let plane: Aircraft | undefined
+    const spawner = {
+      tick(sim: AircraftSim) {
+        if (plane === undefined) plane = sim.spawn(valid)
+      },
+    }
+    const sim = new AircraftSim(undefined, spawner)
+    sim.advance(SIM_TICK_SEC)
+    expect(plane).toBeDefined()
+    expect(plane!.lat).toBeGreaterThan(valid.lat)
+    expect(plane!.lon).toBe(valid.lon)
+  })
+})
+
+describe('AircraftSim culling of done brains', () => {
+  const valid: AircraftSpawn = { lon: 12, lat: 55, headingDeg: 0, type: 'il20m' }
+
+  it('removes an aircraft whose brain is done at the end of the tick, keeping the rest', () => {
+    const sim = new AircraftSim()
+    const doomed = sim.spawn(valid, { tick: () => {}, done: true })
+    const flying = sim.spawn({ ...valid, headingDeg: 90 }, { tick: () => {}, done: false })
+    const brainless = sim.spawn({ ...valid, headingDeg: 180 })
+    sim.advance(SIM_TICK_SEC)
+    expect(sim.count).toBe(2)
+    expect(sim.all).not.toContain(doomed)
+    expect(sim.brainOf(doomed.id)).toBeUndefined()
+    expect(sim.all).toContain(flying)
+    expect(sim.all).toContain(brainless)
+    expect(sim.brainOf(flying.id)).toBeDefined()
+  })
+
+  it('a brain flipping done mid-advance flies its final tick, then the aircraft freezes', () => {
+    const sim = new AircraftSim()
+    let ticksFlown = 0
+    const brain = {
+      tick: () => ticksFlown++,
+      get done() {
+        return ticksFlown >= 2
+      },
+    }
+    const plane = sim.spawn(valid, brain)
+    sim.advance(SIM_TICK_SEC * 5)
+    expect(ticksFlown).toBe(2)
+    expect(sim.count).toBe(0)
+    expect(sim.brainOf(plane.id)).toBeUndefined()
+
+    // The done-flipping tick is still flown in full before the cull.
+    const reference = { id: 0, ...valid, speedKmh: AIRCRAFT_TYPES.il20m.cruiseSpeedKmh }
+    stepAircraft(reference, SIM_TICK_SEC)
+    stepAircraft(reference, SIM_TICK_SEC)
+    expect(plane.lat).toBe(reference.lat)
+
+    sim.advance(SIM_TICK_SEC * 3)
+    expect(ticksFlown).toBe(2)
+    expect(plane.lat).toBe(reference.lat)
+  })
+})
+
 describe('AircraftSim radar-field collaboration', () => {
   const spawn: AircraftSpawn = { lon: 12, lat: 55.1, headingDeg: 0, type: 'il20m' }
 
@@ -147,6 +225,15 @@ describe('AircraftSim radar-field collaboration', () => {
     sim.spawn(spawn)
     sim.advance(SIM_TICK_SEC / 2)
     expect(field.bearingOf(0)).toBe(0)
+    expect(field.contacts).toHaveLength(0)
+  })
+
+  it('culls a done flight before the radar looks — it never paints a contact', () => {
+    const field = wholeDiscField()
+    const sim = new AircraftSim(field)
+    sim.spawn(spawn, { tick: () => {}, done: true })
+    sim.advance(SIM_TICK_SEC * 8)
+    expect(sim.count).toBe(0)
     expect(field.contacts).toHaveLength(0)
   })
 

@@ -12,6 +12,12 @@ export interface Waypoint {
 export interface Brain {
   tick(ac: Aircraft, deltaSec: number): void
   /**
+   * True once this brain's flight is complete — the sim culls the aircraft at
+   * the end of the tick in which this turns true (an arrival has landed, an
+   * overflight has left the sector). A brain without it flies forever.
+   */
+  readonly done?: boolean
+  /**
    * The route this brain intends to fly, if it has one — exposed so debug
    * rendering can show it. Presentation only: nothing may steer an aircraft
    * from here, that is `tick`'s job.
@@ -57,6 +63,10 @@ export class RouteBrain implements Brain {
     })
     this.waypoints = waypoints
     this.turnRateDegPerSec = requirePositiveNumber(turnRateDegPerSec, fail, 'turnRateDegPerSec')
+  }
+
+  get done(): boolean {
+    return this.nextIndex >= this.waypoints.length
   }
 
   tick(ac: Aircraft, deltaSec: number): void {
