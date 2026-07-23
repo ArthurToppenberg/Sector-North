@@ -6,16 +6,18 @@ import { RouteBrain } from '../map/brain'
 import { bearingDeg } from '../map/geo'
 import { INTRUDER_PROBE_ROUTE } from '../map/routes'
 import type { RadarField } from '../map/radarField'
+import type { TrafficScheduler } from '../map/trafficScheduler'
 import type { Subwoofer } from './hud/subwoofer'
 
 export interface SceneCommandDeps {
   sim: AircraftSim
   radarField: RadarField
+  traffic: TrafficScheduler
   subwoofer: Subwoofer
   setDevToolsVisible: (visible: boolean) => void
 }
 
-export function registerSceneCommands({ sim, radarField, subwoofer, setDevToolsVisible }: SceneCommandDeps): void {
+export function registerSceneCommands({ sim, radarField, traffic, subwoofer, setDevToolsVisible }: SceneCommandDeps): void {
   commands.register({
     name: 'subwoofer',
     description: 'Drop the bass.',
@@ -82,6 +84,33 @@ export function registerSceneCommands({ sim, radarField, subwoofer, setDevToolsV
         return 'Developer toolbar hidden.'
       }
       return `Usage: /dev-tools <true|false>`
+    },
+  })
+
+  commands.register({
+    name: 'traffic',
+    description: 'Control ambient public air traffic (usage: /traffic on|off|rate <multiplier>).',
+    run: (args) => {
+      const parts = args.trim().split(/\s+/).filter((part) => part !== '')
+      if (parts.length === 1 && parts[0] === 'on') {
+        traffic.setEnabled(true)
+        return 'Public traffic resumed.'
+      }
+      if (parts.length === 1 && parts[0] === 'off') {
+        traffic.setEnabled(false)
+        return 'Public traffic paused (flights already airborne continue).'
+      }
+      if (parts.length === 2 && parts[0] === 'rate') {
+        const multiplier = Number.parseFloat(parts[1])
+        if (!Number.isFinite(multiplier) || multiplier <= 0) return 'Usage: /traffic rate <positive number>'
+        traffic.setRateMultiplier(multiplier)
+        return `Traffic rate multiplier set to ${multiplier}.`
+      }
+      if (parts.length === 0) {
+        const { spawned, skippedAtCap } = traffic.stats
+        return `Traffic is ${traffic.isEnabled ? 'on' : 'off'}: ${spawned} flights spawned, ${skippedAtCap} skipped at the cap (${sim.count} aircraft in the air).`
+      }
+      return 'Usage: /traffic <on|off|rate <multiplier>>'
     },
   })
 

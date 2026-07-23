@@ -30,3 +30,21 @@ export function distanceKm(fromLon: number, fromLat: number, toLon: number, toLa
   const [eastKm, northKm] = localKm(fromLon, fromLat, toLon, toLat)
   return Math.hypot(eastKm, northKm)
 }
+
+/**
+ * The point `distKm` from the origin along a compass bearing — the inverse of
+ * this module's metric (lat-corrected at the origin, like stepAircraft), so a
+ * waypoint generated with it lies where flying that bearing would arrive.
+ */
+export function offsetKm(
+  lon: number,
+  lat: number,
+  bearing: number,
+  distKm: number,
+): [lon: number, lat: number] {
+  const bearingRad = bearing * DEG2RAD
+  return [
+    lon + (distKm * Math.sin(bearingRad)) / (KM_PER_DEG_LAT * Math.cos(lat * DEG2RAD)),
+    lat + (distKm * Math.cos(bearingRad)) / KM_PER_DEG_LAT,
+  ]
+}
