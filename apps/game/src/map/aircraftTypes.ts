@@ -2,9 +2,9 @@ import { makeFail, requirePositiveNumber } from './validate'
 
 const fail = makeFail('map/aircraftTypes')
 
-export type AircraftTypeId = 'il20m'
+export type AircraftTypeId = 'il20m' | 'airliner' | 'turboprop' | 'gaPiston'
 
-export const AIRCRAFT_TYPE_IDS: readonly AircraftTypeId[] = ['il20m']
+export const AIRCRAFT_TYPE_IDS: readonly AircraftTypeId[] = ['il20m', 'airliner', 'turboprop', 'gaPiston']
 
 export interface AircraftTypeProfile {
   readonly typeId: AircraftTypeId
@@ -21,6 +21,27 @@ export const AIRCRAFT_TYPES: Readonly<Record<AircraftTypeId, AircraftTypeProfile
     // A gentle heavy-turboprop cruise turn (about half standard rate) — the
     // Il-20M probes in long straight legs, it doesn't dogfight.
     turnRateDegPerSec: 1.5,
+  },
+  airliner: {
+    typeId: 'airliner',
+    name: 'Narrow-body airliner',
+    cruiseSpeedKmh: 840,
+    // Jets at cruise bank shallow — half standard rate is already generous,
+    // and the public-traffic routes are long straight legs anyway.
+    turnRateDegPerSec: 1.5,
+  },
+  turboprop: {
+    typeId: 'turboprop',
+    name: 'Regional turboprop',
+    cruiseSpeedKmh: 500,
+    turnRateDegPerSec: 2,
+  },
+  gaPiston: {
+    typeId: 'gaPiston',
+    name: 'GA piston single',
+    cruiseSpeedKmh: 220,
+    // Standard rate — light singles turn far tighter than the heavies above.
+    turnRateDegPerSec: 3,
   },
 }
 

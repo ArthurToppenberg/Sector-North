@@ -76,11 +76,18 @@ so the lost sliver isn't double-counted on the next sample.
     `spawn` derives its speed from the type's profile (a spawn never states a speed),
     and optionally attaches a `Brain`. Brains are held in a sim-owned `Map` keyed by
     aircraft id — not on the `Aircraft` struct — so world state stays plain,
-    serializable data; a brainless aircraft flies straight forever.
+    serializable data; a brainless aircraft flies straight forever. The sim also
+    accepts an optional `TickSpawner` (second constructor arg) invoked at the top of
+    every whole tick — the seam the traffic scheduler plugs into, so spawning is
+    tick-quantized like everything else. The per-tick order is spawn → steer → step →
+    cull → radar: aircraft whose brain reports `done` are removed at the end of their
+    final tick, *before* the radar looks, so a landed/departed flight never paints a
+    contact on the tick it disappears.
   - `aircraftTypes.ts` — the aircraft type registry: the `AircraftTypeId`
     discriminant (the `AirportTier` pattern) and per-type `AircraftTypeProfile`s in
-    real units (cruise km/h, turn-rate deg/s). Currently one type, the Il-20M "Coot"
-    Baltic recon turboprop; Danish interceptors (F-16/F-35) extend this union later.
+    real units (cruise km/h, turn-rate deg/s). Four types: the Il-20M "Coot" Baltic
+    recon turboprop plus the three civil public-traffic classes (`airliner`,
+    `turboprop`, `gaPiston`); Danish interceptors (F-16/F-35) extend this union later.
     **Authored-TS sanity check:** because this registry is a literal authored in TS,
     not data loaded and validated at runtime, it runs a cheap module-load pass that
     calls the `validate.ts` helpers directly on the literal — a typo'd number throws
@@ -90,15 +97,17 @@ so the lost sliver isn't double-counted on the next sample.
     `AircraftSim.advance` *inside* the whole-tick loop, immediately before the
     position step, so behavior is tick-quantized and bit-deterministic by
     construction. `RouteBrain` flies a waypoint list with rate-limited shortest-arc
-    turns (`turnTowardDeg`) and a `WAYPOINT_CAPTURE_KM` arrival radius; past its
-    last waypoint it holds heading (despawn is future work). Its geometry comes
+    turns (`turnTowardDeg`) and a `WAYPOINT_CAPTURE_KM` arrival radius; capturing its
+    last waypoint sets the optional `Brain.done` flag and the sim culls the aircraft
+    at the end of that tick (landed at an airport, or left the sector through a
+    gate). Its geometry comes
     from `geo.ts` (below), so the brain judges bearings and distances exactly the
     way the aircraft flies them. The interface's optional read-only
     `waypoints` exposes the intended route for debug rendering only (the
     `WaypointLayer` overlay) — presentation, never steering; `tick` is the sole
     steering path.
   - `geo.ts` — the shared lat-corrected equirectangular geometry (`localKm`,
-    `bearingDeg`, `distanceKm`, `normalizeDeg`) both the brain and the radar field
+    `bearingDeg`, `distanceKm`, `normalizeDeg`, `offsetKm`) both the brain and the radar field
     measure with — deliberately NOT `colocate.ts`'s haversine, because a sensor or
     brain judging geometry with a different metric than `stepAircraft`'s motion
     model would disagree with the flown path.
@@ -119,8 +128,29 @@ so the lost sliver isn't double-counted on the next sample.
     the intruder enters clean rather than opening with a swerve. `INTRUDER_PROBE_ROUTE`
     is the Kaliningrad-style Baltic probing leg `/spawn-intruder` flies; runs the
     same authored-TS sanity check as `aircraftTypes.ts` above, so a typo'd
-    coordinate throws at import rather than on the first `/spawn-intruder`. Route
-    randomization must go through a seeded PRNG in `src/map/` when it arrives.
+    coordinate throws at import rather than on the first `/spawn-intruder`.
+  - `rng.ts` — the seeded deterministic PRNG (mulberry32) the determinism rule
+    mandates for all world-model randomness: `next`/`range`/`int` plus
+    `exponential`, the Poisson inter-arrival draw the traffic scheduler is built
+    on. Same seed, same sky — every draw replays bit-identically.
+  - `trafficPatterns.ts` — the authored public-traffic pattern data, rate-calibrated
+    against published statistics (København FIR ~559k IFR movements/2023 ≈ 62/h;
+    Copenhagen Airport 240,680 movements/2024 ≈ 27/h — the phase-1 subset totals
+    ~53/h, ~30 concurrent aircraft). Two pattern kinds: `flow` (overflight, arrival,
+    departure, domestic — a route of anchors, each a fixed `point`, a PRNG-jittered
+    `gate` segment on the map fringe, or a named `airport` resolved from the bundled
+    dataset) and `local` (hobby circuits: a PRNG-rolled loop of radial waypoints
+    around a minor field). Runs the authored-TS module-load sanity check like
+    `routes.ts`/`aircraftTypes.ts`.
+  - `trafficScheduler.ts` — the spawner (`TickSpawner` impl) the sim ticks at the
+    top of every whole tick: per pattern an independent Poisson stream (exponential
+    inter-arrival draws from the seeded `Rng`, counted down in canonical ticks),
+    spawning `RouteBrain` flights that despawn at their last waypoint. Airport
+    references resolve (fail-fast) at construction. `MAX_TRAFFIC_AIRCRAFT` is a
+    safety valve above the steady state, `setEnabled`/`setRateMultiplier` are the
+    `/traffic` console knobs, and `TRAFFIC_WARMUP_SEC` (one hour) is fast-forwarded
+    once at scene creation — the sanctioned replay-elapsed-ticks move — so the sky
+    opens at steady state instead of empty.
 - `src/game/` — **Phaser rendering + input.** Consumes projected output; never parses
   GeoJSON or re-derives the projection. Folder layout within it:
   - `layers/` — the world render layers (Grid, Coastline, City, Airport, Radar,
@@ -232,8 +262,11 @@ mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`
   dynamic `import()`** of the module under test — a static import would hoist above the
   stub and crash. Do not add jsdom for this.
 - What is covered: the projection (including the fit-pinning/locked-zoom invariant),
-  the aircraft sim (fixed-tick banking, the steer → step → radar tick integration,
-  `pendingTickFraction`), the shared geometry helpers (`geo.ts`), the radar field (arc
+  the aircraft sim (fixed-tick banking, the spawn → steer → step → cull → radar tick
+  integration, `pendingTickFraction`), the shared geometry helpers (`geo.ts`,
+  including `offsetKm`), the seeded PRNG (`rng.ts`), the traffic pattern data and
+  scheduler (rate calibration, gate jitter, despawn-on-arrival, bit-determinism of
+  the spawn stream), the radar field (arc
   detection/expiry and bit-determinism of the contact picture), the steering brain
   (shortest-arc turn geometry, `RouteBrain`
   waypoint capture in order, rate-limited turns, and bit-determinism across irregular
@@ -269,7 +302,7 @@ mode). Tests are colocated as `src/**/*.test.ts` — inside tsconfig's `include`
   from `src/game/` and captures what it needs by closure at registration — that is why the
   registry module itself stays pure/framework-free while the game-touching commands live
   grouped in `src/game/sceneCommands.ts` (`/subwoofer`, `/spawn-planes`, `/spawn-intruder`,
-  `/dev-tools`, `/clear-planes`),
+  `/traffic`, `/dev-tools`, `/clear-planes`),
   which `MainScene.create()` calls once with the live scene objects.
   `/help` ships with the registry (it just lists the live command set). `ConsoleWindow`'s
   input row is the one caller that dispatches typed lines through it. Duplicate/invalid
@@ -328,7 +361,7 @@ lon/lat becomes pixels.
     `airports.length`.
   - `windowContent.ts` — record → `InfoWindowContent` builders, beside
     `cityImages.ts`/`radarImages.ts` (their sole content consumers).
-  - `sceneCommands.ts` — `registerSceneCommands({ sim, radarField, subwoofer, setDevToolsVisible })`,
+  - `sceneCommands.ts` — `registerSceneCommands({ sim, radarField, traffic, subwoofer, setDevToolsVisible })`,
     the game-state console commands captured by closure; called exactly once from
     `create()` (the registry throws on duplicates).
   What must stay in the scene: layer construction, the live `airportsVisible`/

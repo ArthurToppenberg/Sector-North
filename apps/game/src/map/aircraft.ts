@@ -43,6 +43,15 @@ export interface AircraftSpawn {
   type: AircraftTypeId
 }
 
+/**
+ * A world-model system the sim invokes at the top of every whole tick, before
+ * steering — spawning is tick-quantized like everything else, so injected
+ * traffic replays bit-identically however frames slice the elapsed time.
+ */
+export interface TickSpawner {
+  tick(sim: AircraftSim): void
+}
+
 export class AircraftSim {
   private readonly aircraft: Aircraft[] = []
   private readonly brains = new Map<number, Brain>()
@@ -50,7 +59,10 @@ export class AircraftSim {
   /** Real seconds received but not yet consumed by a whole tick. */
   private pendingSec = 0
 
-  constructor(private readonly radarField?: RadarField) {}
+  constructor(
+    private readonly radarField?: RadarField,
+    private readonly spawner?: TickSpawner,
+  ) {}
 
   spawn({ lon, lat, headingDeg, type }: AircraftSpawn, brain?: Brain): Aircraft {
     requireLon(lon, fail, 'spawn')
@@ -71,6 +83,7 @@ export class AircraftSim {
     this.pendingSec += deltaSec
     let ticks = 0
     while (this.pendingSec >= SIM_TICK_SEC) {
+      this.spawner?.tick(this)
       // Steer, then step: the brain sets the heading the whole tick is flown
       // on. Steering inside the whole-tick loop is what keeps turning
       // deterministic — the turn is rate-limited per fixed tick, so the same
@@ -79,9 +92,18 @@ export class AircraftSim {
         this.brains.get(ac.id)?.tick(ac, SIM_TICK_SEC)
         stepAircraft(ac, SIM_TICK_SEC)
       }
-      // Steer → step → radar is the determinism contract: detection sees each
-      // tick's true positions, so the contact picture is bit-identical however
-      // frames slice the elapsed time.
+      // Cull finished flights before the radar looks: a landed or departed
+      // aircraft must not paint a contact on the tick it disappears.
+      for (let i = this.aircraft.length - 1; i >= 0; i--) {
+        const ac = this.aircraft[i]
+        if (this.brains.get(ac.id)?.done === true) {
+          this.brains.delete(ac.id)
+          this.aircraft.splice(i, 1)
+        }
+      }
+      // Spawn → steer → step → cull → radar is the determinism contract:
+      // detection sees each tick's true positions, so the contact picture is
+      // bit-identical however frames slice the elapsed time.
       this.radarField?.tick(this.aircraft)
       this.pendingSec -= SIM_TICK_SEC
       ticks++

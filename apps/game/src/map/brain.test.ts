@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { turnTowardDeg, RouteBrain, WAYPOINT_CAPTURE_KM, type Waypoint } from './brain'
-import { bearingDeg } from './geo'
+import { bearingDeg, distanceKm } from './geo'
 import { AircraftSim, SIM_TICK_SEC } from './aircraft'
 import { AIRCRAFT_TYPES } from './aircraftTypes'
 import { KM_PER_DEG_LAT } from './project'
@@ -47,8 +47,13 @@ describe('RouteBrain', () => {
       new RouteBrain(waypoints, turnRate),
     )
     sim.advance(hours * 3600)
-    return ac
+    return { sim, ac }
   }
+
+  // One tick's travel at il20m cruise (~0.021 km): the cull happens at the end
+  // of the tick that captured the waypoint, so the resting spot can overshoot
+  // the capture radius by at most one tick's distance.
+  const oneTickSlackKm = 0.05
 
   it('exposes its route for debug rendering', () => {
     const waypoints: Waypoint[] = [
@@ -93,15 +98,45 @@ describe('RouteBrain', () => {
     }
     for (const d of closestKm) expect(d).toBeLessThanOrEqual(WAYPOINT_CAPTURE_KM)
     expect(closestAtTick[0]).toBeLessThan(closestAtTick[1])
-    expect(ac.lon).toBeGreaterThan(13)
+    // Past the last waypoint the flight is done: culled, not flying on.
+    expect(sim.count).toBe(0)
+    expect(sim.brainOf(ac.id)).toBeUndefined()
+    const last = waypoints[waypoints.length - 1]
+    expect(distanceKm(ac.lon, ac.lat, last.lon, last.lat)).toBeLessThanOrEqual(
+      WAYPOINT_CAPTURE_KM + oneTickSlackKm,
+    )
   })
 
-  it('holds its final heading after the last waypoint instead of circling back', () => {
-    const waypoints: Waypoint[] = [{ lon: 12, lat: 55.2 }]
-    const ac = flyRoute(waypoints, 12, 55, 1)
-    expect(ac.headingDeg).toBe(0)
-    // Well past the waypoint plus its capture radius: it kept flying north.
-    expect(ac.lat).toBeGreaterThan(55.2 + WAYPOINT_CAPTURE_KM / KM_PER_DEG_LAT)
+  it('is culled where it captured the last waypoint, not teleported', () => {
+    const last: Waypoint = { lon: 12, lat: 55.2 }
+    const { sim, ac } = flyRoute([last], 12, 55, 1)
+    expect(sim.count).toBe(0)
+    expect(sim.brainOf(ac.id)).toBeUndefined()
+    expect(distanceKm(ac.lon, ac.lat, last.lon, last.lat)).toBeLessThanOrEqual(
+      WAYPOINT_CAPTURE_KM + oneTickSlackKm,
+    )
+  })
+
+  it('reports done only once the last waypoint is captured', () => {
+    const sim = new AircraftSim()
+    const brain = new RouteBrain([{ lon: 12, lat: 55.05 }], turnRate)
+    expect(brain.done).toBe(false)
+    const ac = sim.spawn({ lon: 12, lat: 55, headingDeg: 0, type: 'il20m' }, brain)
+    const ticks = 3600 / SIM_TICK_SEC
+    let doneAtTick = 0
+    for (let tick = 1; tick <= ticks; tick++) {
+      sim.advance(SIM_TICK_SEC)
+      if (brain.done) {
+        doneAtTick = tick
+        break
+      }
+    }
+    // ~5.6 km leg minus the 2 km capture radius takes many ticks at cruise, so
+    // done must have stayed false for a while before flipping true.
+    expect(doneAtTick).toBeGreaterThan(1)
+    expect(brain.done).toBe(true)
+    expect(sim.count).toBe(0)
+    expect(sim.brainOf(ac.id)).toBeUndefined()
   })
 
   it('turns no faster than the profile turn rate per tick', () => {

@@ -89,7 +89,8 @@ the elapsed ticks (fast-forward) rather than approximating. Concretely:
 - **No Phaser/DOM imports in the world model** (`src/map/`) — already enforced by the
   module boundary; keep it that way.
 - **No wall-clock reads and no unseeded randomness in the world model.** Anything that
-  needs randomness must use a **seeded PRNG living in `src/map/`**, never `Math.random()`.
+  needs randomness must use a **seeded PRNG living in `src/map/`** (`src/map/rng.ts` —
+  the public-traffic scheduler draws from it), never `Math.random()`.
   (Rendering/log timestamps may read the clock — they present state, they don't create it.)
 - **Simulation time advances only in fixed canonical ticks** (`SIM_TICK_SEC` in
   `src/map/aircraft.ts`). The render loop hands raw frame deltas to
